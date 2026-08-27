@@ -77,11 +77,9 @@ type VsCodeService = Context.Service.Shape<typeof VsCode>;
 type CellExecutionsService = Context.Service.Shape<typeof CellExecutions>;
 type LiveSessionsShape = Context.Service.Shape<typeof LiveSessions>;
 
-type InnerRequest<K extends keyof MarimoClientService> =
+type CommandFields<K extends keyof MarimoClientService> =
   MarimoClientService[K] extends (params: infer Params) => unknown
-    ? Params extends { readonly inner: infer Request }
-      ? Request
-      : never
+    ? Omit<Params, "notebookUri" | "kernelSessionId">
     : never;
 
 type WithNoActiveKernel<T> =
@@ -150,16 +148,16 @@ export interface NotebookHandle {
     | UnsavedNotebookError
   >;
   readonly updateUIElements: (
-    request: InnerRequest<"updateUiElement">,
+    request: CommandFields<"updateUiElement">,
   ) => WithNoActiveKernel<ReturnType<MarimoClientService["updateUiElement"]>>;
   readonly updateModel: (
-    request: InnerRequest<"setModelValue">,
+    request: CommandFields<"setModelValue">,
   ) => WithNoActiveKernel<ReturnType<MarimoClientService["setModelValue"]>>;
   readonly invokeFunction: (
-    request: InnerRequest<"invokeFunction">,
+    request: CommandFields<"invokeFunction">,
   ) => WithNoActiveKernel<ReturnType<MarimoClientService["invokeFunction"]>>;
   readonly deleteCell: (
-    request: InnerRequest<"deleteCell">,
+    request: CommandFields<"deleteCell">,
   ) => WithNoActiveKernel<ReturnType<MarimoClientService["deleteCell"]>>;
   readonly interrupt: WithNoActiveKernel<
     ReturnType<MarimoClientService["interrupt"]>
@@ -170,8 +168,8 @@ export interface NotebookHandle {
 
 /** Operations scoped to one Notebook Document Session. */
 export interface NotebookDocumentHandle {
-  readonly executeCells: (
-    request: InnerRequest<"executeCells">,
+  readonly execute: (
+    request: Pick<CommandFields<"execute">, "cells">,
     executable: string,
   ) => Effect.Effect<
     null,
@@ -248,7 +246,7 @@ function isScratchpadOutput(
  * const documentHandle = yield* runtime.forDocument(rawNotebook);
  * const notebook = yield* runtime.forNotebook(notebookId);
  *
- * yield* documentHandle.executeCells(request, executable);
+ * yield* documentHandle.execute(request, executable);
  * yield* notebook.updateUIElements(update);
  * yield* notebook.interrupt;
  * ```
@@ -366,13 +364,13 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             onSome: (text) =>
               marimo.sendStdin({
                 notebookUri: notebookId,
-                sessionId,
-                inner: { text },
+                kernelSessionId: sessionId,
+                text,
               }),
             onNone: () =>
               marimo.interrupt({
                 notebookUri: notebookId,
-                inner: { sessionId },
+                kernelSessionId: sessionId,
               }),
           }),
         );
@@ -381,7 +379,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         session: NotebookDocumentSession,
         controller: Ref.Ref<Option.Option<NotebookController>>,
       ): NotebookDocumentHandle => ({
-        executeCells: (request, executable) =>
+        execute: (request, executable) =>
           stateForDocumentSession(session).pipe(
             Effect.andThen(
               executor
@@ -397,11 +395,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       executable,
                       notebook,
                     );
-                    const send = marimo.executeCells({
+                    const send = marimo.execute({
                       notebookUri: notebookId,
                       executable,
                       workingDirectory,
-                      inner: request,
+                      cells: request.cells,
                     });
                     const notebookExecutions = yield* executions.open(session, {
                       getDrive: Ref.get(controller).pipe(
@@ -411,17 +409,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       ),
                     });
                     const result = yield* notebookExecutions.submit(
-                      request.cellIds.flatMap((cellId, index) => {
-                        const source = request.codes[index];
-                        return source === undefined
-                          ? []
-                          : [
-                              {
-                                cellId: makeNotebookCellId(cellId),
-                                source,
-                              },
-                            ];
-                      }),
+                      request.cells.map(({ cellId, code }) => ({
+                        cellId: makeNotebookCellId(cellId),
+                        source: code,
+                      })),
                       send,
                     );
                     yield* liveSessions.refresh();
@@ -478,7 +469,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                         marimo
                           .interrupt({
                             notebookUri: notebookId,
-                            inner: { runId },
+                            runId,
                           })
                           .pipe(
                             Effect.timeout("5 seconds"),
@@ -524,7 +515,8 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       notebookUri: notebookId,
                       executable,
                       workingDirectory,
-                      inner: { code: sourceCode, runId },
+                      code: sourceCode,
+                      runId,
                     });
                     yield* liveSessions.refresh();
                     yield* reconcileKernelSession(notebookId);
@@ -556,39 +548,39 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         updateUIElements: (request) =>
           runInCurrentKernelSession(notebookId, (sessionId) =>
             marimo.updateUiElement({
+              ...request,
               notebookUri: notebookId,
-              sessionId,
-              inner: request,
+              kernelSessionId: sessionId,
             }),
           ),
         updateModel: (request) =>
           runInCurrentKernelSession(notebookId, (sessionId) =>
             marimo.setModelValue({
+              ...request,
               notebookUri: notebookId,
-              sessionId,
-              inner: request,
+              kernelSessionId: sessionId,
             }),
           ),
         invokeFunction: (request) =>
           runInCurrentKernelSession(notebookId, (sessionId) =>
             marimo.invokeFunction({
+              ...request,
               notebookUri: notebookId,
-              sessionId,
-              inner: request,
+              kernelSessionId: sessionId,
             }),
           ),
         deleteCell: (request) =>
           runInCurrentKernelSession(notebookId, (sessionId) =>
             marimo.deleteCell({
+              ...request,
               notebookUri: notebookId,
-              sessionId,
-              inner: request,
+              kernelSessionId: sessionId,
             }),
           ),
         interrupt: runInCurrentKernelSession(notebookId, (sessionId) =>
           marimo.interrupt({
             notebookUri: notebookId,
-            inner: { sessionId },
+            kernelSessionId: sessionId,
           }),
         ),
         restart: mutateKernelSession(

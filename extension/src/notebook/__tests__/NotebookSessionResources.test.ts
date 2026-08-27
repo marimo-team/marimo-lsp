@@ -31,7 +31,7 @@ const withTestContext = Effect.fn(function* () {
   const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
   const vscode = yield* TestVsCode.make({ initialDocuments: [document] });
   const runtime = makeTestNotebookRuntime({
-    execute: () => Effect.die("Unexpected marimo request"),
+    send: () => Effect.die("Unexpected marimo request"),
   });
   const sessions = NotebookDocumentSessions.layer.pipe(
     Layer.provide(vscode.layer),

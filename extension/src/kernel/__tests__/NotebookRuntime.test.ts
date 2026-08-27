@@ -19,14 +19,16 @@ import {
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestMarimoClient,
+  type TestCommand,
+} from "../../__tests__/__utils__/TestMarimoClient.ts";
 import {
   cellId,
   kernelSessionId,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
-import type { MarimoApiCall } from "../../types.ts";
 import {
   type NotebookController,
   NotebookRuntime,
@@ -52,25 +54,25 @@ const makeTestLayer = Effect.fn(function* (
       attached: boolean;
     }
   >();
-  const execute = options.execute ?? (() => Effect.succeed(null));
+  const send = options.send ?? (() => Effect.succeed(null));
   const client = makeTestMarimoClient({
     ...options,
-    execute: (request) =>
+    send: (request) =>
       Effect.gen(function* () {
-        const result = yield* execute(request);
-        switch (request.method) {
+        const result = yield* send(request);
+        switch (request.kind) {
           case "list-sessions":
             return { sessions: [...serverSessions.values()] };
-          case "execute-cells": {
-            const notebookUri = notebookId(request.params.notebookUri);
+          case "execute": {
+            const notebookUri = notebookId(request.notebookUri);
             serverSessions.set(notebookUri, {
               sessionId: kernelSessionId(
                 "00000000-0000-4000-8000-000000000001",
               ),
               notebookUri,
-              filename: NodePath.basename(request.params.notebookUri),
-              executable: request.params.executable,
-              workingDirectory: request.params.workingDirectory,
+              filename: NodePath.basename(request.notebookUri),
+              executable: request.executable,
+              workingDirectory: request.workingDirectory,
               startedAt: 1,
               status: "idle",
               attached: true,
@@ -78,7 +80,7 @@ const makeTestLayer = Effect.fn(function* (
             break;
           }
           case "close-session":
-            serverSessions.delete(notebookId(request.params.notebookUri));
+            serverSessions.delete(notebookId(request.notebookUri));
             break;
           case "shutdown-all-sessions":
             serverSessions.clear();
@@ -102,13 +104,11 @@ const makeTestLayer = Effect.fn(function* (
 it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
-    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const { layer, vscode } = yield* makeTestLayer({
-      execute: (request) =>
+      send: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
-          Effect.as(
-            request.method === "list-sessions" ? { sessions: [] } : null,
-          ),
+          Effect.as(request.kind === "list-sessions" ? { sessions: [] } : null),
         ),
     });
 
@@ -127,38 +127,30 @@ it.effect(
       expect(first).toBe(second);
 
       yield* document
-        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .execute({ cells: [] }, "/usr/bin/python")
         .pipe(Effect.orDie);
       yield* first.interrupt.pipe(Effect.orDie);
 
       assert.deepStrictEqual(yield* Ref.get(requests), [
         {
-          method: "list-sessions",
-          params: {},
+          kind: "list-sessions",
         },
         {
-          method: "execute-cells",
-          params: {
-            notebookUri: id,
-            executable: "/usr/bin/python",
-            workingDirectory: process.cwd(),
-            inner: { cellIds: [], codes: [] },
-          },
+          kind: "execute",
+          notebookUri: id,
+          executable: "/usr/bin/python",
+          workingDirectory: process.cwd(),
+          cells: [],
         },
         {
-          method: "list-sessions",
-          params: {},
+          kind: "list-sessions",
         },
         {
-          method: "interrupt",
-          params: {
-            notebookUri: id,
-            inner: {
-              sessionId: kernelSessionId(
-                "00000000-0000-4000-8000-000000000001",
-              ),
-            },
-          },
+          kind: "interrupt",
+          notebookUri: id,
+          kernelSessionId: kernelSessionId(
+            "00000000-0000-4000-8000-000000000001",
+          ),
         },
       ]);
     }).pipe(Effect.provide(layer));
@@ -166,9 +158,89 @@ it.effect(
 );
 
 it.effect(
+  "keeps captured kernel identity authoritative over request fields",
+  Effect.fn(function* () {
+    const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
+    const { layer, vscode } = yield* makeTestLayer({
+      send: (request) =>
+        Ref.update(requests, (current) => [...current, request]).pipe(
+          Effect.as(null),
+        ),
+    });
+
+    yield* Effect.gen(function* () {
+      const runtime = yield* NotebookRuntime;
+      const editor = TestVsCode.makeNotebookEditor(
+        NodePath.join(process.cwd(), "notebook.py"),
+      );
+      const id = notebookId(editor.notebook.uri.toString());
+      const activeSessionId = kernelSessionId(
+        "00000000-0000-4000-8000-000000000001",
+      );
+      const foreignIdentity = {
+        notebookUri: notebookId("file:///foreign.py"),
+        kernelSessionId: kernelSessionId(
+          "00000000-0000-4000-8000-000000000002",
+        ),
+      };
+
+      yield* vscode.openNotebook(editor.notebook);
+      yield* Effect.yieldNow;
+      const document = yield* runtime.forDocument(editor.notebook);
+      yield* document.execute({ cells: [] }, "/usr/bin/python");
+      const notebook = yield* runtime.forNotebook(id);
+
+      yield* notebook.updateUIElements({
+        ...foreignIdentity,
+        objectIds: [],
+        values: [],
+      });
+      yield* notebook.updateModel({
+        ...foreignIdentity,
+        modelId: "model-1",
+        message: { method: "custom", content: {} },
+        buffers: [],
+      });
+      yield* notebook.invokeFunction({
+        ...foreignIdentity,
+        functionCallId: "call-1",
+        namespace: "namespace",
+        functionName: "function",
+        args: {},
+      });
+      yield* notebook.deleteCell({
+        ...foreignIdentity,
+        cellId: cellId("cell-1"),
+      });
+
+      const commands = (yield* Ref.get(requests)).filter((request) =>
+        [
+          "update-ui-element",
+          "set-model-value",
+          "invoke-function",
+          "delete-cell",
+        ].includes(request.kind),
+      );
+      expect(commands.map((request) => request.kind)).toEqual([
+        "update-ui-element",
+        "set-model-value",
+        "invoke-function",
+        "delete-cell",
+      ]);
+      for (const command of commands) {
+        expect(command).toMatchObject({
+          notebookUri: id,
+          kernelSessionId: activeSessionId,
+        });
+      }
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
   "orders kernel mutations behind admitted notebook work",
   Effect.fn(function* () {
-    const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const secondExecutionStarted = yield* Deferred.make<void>();
     const releaseSecondExecution = yield* Deferred.make<void>();
     let executionCount = 0;
@@ -178,17 +250,17 @@ it.effect(
     const id = notebookId(editor.notebook.uri.toString());
     const { layer } = yield* makeTestLayer(
       {
-        execute: (request) =>
+        send: (request) =>
           Effect.gen(function* () {
             yield* Ref.update(calls, (current) => [...current, request]);
-            if (request.method === "execute-cells") {
+            if (request.kind === "execute") {
               executionCount += 1;
               if (executionCount === 2) {
                 yield* Deferred.succeed(secondExecutionStarted, undefined);
                 yield* Deferred.await(releaseSecondExecution);
               }
             }
-            return request.method === "list-sessions" ? { sessions: [] } : null;
+            return request.kind === "list-sessions" ? { sessions: [] } : null;
           }),
       },
       { initialDocuments: [editor.notebook] },
@@ -197,13 +269,10 @@ it.effect(
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime;
       const document = yield* runtime.forDocument(editor.notebook);
-      yield* document.executeCells(
-        { cellIds: [], codes: [] },
-        "/usr/bin/python",
-      );
+      yield* document.execute({ cells: [] }, "/usr/bin/python");
 
       const execution = yield* document
-        .executeCells({ cellIds: [], codes: [] }, "/usr/bin/python")
+        .execute({ cells: [] }, "/usr/bin/python")
         .pipe(Effect.forkChild);
       yield* Deferred.await(secondExecutionStarted);
 
@@ -214,7 +283,7 @@ it.effect(
       yield* Effect.yieldNow;
       expect(
         (yield* Ref.get(calls)).some(
-          (request) => request.method === "update-ui-element",
+          (request) => request.kind === "update-ui-element",
         ),
       ).toBe(false);
 
@@ -224,20 +293,19 @@ it.effect(
 
       const kernelCalls = (yield* Ref.get(calls)).filter(
         (request) =>
-          request.method === "execute-cells" ||
-          request.method === "update-ui-element",
+          request.kind === "execute" || request.kind === "update-ui-element",
       );
-      expect(kernelCalls.map((request) => request.method)).toEqual([
-        "execute-cells",
-        "execute-cells",
+      expect(kernelCalls.map((request) => request.kind)).toEqual([
+        "execute",
+        "execute",
         "update-ui-element",
       ]);
       expect(kernelCalls.at(-1)).toMatchObject({
-        method: "update-ui-element",
-        params: {
-          notebookUri: id,
-          sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
-        },
+        kind: "update-ui-element",
+        notebookUri: id,
+        kernelSessionId: kernelSessionId(
+          "00000000-0000-4000-8000-000000000001",
+        ),
       });
     }).pipe(Effect.provide(layer));
   }),
@@ -254,15 +322,14 @@ it.effect(
     const id = notebookId(first.notebook.uri.toString());
     const { layer, vscode } = yield* makeTestLayer(
       {
-        execute: (request) =>
-          request.method === "execute-cells" &&
-          request.params.executable === "/old-python"
+        send: (request) =>
+          request.kind === "execute" && request.executable === "/old-python"
             ? Deferred.succeed(requestStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseRequest)),
                 Effect.as(null),
               )
             : Effect.succeed(
-                request.method === "list-sessions" ? { sessions: [] } : null,
+                request.kind === "list-sessions" ? { sessions: [] } : null,
               ),
       },
       { initialDocuments: [first.notebook] },
@@ -272,7 +339,7 @@ it.effect(
       const runtime = yield* NotebookRuntime;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const pending = yield* firstDocument
-        .executeCells({ cellIds: [], codes: [] }, "/old-python")
+        .execute({ cells: [] }, "/old-python")
         .pipe(Effect.exit, Effect.forkChild);
       yield* Deferred.await(requestStarted);
 
@@ -281,10 +348,7 @@ it.effect(
       const replacementDocument = yield* runtime
         .forDocument(replacement.notebook)
         .pipe(Effect.retry(Schedule.recurs(100)), Effect.orDie);
-      yield* replacementDocument.executeCells(
-        { cellIds: [], codes: [] },
-        "/new-python",
-      );
+      yield* replacementDocument.execute({ cells: [] }, "/new-python");
 
       yield* Deferred.succeed(releaseRequest, undefined);
       expect(Exit.isFailure(yield* Fiber.join(pending))).toBe(true);
@@ -296,7 +360,7 @@ it.effect(
       );
 
       const ended = yield* firstDocument
-        .executeCells({ cellIds: [], codes: [] }, "/old-python")
+        .execute({ cells: [] }, "/old-python")
         .pipe(Effect.flip);
       expect(ended._tag).toBe("NoActiveKernelError");
     }).pipe(Effect.provide(layer));
@@ -321,13 +385,13 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           NodePath.join(temporary.path, "notebook.py"),
         );
         const id = notebookId(editor.notebook.uri.toString());
-        const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+        const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
         const { layer, vscode } = yield* makeTestLayer(
           {
-            execute: (request) =>
+            send: (request) =>
               Ref.update(requests, (current) => [...current, request]).pipe(
                 Effect.as(
-                  request.method === "list-sessions" ? { sessions: [] } : null,
+                  request.kind === "list-sessions" ? { sessions: [] } : null,
                 ),
               ),
           },
@@ -358,16 +422,10 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           const runtime = yield* NotebookRuntime;
           yield* Effect.yieldNow;
           const firstDocument = yield* runtime.forDocument(editor.notebook);
-          yield* firstDocument.executeCells(
-            { cellIds: [], codes: [] },
-            "/python-one",
-          );
+          yield* firstDocument.execute({ cells: [] }, "/python-one");
 
           configuredRoot = secondRoot;
-          yield* firstDocument.executeCells(
-            { cellIds: [], codes: [] },
-            "/python-one",
-          );
+          yield* firstDocument.execute({ cells: [] }, "/python-one");
           expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
@@ -392,10 +450,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           yield* vscode.openNotebook(reopened.notebook);
           yield* Effect.yieldNow;
           const secondDocument = yield* runtime.forDocument(reopened.notebook);
-          yield* secondDocument.executeCells(
-            { cellIds: [], codes: [] },
-            "/python-two",
-          );
+          yield* secondDocument.execute({ cells: [] }, "/python-two");
           const notebook = yield* runtime.forNotebook(id);
           yield* notebook.close;
           expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
@@ -403,17 +458,17 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           );
 
           configuredRoot = firstRoot;
-          yield* secondDocument.executeCells(
-            { cellIds: [], codes: [] },
-            "/python-two",
-          );
+          yield* secondDocument.execute({ cells: [] }, "/python-two");
 
           const launches = (yield* Ref.get(requests)).filter(
-            (request) => request.method === "execute-cells",
+            (request) => request.kind === "execute",
           );
-          expect(
-            launches.map((request) => request.params.workingDirectory),
-          ).toEqual([firstRoot, firstRoot, secondRoot, firstRoot]);
+          expect(launches.map((request) => request.workingDirectory)).toEqual([
+            firstRoot,
+            firstRoot,
+            secondRoot,
+            firstRoot,
+          ]);
         }).pipe(Effect.provide(layer));
       }),
     (temporary) => Effect.sync(() => temporary.remove()),
@@ -504,7 +559,7 @@ it.effect(
   "restores notebook output without starting a kernel",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-    const requests = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const presented = yield* Deferred.make<ReadonlyArray<CellOutputReplay>>();
     const replay: CellOutputReplay = {
       kind: "saved",
@@ -522,10 +577,10 @@ it.effect(
     };
     const { layer, vscode } = yield* makeTestLayer(
       {
-        execute: (request) =>
+        send: (request) =>
           Ref.update(requests, (current) => [...current, request]).pipe(
             Effect.as(
-              request.method === "read-notebook-outputs"
+              request.kind === "read-notebook-outputs"
                 ? { cells: [replay] }
                 : null,
             ),
@@ -551,12 +606,10 @@ it.effect(
       const restored = yield* Deferred.await(presented);
       expect(restored).toEqual([replay]);
       expect(Option.isNone(yield* notebooks.getRuntimeSession(id))).toBe(true);
-      const methods = (yield* Ref.get(requests)).map(
-        (request) => request.method,
-      );
-      expect(methods).toContain("read-notebook-outputs");
-      expect(methods).not.toContain("execute-cells");
-      expect(methods).not.toContain("restart-session");
+      const kinds = (yield* Ref.get(requests)).map((request) => request.kind);
+      expect(kinds).toContain("read-notebook-outputs");
+      expect(kinds).not.toContain("execute");
+      expect(kinds).not.toContain("restart-session");
     }).pipe(Effect.provide(layer));
   }),
 );

@@ -8,11 +8,8 @@ import { classifySentryError } from "../sentrySink.ts";
 function commandError(cause: Error): MarimoCommandError {
   return new MarimoCommandError({
     command: Redacted.make({
-      command: "marimo.api",
-      params: {
-        method: "deserialize",
-        params: { source: "" },
-      },
+      kind: "deserialize",
+      source: "",
     }),
     cause,
     mode: "wasm",

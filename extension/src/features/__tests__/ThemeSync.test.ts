@@ -4,17 +4,19 @@ import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestMarimoClient,
+  type TestCommand,
+} from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoApiCall } from "../../types.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
 
 const withTestCtx = Effect.fn(function* (
   initialTheme: "light" | "dark" = "light",
 ) {
   const themeRef = yield* SubscriptionRef.make<"light" | "dark">(initialTheme);
-  const executions = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+  const executions = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
 
   const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
     data: {
@@ -43,7 +45,7 @@ const withTestCtx = Effect.fn(function* (
     Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({
-        execute(request) {
+        send(request) {
           return Ref.update(executions, (current) => [
             ...current,
             request,
@@ -80,22 +82,16 @@ describe("ThemeSync", () => {
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
             {
-              "method": "set-display-theme",
-              "params": {
-                "theme": "light",
-              },
+              "kind": "set-display-theme",
+              "theme": "light",
             },
             {
-              "method": "set-display-theme",
-              "params": {
-                "theme": "light",
-              },
+              "kind": "set-display-theme",
+              "theme": "light",
             },
             {
-              "method": "set-display-theme",
-              "params": {
-                "theme": "dark",
-              },
+              "kind": "set-display-theme",
+              "theme": "dark",
             },
           ]
         `);
@@ -119,8 +115,8 @@ describe("ThemeSync", () => {
         // set-display-theme updates all running sessions. The kernels must
         // get the change when no notebook is focused.
         expect(yield* Ref.get(ctx.executions)).toContainEqual({
-          method: "set-display-theme",
-          params: { theme: "dark" },
+          kind: "set-display-theme",
+          theme: "dark",
         });
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -138,16 +134,12 @@ describe("ThemeSync", () => {
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
             {
-              "method": "set-display-theme",
-              "params": {
-                "theme": "dark",
-              },
+              "kind": "set-display-theme",
+              "theme": "dark",
             },
             {
-              "method": "set-display-theme",
-              "params": {
-                "theme": "dark",
-              },
+              "kind": "set-display-theme",
+              "theme": "dark",
             },
           ]
         `);

@@ -11,7 +11,6 @@ import {
   PubSub,
   Queue,
   Ref,
-  Schema,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -24,7 +23,10 @@ import {
   NotebookRange,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestMarimoClient,
+  type TestCommand,
+} from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
@@ -44,13 +46,11 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import * as Api from "../../schemas/Models.gen.ts";
 import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
   DocumentAnalysis,
   KernelNotification,
-  MarimoApiCall,
   MarimoSessionsChanged,
 } from "../../types.ts";
 
@@ -72,7 +72,7 @@ const withTestCtx = Effect.fn(function* (
   const inputRequested = yield* Latch.make();
 
   // Capture executeCommand calls
-  const executions = yield* SubscriptionRef.make<ReadonlyArray<MarimoApiCall>>(
+  const executions = yield* SubscriptionRef.make<ReadonlyArray<TestCommand>>(
     [],
   );
   const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -167,30 +167,30 @@ const withTestCtx = Effect.fn(function* (
     Layer.provideMerge(NotebookDatasources.layer),
     Layer.provide(
       makeTestMarimoClient({
-        execute(request) {
+        send(request) {
           return Effect.gen(function* () {
             yield* SubscriptionRef.update(executions, (current) => [
               ...current,
               request,
             ]);
             if (
-              request.method === "execute-scratchpad" ||
-              request.method === "execute-cells"
+              request.kind === "execute-scratchpad" ||
+              request.kind === "execute"
             ) {
-              const id = notebookId(request.params.notebookUri);
+              const id = notebookId(request.notebookUri);
               serverSessions.set(id, {
                 sessionId: activeSessionId,
                 notebookUri: id,
-                filename: NodePath.basename(request.params.notebookUri),
-                executable: request.params.executable,
-                workingDirectory: request.params.workingDirectory,
+                filename: NodePath.basename(request.notebookUri),
+                executable: request.executable,
+                workingDirectory: request.workingDirectory,
                 startedAt: 1,
                 status: "idle",
                 attached: true,
               });
             }
-            if (request.method === "restart-session") {
-              const id = notebookId(request.params.notebookUri);
+            if (request.kind === "restart-session") {
+              const id = notebookId(request.notebookUri);
               const current = serverSessions.get(id);
               if (current !== undefined) {
                 serverSessions.set(id, {
@@ -199,7 +199,7 @@ const withTestCtx = Effect.fn(function* (
                 });
               }
             }
-            return request.method === "list-sessions"
+            return request.kind === "list-sessions"
               ? { sessions: [...serverSessions.values()] }
               : null;
           });
@@ -450,12 +450,10 @@ describe("NotebookRuntime cell identity", () => {
         yield* TestClock.adjust("10 millis");
 
         expect(yield* SubscriptionRef.get(ctx.executions)).toContainEqual({
-          method: "delete-cell",
-          params: {
-            notebookUri: ctx.notebookUri,
-            sessionId: ACTIVE_SESSION_ID,
-            inner: { cellId: "cell-1" },
-          },
+          kind: "delete-cell",
+          notebookUri: ctx.notebookUri,
+          kernelSessionId: ACTIVE_SESSION_ID,
+          cellId: "cell-1",
         });
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -495,9 +493,9 @@ describe("NotebookRuntime cell identity", () => {
         yield* TestClock.adjust("10 millis");
 
         const commands = yield* SubscriptionRef.get(ctx.executions);
-        expect(
-          commands.some((command) => command.method === "delete-cell"),
-        ).toBe(false);
+        expect(commands.some((command) => command.kind === "delete-cell")).toBe(
+          false,
+        );
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -540,19 +538,17 @@ describe("NotebookRuntime stdin", () => {
         // Assert executeCommand was called with send-stdin
         const cmds = yield* SubscriptionRef.get(ctx.executions).pipe(
           Effect.filterOrFail(
-            (calls) => calls.some((call) => call.method === "send-stdin"),
+            (calls) => calls.some((call) => call.kind === "send-stdin"),
             () => "stdin response not sent" as const,
           ),
           Effect.eventually,
         );
-        const stdinCmd = cmds.find((c) => c.method === "send-stdin");
+        const stdinCmd = cmds.find((c) => c.kind === "send-stdin");
         expect(stdinCmd).toMatchObject({
-          method: "send-stdin",
-          params: {
-            notebookUri: ctx.notebookUri,
-            sessionId: ACTIVE_SESSION_ID,
-            inner: { text: "foo" },
-          },
+          kind: "send-stdin",
+          notebookUri: ctx.notebookUri,
+          kernelSessionId: ACTIVE_SESSION_ID,
+          text: "foo",
         });
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -590,24 +586,22 @@ describe("NotebookRuntime stdin", () => {
         yield* Queue.offer(ctx.inputQueue, Option.none());
         const cmds = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
-            calls.some((call) => call.method === "interrupt"),
+            calls.some((call) => call.kind === "interrupt"),
           ),
           Stream.runHead,
           Effect.map(Option.getOrThrow),
         );
 
         // No send-stdin command should have been sent
-        const stdinCmd = cmds.find((c) => c.method === "send-stdin");
+        const stdinCmd = cmds.find((c) => c.kind === "send-stdin");
         expect(stdinCmd).toBeUndefined();
 
         // An interrupt should have been sent instead
-        const interruptCmd = cmds.find((c) => c.method === "interrupt");
+        const interruptCmd = cmds.find((c) => c.kind === "interrupt");
         expect(interruptCmd).toMatchObject({
-          method: "interrupt",
-          params: {
-            notebookUri: ctx.notebookUri,
-            inner: { sessionId: ACTIVE_SESSION_ID },
-          },
+          kind: "interrupt",
+          notebookUri: ctx.notebookUri,
+          kernelSessionId: ACTIVE_SESSION_ID,
         });
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -646,7 +640,7 @@ describe("NotebookRuntime stdin", () => {
 
         expect(
           (yield* SubscriptionRef.get(ctx.executions)).some(
-            (command) => command.method === "send-stdin",
+            (command) => command.kind === "send-stdin",
           ),
         ).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
@@ -687,7 +681,7 @@ describe("NotebookRuntime stdin", () => {
 
         expect(
           (yield* SubscriptionRef.get(ctx.executions)).some(
-            (command) => command.method === "send-stdin",
+            (command) => command.kind === "send-stdin",
           ),
         ).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
@@ -711,14 +705,8 @@ describe("NotebookRuntime scratch stream", () => {
           notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
         );
 
-        const scratchpadCalls = (calls: ReadonlyArray<MarimoApiCall>) =>
-          calls
-            .filter((call) => call.method === "execute-scratchpad")
-            .map((call) =>
-              Schema.decodeUnknownSync(Api.ExecuteScratchpadPayload)(
-                call.params,
-              ),
-            );
+        const scratchpadCalls = (calls: ReadonlyArray<TestCommand>) =>
+          calls.filter((call) => call.kind === "execute-scratchpad");
 
         // Wait until the first command is recorded. Do not count scheduler
         // drains. The scratchpad setup can need more than one drain.
@@ -737,8 +725,7 @@ describe("NotebookRuntime scratch stream", () => {
         expect(first_).toHaveLength(1);
         const firstCommand = first_[0];
         assert(
-          firstCommand !== undefined &&
-            typeof firstCommand.inner.runId === "string",
+          firstCommand !== undefined && typeof firstCommand.runId === "string",
         );
 
         yield* PubSub.publish(ctx.operationsPubSub, {
@@ -746,7 +733,7 @@ describe("NotebookRuntime scratch stream", () => {
           sessionId: ACTIVE_SESSION_ID,
           notification: {
             op: "completed-run",
-            run_id: firstCommand.inner.runId,
+            run_id: firstCommand.runId,
           },
         });
 
@@ -763,7 +750,7 @@ describe("NotebookRuntime scratch stream", () => {
         const secondCommand = commands[1];
         assert(
           secondCommand !== undefined &&
-            typeof secondCommand.inner.runId === "string",
+            typeof secondCommand.runId === "string",
         );
 
         yield* PubSub.publish(ctx.operationsPubSub, {
@@ -771,7 +758,7 @@ describe("NotebookRuntime scratch stream", () => {
           sessionId: ACTIVE_SESSION_ID,
           notification: {
             op: "completed-run",
-            run_id: secondCommand.inner.runId,
+            run_id: secondCommand.runId,
           },
         });
 
@@ -816,7 +803,7 @@ describe("NotebookRuntime scratch stream", () => {
         const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter(
             (calls) =>
-              calls.filter((call) => call.method === "execute-scratchpad")
+              calls.filter((call) => call.kind === "execute-scratchpad")
                 .length === 2,
           ),
           Stream.runHead,
@@ -828,14 +815,11 @@ describe("NotebookRuntime scratch stream", () => {
           runId: string;
         }> = [];
         for (const command of executions) {
-          if (command.method === "execute-scratchpad") {
-            const params = yield* Schema.decodeUnknownEffect(
-              Api.ExecuteScratchpadPayload,
-            )(command.params);
-            assert(typeof params.inner.runId === "string");
+          if (command.kind === "execute-scratchpad") {
+            assert(typeof command.runId === "string");
             commands.push({
-              notebookUri: notebookId(params.notebookUri),
-              runId: params.inner.runId,
+              notebookUri: notebookId(command.notebookUri),
+              runId: command.runId,
             });
           }
         }
@@ -883,23 +867,21 @@ describe("NotebookRuntime scratch stream", () => {
           notebook.executeScratchpad("print('hi')").pipe(Stream.runCollect),
         );
 
-        // Wait for executeScratchpad to enqueue marimo.api with its generated
+        // Wait for executeScratchpad to enqueue its private command with its generated
         // runId instead of relying on a scheduler tick.
         const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
-            calls.some((call) => call.method === "execute-scratchpad"),
+            calls.some((call) => call.kind === "execute-scratchpad"),
           ),
           Stream.runHead,
           Effect.map(Option.getOrThrow),
         );
         const executeCmd = executions.find(
-          (c) => c.method === "execute-scratchpad",
+          (c) => c.kind === "execute-scratchpad",
         );
 
         assert(executeCmd !== undefined);
-        const { runId } = (yield* Schema.decodeUnknownEffect(
-          Api.ExecuteScratchpadPayload,
-        )(executeCmd.params)).inner;
+        const { runId } = executeCmd;
         expect(runId).toBeDefined();
 
         const cell = ctx.notebook.cellAt(0);
@@ -987,7 +969,7 @@ describe("NotebookRuntime scratch stream", () => {
         // tick.
         yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
-            calls.some((call) => call.method === "execute-scratchpad"),
+            calls.some((call) => call.kind === "execute-scratchpad"),
           ),
           Stream.runHead,
         );
@@ -999,20 +981,19 @@ describe("NotebookRuntime scratch stream", () => {
         const executions = yield* SubscriptionRef.get(ctx.executions);
 
         const executeCmd = executions.find(
-          (c) => c.method === "execute-scratchpad",
+          (c) => c.kind === "execute-scratchpad",
         );
         assert(executeCmd !== undefined);
-        const { runId } = (yield* Schema.decodeUnknownEffect(
-          Api.ExecuteScratchpadPayload,
-        )(executeCmd.params)).inner;
+        const { runId } = executeCmd;
 
         // The finalizer should have sent a run-correlated interrupt. The
         // server uses the id to remember cancellation during kernel startup.
-        const interruptCmd = executions.find((c) => c.method === "interrupt");
+        const interruptCmd = executions.find((c) => c.kind === "interrupt");
 
         expect(interruptCmd).toMatchObject({
-          method: "interrupt",
-          params: { inner: { runId }, notebookUri: ctx.notebookUri },
+          kind: "interrupt",
+          runId,
+          notebookUri: ctx.notebookUri,
         });
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -1039,16 +1020,14 @@ describe("NotebookRuntime scratch stream", () => {
         // makes a single `TestClock.adjust` flaky.
         const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((current) =>
-            current.some((call) => call.method === "execute-scratchpad"),
+            current.some((call) => call.kind === "execute-scratchpad"),
           ),
           Stream.runHead,
           Effect.map(Option.getOrThrow),
         );
-        const executeCmd = calls.find((c) => c.method === "execute-scratchpad");
+        const executeCmd = calls.find((c) => c.kind === "execute-scratchpad");
         assert(executeCmd !== undefined);
-        const { runId } = (yield* Schema.decodeUnknownEffect(
-          Api.ExecuteScratchpadPayload,
-        )(executeCmd.params)).inner;
+        const { runId } = executeCmd;
 
         // Our completed-run ends the stream normally.
         yield* PubSub.publish(ctx.operationsPubSub, {
@@ -1060,7 +1039,7 @@ describe("NotebookRuntime scratch stream", () => {
         yield* Fiber.join(streamFiber);
 
         const interruptCmd = (yield* SubscriptionRef.get(ctx.executions)).find(
-          (c) => c.method === "interrupt",
+          (c) => c.kind === "interrupt",
         );
         expect(interruptCmd).toBeUndefined();
       }).pipe(Effect.provide(ctx.layer));

@@ -239,25 +239,21 @@ export const AutoExportLive = Layer.effectDiscard(
     ) {
       const content = (() => {
         if (format === "html") {
-          return marimo.exportAsHtml({
+          return marimo.exportHtml({
             notebookUri: notebook.id,
-            inner: {
-              download: false,
-              files: [],
-              includeCode: true,
-              assetUrl: null,
-            },
+            download: false,
+            files: [],
+            includeCode: true,
+            assetUrl: null,
           });
         }
         if (format === "ipynb") {
-          return marimo.exportAsIpynb({
+          return marimo.exportIpynb({
             notebookUri: notebook.id,
-            inner: {},
           });
         }
-        return marimo.exportAsMarkdown({
+        return marimo.exportMarkdown({
           notebookUri: notebook.id,
-          inner: {},
         });
       })();
 

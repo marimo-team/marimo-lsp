@@ -28,11 +28,6 @@ from marimo._schemas.notebook import (
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 from marimo._types.ids import SessionId  # noqa: TC002
 
-# NOTE: the generic structs below use the legacy TypeVar spelling (noqa: UP046)
-# because msgspec's annotation resolver cannot see PEP 695 type parameters —
-# `NotebookCommand[X]` raises `NameError: name 'T' is not defined` at decode.
-T = typing.TypeVar("T", bound=msgspec.Struct)
-
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
 # `sourceProjections.sql.engine` for the implicit default engine. We must not
 # emit `engine=__marimo_duckdb` when round-tripping these cells.
@@ -60,27 +55,6 @@ class OwnedAppConfig(msgspec.Struct):
     auto_download: list[str] = msgspec.field(default_factory=list)
 
 
-class NotebookCommand(msgspec.Struct, typing.Generic[T], rename="camel"):  # noqa: UP046
-    """Wraps a marimo command with its target notebook context.
-
-    Associates any marimo command/request with the specific notebook
-    it should operate on, enabling proper routing in multi-notebook
-    environments.
-    """
-
-    notebook_uri: str
-    """The URI of the notebook."""
-
-    inner: T
-    """The wrapped marimo command to execute."""
-
-
-class KernelCommand(NotebookCommand[T]):
-    """A command addressed to one exact live kernel."""
-
-    session_id: SessionId
-
-
 class KernelNotification(msgspec.Struct, rename="camel"):
     """A notification emitted by one exact live kernel."""
 
@@ -94,47 +68,6 @@ class DocumentAnalysis(msgspec.Struct, rename="camel"):
 
     notebook_uri: str
     analysis: VariablesNotification
-
-
-class SessionCommand(NotebookCommand[T]):
-    """A notebook command that is further routed to a specific runtime/session."""
-
-    executable: str
-    """The target environment Python executable."""
-
-    working_directory: str
-    """Absolute working directory for the launched kernel."""
-
-
-class VenvSource(msgspec.Struct, tag="venv", tag_field="kind", rename="camel"):
-    """The notebook's environment is a concrete venv with a known python executable."""
-
-    executable: str
-    """Path to the python binary inside the venv."""
-
-
-class ScriptSource(msgspec.Struct, tag="script", tag_field="kind", rename="camel"):
-    """The notebook's environment is a PEP 723 sandbox script.
-
-    The server resolves the script filename from the notebook URI; `uv`
-    derives the venv from the script's inline metadata.
-    """
-
-
-PackageSource = VenvSource | ScriptSource
-"""Discriminated union of environment sources for package endpoints."""
-
-
-class PackageCommand(NotebookCommand[T]):
-    """A notebook command that describes its python environment via a `PackageSource`.
-
-    Distinct from `SessionCommand`: package endpoints don't talk to a live
-    marimo kernel — they shell out to `uv` — and sandbox notebooks have no
-    pre-resolved python executable for the client to send.
-    """
-
-    source: PackageSource
-    """How to resolve the notebook's python environment."""
 
 
 type SmartCellQuotePrefix = typing.Literal["", "f", "r", "fr", "rf"]
@@ -257,17 +190,6 @@ class NotebookDocument(msgspec.Struct, rename="camel"):
     header: str | None = None
 
 
-class DeserializeRequest(msgspec.Struct, rename="camel"):
-    """
-    A request to deserialize Python source to notebook format.
-
-    Contains the source code to be parsed.
-    """
-
-    source: str
-    """The Python source code to deserialize."""
-
-
 class DeserializeSuccess(
     msgspec.Struct, tag="success", tag_field="kind", rename="camel"
 ):
@@ -303,64 +225,6 @@ class ConvertRequest(msgspec.Struct, rename="camel"):
     """The identifier for the text document to convert"""
 
 
-class InterruptRequest(msgspec.Struct, rename="camel"):
-    """A request to interrupt the kernel execution."""
-
-    run_id: str | None = None
-    """Optional scratchpad run to cancel.
-
-    Correlating cancellation lets the language server remember an interrupt
-    that arrives while the run's kernel session is still starting.
-    """
-
-    session_id: SessionId | None = None
-    """The exact live kernel to interrupt for an ordinary cancellation."""
-
-
-class ListPackagesRequest(msgspec.Struct, rename="camel"):
-    """A request to list installed packages in the kernel environment."""
-
-
-class DependencyTreeRequest(msgspec.Struct, rename="camel"):
-    """A request to get the dependency tree of installed packages."""
-
-
-class GetConfigurationRequest(msgspec.Struct, rename="camel"):
-    """A request to get the current configuration."""
-
-
-class CloseSessionRequest(msgspec.Struct, rename="camel"):
-    """A request to close the current session."""
-
-
-class RestartSessionRequest(msgspec.Struct, rename="camel"):
-    """A request to restart a live session's kernel."""
-
-    executable: str
-    """Executable used to restart or restore the session."""
-
-    working_directory: str
-    """Working directory used to restart or restore the session."""
-
-    create_if_missing: bool = False
-    """Create a replacement only for an explicit restore operation."""
-
-
-class MoveSessionRequest(msgspec.Struct, rename="camel"):
-    """A request to move a live session to a renamed notebook URI."""
-
-    new_notebook_uri: str
-    """The notebook URI after the rename."""
-
-
-class ListSessionsRequest(msgspec.Struct, rename="camel"):
-    """A request for all live sessions owned by this language server."""
-
-
-class ShutdownAllSessionsRequest(msgspec.Struct, rename="camel"):
-    """A request to close every live session owned by this language server."""
-
-
 class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
     """User-facing state for one live kernel session."""
 
@@ -380,62 +244,8 @@ class ListSessionsResponse(msgspec.Struct, rename="camel"):
     sessions: list[SessionInfo]
 
 
-class ExportAsIpynbRequest(msgspec.Struct, rename="camel"):
-    """A request to export the notebook as ipynb."""
-
-
-class ExportAsMarkdownRequest(msgspec.Struct, rename="camel"):
-    """A request to export the notebook as Markdown."""
-
-
-class ExecuteScratchRequest(msgspec.Struct, rename="camel"):
-    """Execute arbitrary Python code outside the dependency graph."""
-
-    code: str
-    """The Python code to execute."""
-
-    run_id: str | None = None
-    """Optional correlation id, echoed back on the kernel's ``completed-run``
-    ``marimo/operation`` notification (consumed client-side in KernelManager).
-
-    Lets a caller wait for *its* completion (including any code-mode cascade)
-    rather than the scratch cell's idle.
-    """
-
-
-class UpdateConfigurationRequest(msgspec.Struct, rename="camel"):
-    """A request to update the user configuration."""
-
-    config: dict[str, object]
-    """The partial configuration to merge with the current config."""
-
-
-class SetDisplayThemeRequest(msgspec.Struct, rename="camel"):
-    """A request to set the display theme without persisting to disk."""
-
-    theme: typing.Literal["light", "dark"]
-    """The theme to set ('light' or 'dark')."""
-
-
-class ReadNotebookOutputsRequest(msgspec.Struct, rename="camel"):
-    """Resolve outputs for an opened notebook without starting a kernel."""
-
-    session_cache_path: str | None = None
-    """Conventional cold-cache path, or ``None`` for live-session replay only."""
-
-
-class ApiRequest(msgspec.Struct, rename="camel"):
-    """A unified API request for all marimo internal methods."""
-
-    method: str
-    """The API method to call (e.g., 'run', 'interrupt', 'serialize')."""
-
-    params: dict[str, object]
-    """The parameters for the method."""
-
-
 class ListPackagesResponse(msgspec.Struct, rename="camel"):
-    """Response for ``get-package-list``."""
+    """Response for ``list-packages``."""
 
     packages: list[PackageDescription]
     """Installed packages in the notebook's environment."""

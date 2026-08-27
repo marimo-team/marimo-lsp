@@ -15,7 +15,10 @@ import {
   TestVsCode,
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestNotebookRuntime,
+  type TestCommand,
+} from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type {
   NotebookController,
   NotebookControllerSelection,
@@ -23,7 +26,6 @@ import type {
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import type { MarimoApiCall } from "../../types.ts";
 import {
   NotebookDependencies,
   type NotebookDependencyState,
@@ -60,8 +62,8 @@ const isTerminal = (state: NotebookDependencyState) =>
 const makeContext = Effect.fn(function* (options: {
   readonly notebookIds?: ReadonlyArray<NotebookId>;
   readonly controllers?: ReadonlyArray<NotebookControllerSelection>;
-  readonly execute: (
-    request: MarimoApiCall,
+  readonly send: (
+    request: TestCommand,
   ) => Effect.Effect<unknown, Schema.SchemaError>;
 }) {
   const notebookIds = options.notebookIds ?? [NOTEBOOK_URI];
@@ -69,12 +71,12 @@ const makeContext = Effect.fn(function* (options: {
     createTestNotebookDocument(Uri.parse(uri)),
   );
   const vscode = yield* TestVsCode.make({ initialDocuments: documents });
-  const requests: MarimoApiCall[] = [];
+  const requests: TestCommand[] = [];
   const runtime = makeTestNotebookRuntime({
     initialControllers: options.controllers,
-    execute: (request) =>
+    send: (request) =>
       Effect.sync(() => requests.push(request)).pipe(
-        Effect.andThen(options.execute(request)),
+        Effect.andThen(options.send(request)),
       ),
   });
   const sessions = NotebookDocumentSessions.layer.pipe(
@@ -136,7 +138,7 @@ describe("NotebookDependencies", () => {
             }),
           },
         ],
-        execute: () => Effect.succeed({ tree: TREE }),
+        send: () => Effect.succeed({ tree: TREE }),
       });
 
       const states = yield* collectUntilTerminal(OTHER_NOTEBOOK_URI).pipe(
@@ -146,14 +148,11 @@ describe("NotebookDependencies", () => {
       expect(states.at(-1)).toEqual({ _tag: "Loaded", tree: TREE });
       expect(ctx.requests).toEqual([
         {
-          method: "get-dependency-tree",
-          params: {
-            notebookUri: OTHER_NOTEBOOK_URI,
-            source: {
-              kind: "venv",
-              executable: "/other/.venv/bin/python",
-            },
-            inner: {},
+          kind: "get-dependency-tree",
+          notebookUri: OTHER_NOTEBOOK_URI,
+          source: {
+            kind: "venv",
+            executable: "/other/.venv/bin/python",
           },
         },
       ]);
@@ -169,7 +168,7 @@ describe("NotebookDependencies", () => {
       const controller = makeController({ id: "script" });
       const ctx = yield* makeContext({
         controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        execute: () =>
+        send: () =>
           Deferred.succeed(requestStarted, undefined).pipe(
             Effect.andThen(Deferred.await(releaseRequest)),
             Effect.as({ tree: TREE }),
@@ -221,8 +220,8 @@ describe("NotebookDependencies", () => {
         });
         const ctx = yield* makeContext({
           controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-          execute: (request) =>
-            request.method === "get-dependency-tree"
+          send: (request) =>
+            request.kind === "get-dependency-tree"
               ? treeFailure
               : Effect.succeed({
                   packages: [{ name: "effect", version: "4.0.0" }],
@@ -249,9 +248,9 @@ describe("NotebookDependencies", () => {
             ],
           },
         });
-        expect(ctx.requests.map((request) => request.method)).toEqual([
+        expect(ctx.requests.map((request) => request.kind)).toEqual([
           "get-dependency-tree",
-          "get-package-list",
+          "list-packages",
         ]);
       }),
   );
@@ -265,7 +264,7 @@ describe("NotebookDependencies", () => {
         const controller = makeController({ id: "script" });
         const ctx = yield* makeContext({
           controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-          execute: () => failure,
+          send: () => failure,
         });
 
         const states = yield* collectUntilTerminal(NOTEBOOK_URI).pipe(
@@ -276,7 +275,7 @@ describe("NotebookDependencies", () => {
           _tag: "Failed",
           error: expectedError,
         });
-        expect(ctx.requests.map((request) => request.method)).toEqual([
+        expect(ctx.requests.map((request) => request.kind)).toEqual([
           "get-dependency-tree",
         ]);
       }),
@@ -285,8 +284,7 @@ describe("NotebookDependencies", () => {
   it.effect("reports a missing controller without calling the server", () =>
     Effect.gen(function* () {
       const ctx = yield* makeContext({
-        execute: (request) =>
-          Effect.die(`Unexpected method: ${request.method}`),
+        send: (request) => Effect.die(`Unexpected command: ${request.kind}`),
       });
 
       const states = yield* collectUntilTerminal(NOTEBOOK_URI).pipe(
@@ -309,9 +307,9 @@ describe("NotebookDependencies", () => {
       const controller = makeController({ id: "script" });
       const ctx = yield* makeContext({
         controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        execute: (apiCall) => {
-          if (apiCall.method !== "get-dependency-tree") {
-            return Effect.die(`Unexpected method: ${apiCall.method}`);
+        send: (command) => {
+          if (command.kind !== "get-dependency-tree") {
+            return Effect.die(`Unexpected command: ${command.kind}`);
           }
           return Effect.succeed({
             tree: request++ === 0 ? firstTree : refreshedTree,
@@ -369,9 +367,9 @@ describe("NotebookDependencies", () => {
       const controller = makeController({ id: "script" });
       const ctx = yield* makeContext({
         controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        execute: (apiCall) => {
-          if (apiCall.method !== "get-dependency-tree") {
-            return Effect.die(`Unexpected method: ${apiCall.method}`);
+        send: (command) => {
+          if (command.kind !== "get-dependency-tree") {
+            return Effect.die(`Unexpected command: ${command.kind}`);
           }
           return request++ === 0
             ? Deferred.succeed(firstRequestStarted, undefined).pipe(

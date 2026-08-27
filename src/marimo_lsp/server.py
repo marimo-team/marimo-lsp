@@ -14,11 +14,12 @@ from marimo._convert.converters import MarimoConvert
 from pygls.lsp.server import LanguageServer
 from pygls.uris import to_fs_path, uri_scheme
 
-from marimo_lsp.api import handle_api_command
+from marimo_lsp.api import handle_command
 from marimo_lsp.completions import get_completions
 from marimo_lsp.diagnostics import GraphUpdaterRegistry
 from marimo_lsp.loggers import get_logger
-from marimo_lsp.models import ApiRequest, ConvertRequest
+from marimo_lsp.models import ConvertRequest
+from marimo_lsp.protocol import Command
 from marimo_lsp.sessions import Sessions
 
 logger = get_logger()
@@ -26,6 +27,18 @@ logger = get_logger()
 if typing.TYPE_CHECKING:
     from marimo_lsp.kernels import Kernels
     from marimo_lsp.saved_session_store import SavedSessionFiles
+
+
+def _json_rpc_value(value: object) -> object:
+    """Project pygls' tuple-like ``Object`` carrier back to JSON built-ins."""
+    as_dict = getattr(value, "_asdict", None)
+    if callable(as_dict):
+        value = as_dict()
+    if isinstance(value, dict):
+        return {str(key): _json_rpc_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_rpc_value(item) for item in value]
+    return value
 
 
 def create_server(  # noqa: C901, PLR0915
@@ -187,12 +200,12 @@ def create_server(  # noqa: C901, PLR0915
 
         return get_completions(ls, params)
 
-    @server.command("marimo.api")
-    async def api(ls: LanguageServer, params: typing.Any):  # noqa: ANN401
-        """Unified API endpoint for all marimo internal methods."""
-        logger.info("marimo.api")
-        args = msgspec.convert(params, type=ApiRequest)
-        return await handle_api_command(ls, sessions, args.method, args.params)
+    @server.feature("marimo/command")
+    async def command(ls: LanguageServer, params: object):
+        """Private command protocol shared with the bundled extension."""
+        logger.info("marimo/command")
+        request = msgspec.convert(_json_rpc_value(params), type=Command)
+        return await handle_command(ls, sessions, request)
 
     @server.command("marimo.convert")
     async def convert(ls: LanguageServer, params: typing.Any):  # noqa: ANN401

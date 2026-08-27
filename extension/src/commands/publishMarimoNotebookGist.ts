@@ -51,9 +51,8 @@ export const publishMarimoNotebookGist = Effect.fn(
 
     // Try to export ipynb with outputs for GitHub rendering
     const ipynbResult = yield* marimo
-      .exportAsIpynb({
+      .exportIpynb({
         notebookUri: notebook.id,
-        inner: {},
       })
       .pipe(
         Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),

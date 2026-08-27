@@ -662,13 +662,11 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
             (requestId, kernelSessionId) =>
               marimo.listSqlSchemas({
                 notebookUri,
-                sessionId: kernelSessionId,
-                inner: {
-                  requestId,
-                  engine: connection,
-                  database,
-                  schemaPath: [...schemaPath],
-                },
+                kernelSessionId,
+                requestId,
+                engine: connection,
+                database,
+                schemaPath: [...schemaPath],
               }),
           );
         },
@@ -694,14 +692,12 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
             (requestId, kernelSessionId) =>
               marimo.listSqlTables({
                 notebookUri,
-                sessionId: kernelSessionId,
-                inner: {
-                  requestId,
-                  engine: connection,
-                  database,
-                  schema,
-                  schemaPath: [...schemaPath],
-                },
+                kernelSessionId,
+                requestId,
+                engine: connection,
+                database,
+                schema,
+                schemaPath: [...schemaPath],
               }),
           );
         },

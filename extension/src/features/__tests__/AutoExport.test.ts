@@ -12,7 +12,10 @@ import {
 import { TestClock } from "effect/testing";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestNotebookRuntime,
+  type TestCommand,
+} from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type { NotebookController } from "../../kernel/NotebookRuntime.ts";
 import { kernelSessionId } from "../../lib/__tests__/branded.ts";
 import { FileSystemError, VsCode } from "../../platform/VsCode.ts";
@@ -20,7 +23,7 @@ import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import type { KernelNotification, MarimoApiCall } from "../../types.ts";
+import type { KernelNotification } from "../../types.ts";
 import {
   AUTO_EXPORT_INTERVAL,
   AutoExportLive,
@@ -38,12 +41,12 @@ const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
 const withTestCtx = Effect.fn(function* (
   options: {
     readonly autoDownload?: ReadonlyArray<"html" | "ipynb" | "markdown">;
-    readonly execute?: (request: MarimoApiCall) => Effect.Effect<string>;
+    readonly send?: (request: TestCommand) => Effect.Effect<string>;
     readonly hasOutputs?: boolean;
     readonly hasRuntimeSession?: boolean;
   } = {},
 ) {
-  const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+  const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
   const writes = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
   const directories = yield* Ref.make<ReadonlyArray<string>>([]);
   const operations = yield* PubSub.unbounded<KernelNotification>();
@@ -108,14 +111,14 @@ const withTestCtx = Effect.fn(function* (
         ? undefined
         : { executable: "/usr/bin/python", workingDirectory: "/test" },
     kernelNotifications: Stream.fromPubSub(operations),
-    execute: (request) =>
+    send: (request) =>
       Ref.update(calls, (current) => [...current, request]).pipe(
         Effect.andThen(
-          options.execute?.(request) ??
+          options.send?.(request) ??
             Effect.succeed(
-              request.method === "export-as-html"
+              request.kind === "export-html"
                 ? "<html>report</html>"
-                : request.method === "export-as-markdown"
+                : request.kind === "export-markdown"
                   ? "# Report"
                   : "{}",
             ),
@@ -166,8 +169,8 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-markdown",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-markdown",
         ]);
         expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
           "file:///test/__marimo__/report.md": "# Report",
@@ -201,9 +204,9 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-html",
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-html",
+          "export-ipynb",
         ]);
         expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
           "file:///test/__marimo__/report.html": "<html>report</html>",
@@ -222,11 +225,11 @@ describe("AutoExport", () => {
           notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-html",
-          "export-as-ipynb",
-          "export-as-html",
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-html",
+          "export-ipynb",
+          "export-html",
+          "export-ipynb",
         ]);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -242,9 +245,9 @@ describe("AutoExport", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-html",
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-html",
+          "export-ipynb",
         ]);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -258,8 +261,8 @@ describe("AutoExport", () => {
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-ipynb",
         ]);
 
         ctx.cellOutputs.push({
@@ -277,10 +280,10 @@ describe("AutoExport", () => {
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-ipynb",
-          "export-as-html",
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-ipynb",
+          "export-html",
+          "export-ipynb",
         ]);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -292,8 +295,8 @@ describe("AutoExport", () => {
       const exportStarted = yield* Deferred.make<void>();
       const releaseExport = yield* Deferred.make<void>();
       const ctx = yield* withTestCtx({
-        execute: (request) =>
-          request.method === "export-as-html"
+        send: (request) =>
+          request.kind === "export-html"
             ? Deferred.succeed(exportStarted, undefined).pipe(
                 Effect.andThen(Deferred.await(releaseExport)),
                 Effect.as("<html>old report</html>"),
@@ -335,11 +338,11 @@ describe("AutoExport", () => {
         yield* Fiber.join(firstTick);
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.method)).toEqual([
-          "export-as-html",
-          "export-as-ipynb",
-          "export-as-html",
-          "export-as-ipynb",
+        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
+          "export-html",
+          "export-ipynb",
+          "export-html",
+          "export-ipynb",
         ]);
       }).pipe(Effect.provide(ctx.layer));
     }),

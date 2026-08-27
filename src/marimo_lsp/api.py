@@ -1,6 +1,6 @@
 # Copyright 2026 Marimo. All rights reserved.
 
-"""Handlers for marimo.api commands."""
+"""Handlers for the owned private command protocol."""
 
 from __future__ import annotations
 
@@ -29,65 +29,54 @@ from marimo._export.serialization import serialize_notebook_snapshot
 from marimo._messaging.msgspec_encoder import encode_json_bytes
 from marimo._runtime.commands import (
     ExecuteScratchpadCommand,
+    HTTPRequest,
     InvokeFunctionCommand,
+    ModelCustomMessage,
+    ModelUpdateMessage,
 )
 from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
 from marimo._schemas.export_options import IPYNBExportOptions, MarkdownExportOptions
+from marimo._schemas.notebook import NotebookV1
 from marimo._schemas.serialization import (
     AppInstantiation,
     Header,
 )
 from marimo._session.requests import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
+from marimo._types.ids import (
+    CellId_t,
+    RequestId,
+    SessionId,
+    UIElementId,
+    WidgetModelId,
+)
 from pygls.uris import to_fs_path
 from typing_extensions import TypeForm
 
+from marimo_lsp import protocol
 from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
-    CloseSessionRequest,
     DeleteCellRequest,
-    DependencyTreeRequest,
     DependencyTreeResponse,
     DeserializeConvertible,
     DeserializeInvalidSyntax,
-    DeserializeRequest,
     DeserializeResult,
     DeserializeSuccess,
     ExecuteCellsRequest,
-    ExecuteScratchRequest,
-    ExportAsIpynbRequest,
-    ExportAsMarkdownRequest,
-    GetConfigurationRequest,
     GetConfigurationResponse,
-    InterruptRequest,
-    KernelCommand,
-    ListPackagesRequest,
     ListPackagesResponse,
-    ListSessionsRequest,
     ListSessionsResponse,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
     ModelRequest,
-    MoveSessionRequest,
-    NotebookCommand,
     NotebookDocument,
-    PackageCommand,
-    ReadNotebookOutputsRequest,
     ReadNotebookOutputsResponse,
-    RestartSessionRequest,
-    ScriptSource,
     SerializeResponse,
-    SessionCommand,
-    SetDisplayThemeRequest,
     SetDisplayThemeResponse,
-    ShutdownAllSessionsRequest,
-    StdinRequest,
-    UpdateConfigurationRequest,
     UpdateUIElementRequest,
-    VenvSource,
 )
 from marimo_lsp.package_manager import LspPackageManager
 
@@ -97,7 +86,6 @@ if TYPE_CHECKING:
         PartialMarimoConfig,
         SharingConfig,
     )
-    from marimo._types.ids import SessionId
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.sessions import Session, Sessions
@@ -108,7 +96,7 @@ _APP_CONFIG_FIELD_NAMES = frozenset(
 )
 
 
-__all__ = ["API_METHODS", "ApiBuilder", "ApiMethod", "handle_api_command"]
+__all__ = ["COMMANDS", "CommandBuilder", "CommandSpec", "handle_command"]
 
 logger = get_logger()
 _API_HANDLER_PARAMETER_COUNT = 2
@@ -133,41 +121,42 @@ class ApiContext:
     sessions: Sessions
 
 
-type ApiHandler[Req, Res] = typing.Callable[
+type CommandHandler[Req, Res] = typing.Callable[
     [ApiContext, Req],
     typing.Awaitable[Res],
 ]
 
 
 @dataclasses.dataclass(frozen=True)
-class ApiMethod[Req, Res]:
-    """One ``marimo.api`` method consumed by dispatch and schema generation."""
+class CommandSpec[Req, Res]:
+    """One owned command consumed by dispatch and schema generation."""
 
-    name: str
     request: TypeForm[Req]
     response: TypeForm[Res]
-    handler: ApiHandler[Req, Res]
+    handler: CommandHandler[Req, Res]
 
 
-class ApiBuilder:
-    """Build a method table from typed async handler declarations."""
+class CommandBuilder:
+    """Build a command table from typed async handler declarations."""
 
     def __init__(self) -> None:
-        self._methods: list[ApiMethod[typing.Any, typing.Any]] = []
+        self._commands: list[CommandSpec[typing.Any, typing.Any]] = []
         self._built = False
 
     def __call__[Req, Res](
         self,
-        name: str,
-    ) -> typing.Callable[[ApiHandler[Req, Res]], ApiHandler[Req, Res]]:
-        """Register an async handler under its wire method name."""
+        command_type: TypeForm[Req],
+    ) -> typing.Callable[[CommandHandler[Req, Res]], CommandHandler[Req, Res]]:
+        """Register an async handler for one tagged command variant."""
 
-        def register(handler: ApiHandler[Req, Res]) -> ApiHandler[Req, Res]:
+        def register(
+            handler: CommandHandler[Req, Res],
+        ) -> CommandHandler[Req, Res]:
             if self._built:
-                msg = "cannot register API methods after build()"
+                msg = "cannot register commands after build()"
                 raise RuntimeError(msg)
             if not inspect.iscoroutinefunction(handler):
-                msg = f"API handler {name!r} must be async"
+                msg = f"command handler {command_type!r} must be async"
                 raise TypeError(msg)
 
             parameters = list(inspect.signature(handler).parameters.values())
@@ -178,50 +167,56 @@ class ApiBuilder:
             if len(parameters) != _API_HANDLER_PARAMETER_COUNT or any(
                 parameter.kind not in positional for parameter in parameters
             ):
-                msg = f"API handler {name!r} must accept (ApiContext, request)"
+                msg = f"command handler {command_type!r} must accept (ApiContext, request)"
                 raise TypeError(msg)
 
             hints = typing.get_type_hints(handler)
             context_parameter, request_parameter = parameters
             if hints.get(context_parameter.name) is not ApiContext:
-                msg = f"API handler {name!r} first parameter must be ApiContext"
+                msg = f"command handler {command_type!r} first parameter must be ApiContext"
                 raise TypeError(msg)
             if request_parameter.name not in hints:
-                msg = f"API handler {name!r} request parameter must be annotated"
+                msg = f"command handler {command_type!r} request must be annotated"
                 raise TypeError(msg)
             if "return" not in hints:
-                msg = f"API handler {name!r} return type must be annotated"
+                msg = f"command handler {command_type!r} return must be annotated"
                 raise TypeError(msg)
 
             request = cast("TypeForm[Req]", hints[request_parameter.name])
+            if request is not command_type:
+                msg = (
+                    f"command handler annotation {request!r} does not match "
+                    f"registered type {command_type!r}"
+                )
+                raise TypeError(msg)
             response_hint = hints["return"]
             response = cast(
                 "TypeForm[Res]",
                 type(None) if response_hint is None else response_hint,
             )
-            self._methods.append(ApiMethod(name, request, response, handler))
+            self._commands.append(CommandSpec(request, response, handler))
             return handler
 
         return register
 
-    def build(self) -> tuple[ApiMethod[typing.Any, typing.Any], ...]:
-        """Validate and return the immutable method table."""
+    def build(self) -> tuple[CommandSpec[typing.Any, typing.Any], ...]:
+        """Validate and return the immutable command table."""
         if self._built:
-            msg = "API method table has already been built"
+            msg = "command table has already been built"
             raise RuntimeError(msg)
 
-        names: set[str] = set()
-        for method in self._methods:
-            if method.name in names:
-                msg = f"duplicate API method: {method.name!r}"
+        command_types: set[object] = set()
+        for command in self._commands:
+            if command.request in command_types:
+                msg = f"duplicate command type: {command.request!r}"
                 raise ValueError(msg)
-            names.add(method.name)
+            command_types.add(command.request)
 
         self._built = True
-        return tuple(self._methods)
+        return tuple(self._commands)
 
 
-marimo_api = ApiBuilder()
+command = CommandBuilder()
 
 
 class SessionNotFoundError(ValueError):
@@ -266,11 +261,8 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     return cast("DisplayConfig", config.get("display", {}))
 
 
-@marimo_api("execute-cells")
-async def run(
-    ctx: ApiContext,
-    args: SessionCommand[ExecuteCellsRequest],
-) -> None:
+@command(protocol.Execute)
+async def run(ctx: ApiContext, args: protocol.Execute) -> None:
     logger.info(f"run for {args.notebook_uri}")
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
@@ -285,160 +277,218 @@ async def run(
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
         http_request=None,
     )
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    request = ExecuteCellsRequest(
+        cell_ids=[CellId_t(str(cell.cell_id)) for cell in args.cells],
+        codes=[cell.code for cell in args.cells],
+    )
+    session.put_control_request(request.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
 
 
-@marimo_api("update-ui-element")
+@command(protocol.UpdateUiElement)
 async def set_ui_element_value(
     ctx: ApiContext,
-    args: KernelCommand[UpdateUIElementRequest],
+    args: protocol.UpdateUiElement,
 ) -> None:
     logger.info(f"set_ui_element_value for {args.notebook_uri}")
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    http_request = (
+        msgspec.convert(args.request, type=HTTPRequest)
+        if args.request is not None
+        else None
+    )
+    kwargs: dict[str, object] = {
+        "object_ids": [UIElementId(value) for value in args.object_ids],
+        "values": args.values,
+        "request": http_request,
+    }
+    if args.token is not None:
+        kwargs["token"] = args.token
+    request = UpdateUIElementRequest(**kwargs)  # ty: ignore[invalid-argument-type]
+    session.put_control_request(request.as_command(), from_consumer_id=None)
 
 
-@marimo_api("set-model-value")
+@command(protocol.SetModelValue)
 async def set_model_value(
     ctx: ApiContext,
-    args: KernelCommand[ModelRequest],
+    args: protocol.SetModelValue,
 ) -> None:
     logger.info(f"set_model_value for {args.notebook_uri}")
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    match args.message:
+        case protocol.ModelUpdateMessage():
+            message = ModelUpdateMessage(
+                state=cast("typing.Any", args.message.state),
+                buffer_paths=args.message.buffer_paths,
+            )
+        case protocol.ModelCustomMessage():
+            message = ModelCustomMessage(
+                content=cast("typing.Any", args.message.content)
+            )
+    kwargs = {
+        "model_id": WidgetModelId(args.model_id),
+        "message": message,
+        "buffers": args.buffers,
+    }
+    if args.token is not None:
+        kwargs["token"] = args.token
+    request = ModelRequest(**kwargs)  # ty: ignore[invalid-argument-type]
+    session.put_control_request(request.as_command(), from_consumer_id=None)
 
 
-@marimo_api("invoke-function")
+@command(protocol.InvokeFunction)
 async def function_call_request(
     ctx: ApiContext,
-    args: KernelCommand[InvokeFunctionCommand],
+    args: protocol.InvokeFunction,
 ) -> None:
     logger.info(f"function_call_request for {args.notebook_uri}")
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner, from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    session.put_control_request(
+        InvokeFunctionCommand(
+            function_call_id=RequestId(args.function_call_id),
+            namespace=args.namespace,
+            function_name=args.function_name,
+            args=args.args,
+        ),
+        from_consumer_id=None,
+    )
 
 
-@marimo_api("interrupt")
-async def interrupt(
-    ctx: ApiContext,
-    args: NotebookCommand[InterruptRequest],
-) -> None:
+@command(protocol.Interrupt)
+async def interrupt(ctx: ApiContext, args: protocol.Interrupt) -> None:
     logger.info(f"interrupt for {args.notebook_uri}")
-    if args.inner.run_id is not None:
-        ctx.sessions.cancel_scratchpad(args.notebook_uri, args.inner.run_id)
+    if args.run_id is not None:
+        ctx.sessions.cancel_scratchpad(args.notebook_uri, args.run_id)
         logger.info(
-            f"Scratchpad cancellation recorded for {args.notebook_uri} "
-            f"({args.inner.run_id})"
+            f"Scratchpad cancellation recorded for {args.notebook_uri} ({args.run_id})"
         )
         return
 
-    session_id = args.inner.session_id
+    session_id = args.kernel_session_id
     if session_id is None:
         raise KernelSessionRequiredError(args.notebook_uri)
-    session = _require_kernel_session(ctx, args.notebook_uri, session_id)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(session_id))
+    )
     session.try_interrupt()
     logger.info(f"Interrupt request sent for {args.notebook_uri}")
 
 
-@marimo_api("delete-cell")
+@command(protocol.DeleteCell)
 async def delete_cell(
     ctx: ApiContext,
-    args: KernelCommand[DeleteCellRequest],
+    args: protocol.DeleteCell,
 ) -> None:
     logger.info(f"delete_cell for {args.notebook_uri}")
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    request = DeleteCellRequest(cell_id=CellId_t(str(args.cell_id)))
+    session.put_control_request(request.as_command(), from_consumer_id=None)
     logger.info(f"Delete cell request sent for {args.notebook_uri}")
 
 
-@marimo_api("list-sql-schemas")
+@command(protocol.ListSqlSchemas)
 async def list_sql_schemas(
     ctx: ApiContext,
-    args: KernelCommand[ListSQLSchemasRequest],
+    args: protocol.ListSqlSchemas,
 ) -> None:
     """Request the immediate child schemas at a database path."""
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    request = ListSQLSchemasRequest(
+        request_id=RequestId(args.request_id),
+        engine=args.engine,
+        database=args.database,
+        schema_path=args.schema_path,
+    )
+    session.put_control_request(request.as_command(), from_consumer_id=None)
 
 
-@marimo_api("list-sql-tables")
+@command(protocol.ListSqlTables)
 async def list_sql_tables(
     ctx: ApiContext,
-    args: KernelCommand[ListSQLTablesRequest],
+    args: protocol.ListSqlTables,
 ) -> None:
     """Request the tables belonging to a schema path."""
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_control_request(args.inner.as_command(), from_consumer_id=None)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    request = ListSQLTablesRequest(
+        request_id=RequestId(args.request_id),
+        engine=args.engine,
+        database=args.database,
+        schema=args.schema,
+        schema_path=args.schema_path,
+    )
+    session.put_control_request(request.as_command(), from_consumer_id=None)
 
 
-@marimo_api("send-stdin")
-async def send_stdin(
-    ctx: ApiContext,
-    args: KernelCommand[StdinRequest],
-) -> None:
+@command(protocol.SendStdin)
+async def send_stdin(ctx: ApiContext, args: protocol.SendStdin) -> None:
     logger.info(f"send_stdin for {args.notebook_uri}")
-    session = _require_kernel_session(ctx, args.notebook_uri, args.session_id)
-    session.put_input(args.inner.text)
+    session = _require_kernel_session(
+        ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    session.put_input(args.text)
 
 
-@marimo_api("close-session")
-async def close_session(
-    ctx: ApiContext,
-    args: NotebookCommand[CloseSessionRequest],
-) -> None:
+@command(protocol.CloseSession)
+async def close_session(ctx: ApiContext, args: protocol.CloseSession) -> None:
     logger.info(f"close_session for {args.notebook_uri}")
     ctx.sessions.close(args.notebook_uri)
 
 
-@marimo_api("restart-session")
+@command(protocol.RestartSession)
 async def restart_session(
     ctx: ApiContext,
-    args: NotebookCommand[RestartSessionRequest],
+    args: protocol.RestartSession,
 ) -> None:
     logger.info(f"restart_session for {args.notebook_uri}")
     restarted = await ctx.sessions.restart(
         args.notebook_uri,
-        executable=args.inner.executable,
-        working_directory=args.inner.working_directory,
-        create_if_missing=args.inner.create_if_missing,
+        executable=args.executable,
+        working_directory=args.working_directory,
+        create_if_missing=args.create_if_missing,
     )
     if restarted is None:
         raise SessionNotFoundError(args.notebook_uri)
 
 
-@marimo_api("move-session")
-async def move_session(
-    ctx: ApiContext,
-    args: NotebookCommand[MoveSessionRequest],
-) -> None:
-    logger.info(
-        f"move_session from {args.notebook_uri} to {args.inner.new_notebook_uri}"
-    )
-    ctx.sessions.move(args.notebook_uri, args.inner.new_notebook_uri)
+@command(protocol.MoveSession)
+async def move_session(ctx: ApiContext, args: protocol.MoveSession) -> None:
+    logger.info(f"move_session from {args.notebook_uri} to {args.new_notebook_uri}")
+    ctx.sessions.move(args.notebook_uri, args.new_notebook_uri)
 
 
-@marimo_api("list-sessions")
+@command(protocol.ListSessions)
 async def list_sessions(
     ctx: ApiContext,
-    _args: ListSessionsRequest,
+    _args: protocol.ListSessions,
 ) -> ListSessionsResponse:
     return ListSessionsResponse(sessions=ctx.sessions.describe())
 
 
-@marimo_api("shutdown-all-sessions")
+@command(protocol.ShutdownAllSessions)
 async def shutdown_all_sessions(
     ctx: ApiContext,
-    _args: ShutdownAllSessionsRequest,
+    _args: protocol.ShutdownAllSessions,
 ) -> None:
     """Close every live kernel session with one collection mutation."""
     ctx.sessions.close_all()
 
 
-@marimo_api("execute-scratchpad")
+@command(protocol.ExecuteScratchpad)
 async def execute_scratch(
     ctx: ApiContext,
-    args: SessionCommand[ExecuteScratchRequest],
+    args: protocol.ExecuteScratchpad,
 ) -> None:
     """Execute code in the scratchpad (isolated from dependency graph).
 
@@ -450,7 +500,7 @@ async def execute_scratch(
     Creates the session on demand when none exists, like :func:`run`.
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")
-    run_id = args.inner.run_id
+    run_id = args.run_id
     if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
         args.notebook_uri, run_id
     ):
@@ -495,8 +545,8 @@ async def execute_scratch(
 
         session.put_control_request(
             ExecuteScratchpadCommand(
-                code=args.inner.code,
-                run_id=args.inner.run_id,
+                code=args.code,
+                run_id=args.run_id,
                 notebook_cells=notebook_cells,
                 cell_outputs=cell_outputs,
             ),
@@ -508,10 +558,10 @@ async def execute_scratch(
     logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
 
 
-@marimo_api("get-package-list")
+@command(protocol.ListPackages)
 async def get_package_list(
     _ctx: ApiContext,
-    args: PackageCommand[ListPackagesRequest],
+    args: protocol.ListPackages,
 ) -> ListPackagesResponse:
     logger.info(f"get_package_list for {args.notebook_uri}")
     package_manager = _package_manager_for(args.source)
@@ -519,7 +569,7 @@ async def get_package_list(
         logger.warning(f"Package manager not installed for {args.notebook_uri}")
         return ListPackagesResponse(packages=[])
 
-    if isinstance(args.source, ScriptSource):
+    if isinstance(args.source, protocol.ScriptSource):
         # No bound venv to `uv pip list` against; flatten `uv tree --script`
         # instead. Falling through to the venv path here would list packages
         # from whatever Python uv defaulted to (the LSP's own env), not the
@@ -533,15 +583,15 @@ async def get_package_list(
     return ListPackagesResponse(packages=package_manager.list_packages())
 
 
-@marimo_api("get-dependency-tree")
+@command(protocol.GetDependencyTree)
 async def get_dependency_tree(
     _ctx: ApiContext,
-    args: PackageCommand[DependencyTreeRequest],
+    args: protocol.GetDependencyTree,
 ) -> DependencyTreeResponse:
     logger.info(f"get_dependency_tree for {args.notebook_uri}")
     package_manager = _package_manager_for(args.source)
 
-    if isinstance(args.source, ScriptSource):
+    if isinstance(args.source, protocol.ScriptSource):
         # PEP 723 sandbox script: derive the filename from the notebook URI
         # and let `uv tree --script <file>` resolve the env.
         filename = _script_filename(args.notebook_uri)
@@ -575,7 +625,7 @@ def _flatten_tree(tree: object) -> list[PackageDescription]:
     """Walk a `uv tree` result and return a deduplicated list of packages.
 
     Mirrors marimo's own `UvPackageManager.list_packages` flattening so that
-    the script-mode `get-package-list` response shape matches the venv-mode
+    the script-mode `list-packages` response shape matches the venv-mode
     `uv pip list` response.
     """
     if tree is None:
@@ -595,7 +645,7 @@ def _flatten_tree(tree: object) -> list[PackageDescription]:
     return sorted(packages, key=lambda p: p.name)
 
 
-def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager:
+def _package_manager_for(source: protocol.PackageSource) -> LspPackageManager:
     """Build a package manager for the given environment source.
 
     We pin the underlying tool to `uv` for both variants today: `uv pip list`
@@ -603,16 +653,19 @@ def _package_manager_for(source: VenvSource | ScriptSource) -> LspPackageManager
     introspect a PEP 723 script's deps. A future server-side change can pick
     the user's preferred manager for venv mode without a wire-protocol change.
     """
-    venv_location = source.executable if isinstance(source, VenvSource) else None
+    venv_location = (
+        source.executable if isinstance(source, protocol.VenvSource) else None
+    )
     return LspPackageManager(
         delegate=create_package_manager("uv"),
         venv_location=venv_location,
     )
 
 
-@marimo_api("serialize")
-async def serialize(_ctx: ApiContext, args: NotebookDocument) -> SerializeResponse:
-    ir = MarimoConvert.from_notebook_v1(args.notebook).to_ir()
+@command(protocol.Serialize)
+async def serialize(_ctx: ApiContext, args: protocol.Serialize) -> SerializeResponse:
+    notebook = msgspec.convert(args.notebook, type=NotebookV1)
+    ir = MarimoConvert.from_notebook_v1(notebook).to_ir()
     known_options = {
         name: value
         for name, value in args.app_config.items()
@@ -692,10 +745,10 @@ def _restore_unknown_app_options(source: str, options: dict[str, object]) -> str
     return f"{source[: end - 1]}{insertion}{source[end - 1 :]}"
 
 
-@marimo_api("deserialize")
+@command(protocol.Deserialize)
 async def deserialize(
     _ctx: ApiContext,
-    args: DeserializeRequest,
+    args: protocol.Deserialize,
 ) -> DeserializeResult:
     try:
         converter = MarimoConvert.from_py(args.source)
@@ -768,10 +821,10 @@ def _classify_convertible(
     return DeserializeConvertible()
 
 
-@marimo_api("get-configuration")
+@command(protocol.GetConfiguration)
 async def get_configuration(
     ctx: ApiContext,
-    args: NotebookCommand[GetConfigurationRequest],
+    args: protocol.GetConfiguration,
 ) -> GetConfigurationResponse:
     """Get the current marimo configuration."""
     session = ctx.sessions.get(args.notebook_uri)
@@ -782,13 +835,13 @@ async def get_configuration(
     return GetConfigurationResponse(config=session.get_config())
 
 
-@marimo_api("update-configuration")
+@command(protocol.UpdateConfiguration)
 async def update_configuration(
     ctx: ApiContext,
-    args: NotebookCommand[UpdateConfigurationRequest],
+    args: protocol.UpdateConfiguration,
 ) -> MarimoConfig:
     """Update the marimo user configuration."""
-    config = _as_partial_marimo_config(args.inner.config)
+    config = _as_partial_marimo_config(args.config)
     session = ctx.sessions.get(args.notebook_uri)
     if not session:
         manager = get_default_config_manager(current_path=to_fs_path(args.notebook_uri))
@@ -798,10 +851,10 @@ async def update_configuration(
     return session.save_config(config)
 
 
-@marimo_api("set-display-theme")
+@command(protocol.SetDisplayTheme)
 async def set_display_theme(
     ctx: ApiContext,
-    args: SetDisplayThemeRequest,
+    args: protocol.SetDisplayTheme,
 ) -> SetDisplayThemeResponse:
     """Set the display theme in all kernels without persisting to disk."""
     for session in ctx.sessions:
@@ -814,15 +867,15 @@ async def set_display_theme(
     return SetDisplayThemeResponse(success=True)
 
 
-@marimo_api("read-notebook-outputs")
+@command(protocol.ReadNotebookOutputs)
 async def read_notebook_outputs(
     ctx: ApiContext,
-    args: NotebookCommand[ReadNotebookOutputsRequest],
+    args: protocol.ReadNotebookOutputs,
 ) -> ReadNotebookOutputsResponse:
     """Replay the live SessionView, falling back to a compatible sidecar."""
     replay = await ctx.sessions.read_notebook_outputs(
         args.notebook_uri,
-        session_cache_path=args.inner.session_cache_path,
+        session_cache_path=args.session_cache_path,
     )
     # Match marimo's websocket JSON normalization before pygls serializes the
     # response (for example, non-finite output numbers become JSON null).
@@ -832,10 +885,10 @@ async def read_notebook_outputs(
     )
 
 
-@marimo_api("export-as-html")
+@command(protocol.ExportHtml)
 async def export_as_html(
     ctx: ApiContext,
-    args: NotebookCommand[ExportAsHTMLRequest],
+    args: protocol.ExportHtml,
 ) -> str:
     """Export the notebook as HTML with current outputs."""
     logger.info(f"export_as_html for {args.notebook_uri}")
@@ -857,7 +910,14 @@ async def export_as_html(
                 include_model_notifications=True,
             ),
             display_config=_get_display_config(config),
-            options=to_html_export_options(args.inner),
+            options=to_html_export_options(
+                ExportAsHTMLRequest(
+                    download=args.download,
+                    files=args.files,
+                    include_code=args.include_code,
+                    asset_url=args.asset_url,
+                )
+            ),
             sharing_config=cast("SharingConfig | None", config.get("sharing")),
         )
     )
@@ -865,10 +925,10 @@ async def export_as_html(
     return html
 
 
-@marimo_api("export-as-ipynb")
+@command(protocol.ExportIpynb)
 async def export_as_ipynb(
     ctx: ApiContext,
-    args: NotebookCommand[ExportAsIpynbRequest],
+    args: protocol.ExportIpynb,
 ) -> str:
     """Export the notebook as ipynb with current outputs."""
     logger.info(f"export_as_ipynb for {args.notebook_uri}")
@@ -895,10 +955,10 @@ async def export_as_ipynb(
     return json.dumps(ipynb)
 
 
-@marimo_api("export-as-markdown")
+@command(protocol.ExportMarkdown)
 async def export_as_markdown(
     ctx: ApiContext,
-    args: NotebookCommand[ExportAsMarkdownRequest],
+    args: protocol.ExportMarkdown,
 ) -> str:
     """Export the notebook as Markdown."""
     logger.info(f"export_as_markdown for {args.notebook_uri}")
@@ -917,29 +977,26 @@ async def export_as_markdown(
     return result.text
 
 
-API_METHODS = marimo_api.build()
+COMMANDS = command.build()
 
-_API_BY_NAME = {method.name: method for method in API_METHODS}
+_COMMAND_BY_TYPE = {spec.request: spec for spec in COMMANDS}
 
 
-async def handle_api_command(
+async def handle_command(
     ls: LanguageServer,
     sessions: Sessions,
-    method: str,
-    params: dict[str, object],
+    request: protocol.Command,
 ) -> object:
-    """Unified API endpoint for all marimo internal methods.
+    """Dispatch a validated owned command and validate its response.
 
-    Converts ``params`` into the method's request type, runs the handler, and
-    validates the result against the declared response annotation so the wire
-    always matches the generated client schemas.
+    The command's concrete type selects its handler; there is no second string
+    method or untyped params envelope to keep in sync with the tagged union.
     """
-    spec = _API_BY_NAME.get(method)
+    spec = _COMMAND_BY_TYPE.get(type(request))
     if spec is None:
-        logger.warning(f"Unknown API method: {method}")
-        raise ValueError(method)
+        msg = f"Unknown command type: {type(request)!r}"
+        raise TypeError(msg)
 
-    request = msgspec.convert(params, type=spec.request)
     result = await spec.handler(ApiContext(ls=ls, sessions=sessions), request)
 
     validated = msgspec.convert(result, type=spec.response)

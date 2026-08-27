@@ -10,12 +10,12 @@ import msgspec
 import pytest
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
-from marimo._runtime.commands import InvokeFunctionCommand, ModelUpdateMessage
-from marimo._types.ids import CellId_t, RequestId, SessionId, WidgetModelId
+from marimo._types.ids import RequestId, SessionId
 
+from marimo_lsp import protocol
 from marimo_lsp.api import (
-    ApiBuilder,
     ApiContext,
+    CommandBuilder,
     KernelSessionMismatchError,
     KernelSessionRequiredError,
     _restore_unknown_app_options,
@@ -25,7 +25,7 @@ from marimo_lsp.api import (
     export_as_markdown,
     function_call_request,
     get_configuration,
-    handle_api_command,
+    handle_command,
     interrupt,
     list_sql_schemas,
     list_sql_tables,
@@ -35,25 +35,11 @@ from marimo_lsp.api import (
     update_configuration,
 )
 from marimo_lsp.models import (
-    DeleteCellRequest,
     DeserializeConvertible,
     DeserializeInvalidSyntax,
-    DeserializeRequest,
     DeserializeSuccess,
-    ExecuteScratchRequest,
-    ExportAsMarkdownRequest,
-    GetConfigurationRequest,
-    InterruptRequest,
-    KernelCommand,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
-    ModelRequest,
-    NotebookCommand,
-    SessionCommand,
-    SetDisplayThemeRequest,
-    StdinRequest,
-    UpdateConfigurationRequest,
-    UpdateUIElementRequest,
 )
 
 if TYPE_CHECKING:
@@ -70,11 +56,12 @@ async def test_execute_scratch_skips_a_run_cancelled_before_startup() -> None:
 
     await execute_scratch(
         _context(sessions),
-        SessionCommand(
-            notebook_uri=NOTEBOOK_URI,
+        protocol.ExecuteScratchpad(
+            notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
             executable="/usr/bin/python",
             working_directory="/workspace",
-            inner=ExecuteScratchRequest(code="print('late')", run_id="run-1"),
+            code="print('late')",
+            run_id="run-1",
         ),
     )
 
@@ -92,11 +79,12 @@ async def test_execute_scratch_skips_a_run_cancelled_during_startup() -> None:
     with patch("marimo_lsp.api.find_notebook_document", return_value=MagicMock()):
         await execute_scratch(
             _context(sessions),
-            SessionCommand(
-                notebook_uri=NOTEBOOK_URI,
+            protocol.ExecuteScratchpad(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
                 executable="/usr/bin/python",
                 working_directory="/workspace",
-                inner=ExecuteScratchRequest(code="print('late')", run_id="run-1"),
+                code="print('late')",
+                run_id="run-1",
             ),
         )
 
@@ -120,11 +108,12 @@ async def test_execute_scratch_claims_idle_session_before_dispatch() -> None:
     ):
         await execute_scratch(
             _context(sessions),
-            SessionCommand(
-                notebook_uri=NOTEBOOK_URI,
+            protocol.ExecuteScratchpad(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
                 executable="/usr/bin/python",
                 working_directory="/workspace",
-                inner=ExecuteScratchRequest(code="print('later')", run_id="run-1"),
+                code="print('later')",
+                run_id="run-1",
             ),
         )
 
@@ -139,9 +128,9 @@ async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> Non
 
     await interrupt(
         _context(sessions),
-        NotebookCommand(
-            notebook_uri=NOTEBOOK_URI,
-            inner=InterruptRequest(run_id="run-1"),
+        protocol.Interrupt(
+            notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+            run_id="run-1",
         ),
     )
 
@@ -158,10 +147,10 @@ async def test_send_stdin_targets_one_exact_kernel_session() -> None:
 
     await send_stdin(
         _context(sessions),
-        KernelCommand(
-            notebook_uri=NOTEBOOK_URI,
-            session_id=session_id,
-            inner=StdinRequest(text="answer"),
+        protocol.SendStdin(
+            notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+            kernel_session_id=protocol.KernelSessionId(str(session_id)),
+            text="answer",
         ),
     )
 
@@ -177,10 +166,12 @@ async def test_send_stdin_rejects_a_replaced_kernel_session() -> None:
     with pytest.raises(KernelSessionMismatchError):
         await send_stdin(
             _context(sessions),
-            KernelCommand(
-                notebook_uri=NOTEBOOK_URI,
-                session_id=SessionId("00000000-0000-4000-8000-000000000001"),
-                inner=StdinRequest(text="stale"),
+            protocol.SendStdin(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(
+                    "00000000-0000-4000-8000-000000000001"
+                ),
+                text="stale",
             ),
         )
 
@@ -193,37 +184,62 @@ LIVE_SESSION_ID = SessionId("00000000-0000-4000-8000-000000000002")
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("handler", "inner"),
+    ("handler", "command"),
     [
-        (set_ui_element_value, UpdateUIElementRequest(object_ids=[], values=[])),
+        (
+            set_ui_element_value,
+            protocol.UpdateUiElement(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                object_ids=[],
+                values=[],
+            ),
+        ),
         (
             set_model_value,
-            ModelRequest(
-                model_id=WidgetModelId("model-1"),
-                message=ModelUpdateMessage(state={}, buffer_paths=[]),
+            protocol.SetModelValue(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                model_id="model-1",
+                message=protocol.ModelUpdateMessage(state={}, buffer_paths=[]),
                 buffers=[],
             ),
         ),
         (
             function_call_request,
-            InvokeFunctionCommand(
-                function_call_id=RequestId("request-1"),
+            protocol.InvokeFunction(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                function_call_id="request-1",
                 namespace="ns",
                 function_name="fn",
                 args={},
             ),
         ),
-        (delete_cell, DeleteCellRequest(cell_id=CellId_t("cell-1"))),
+        (
+            delete_cell,
+            protocol.DeleteCell(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                cell_id=protocol.CellId("cell-1"),
+            ),
+        ),
         (
             list_sql_schemas,
-            ListSQLSchemasRequest(
-                request_id=RequestId("request-1"), engine="duckdb", database="db"
+            protocol.ListSqlSchemas(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                request_id="request-1",
+                engine="duckdb",
+                database="db",
             ),
         ),
         (
             list_sql_tables,
-            ListSQLTablesRequest(
-                request_id=RequestId("request-1"),
+            protocol.ListSqlTables(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                request_id="request-1",
                 engine="duckdb",
                 database="db",
                 schema="main",
@@ -232,8 +248,8 @@ LIVE_SESSION_ID = SessionId("00000000-0000-4000-8000-000000000002")
     ],
 )
 async def test_kernel_commands_reject_a_replaced_kernel_session(
-    handler: Callable[[ApiContext, KernelCommand[msgspec.Struct]], Awaitable[None]],
-    inner: msgspec.Struct,
+    handler: Callable[..., Awaitable[None]],
+    command: protocol.Command,
 ) -> None:
     session = MagicMock(session_id=LIVE_SESSION_ID)
     sessions = MagicMock()
@@ -242,11 +258,7 @@ async def test_kernel_commands_reject_a_replaced_kernel_session(
     with pytest.raises(KernelSessionMismatchError):
         await handler(
             _context(sessions),
-            KernelCommand(
-                notebook_uri=NOTEBOOK_URI,
-                session_id=STALE_SESSION_ID,
-                inner=inner,
-            ),
+            command,
         )
 
     session.put_control_request.assert_not_called()
@@ -261,9 +273,9 @@ async def test_interrupt_rejects_a_replaced_kernel_session() -> None:
     with pytest.raises(KernelSessionMismatchError):
         await interrupt(
             _context(sessions),
-            NotebookCommand(
-                notebook_uri=NOTEBOOK_URI,
-                inner=InterruptRequest(session_id=STALE_SESSION_ID),
+            protocol.Interrupt(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
             ),
         )
 
@@ -277,7 +289,7 @@ async def test_interrupt_requires_a_kernel_session_id() -> None:
     with pytest.raises(KernelSessionRequiredError):
         await interrupt(
             _context(sessions),
-            NotebookCommand(notebook_uri=NOTEBOOK_URI, inner=InterruptRequest()),
+            protocol.Interrupt(notebook_uri=protocol.NotebookUri(NOTEBOOK_URI)),
         )
 
     sessions.get.assert_not_called()
@@ -295,13 +307,15 @@ if __name__ == "__main__":
     app.run()
 """
 
-    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+    result = await deserialize(
+        _context(MagicMock()), protocol.Deserialize(source=source)
+    )
 
     assert isinstance(result, DeserializeSuccess)
 
 
 @pytest.mark.asyncio
-async def test_legacy_and_unknown_app_config_round_trip_over_api_wire() -> None:
+async def test_legacy_and_unknown_app_config_round_trip_over_command_wire() -> None:
     source = """\
 import marimo
 
@@ -318,11 +332,10 @@ if __name__ == "__main__":
 
     deserialized = cast(
         "dict[str, object]",
-        await handle_api_command(
+        await handle_command(
             MagicMock(),
             MagicMock(),
-            "deserialize",
-            {"source": source},
+            protocol.Deserialize(source=source),
         ),
     )
     deserialized_notebook = cast("dict[str, object]", deserialized["notebook"])
@@ -334,11 +347,13 @@ if __name__ == "__main__":
 
     serialized = cast(
         "dict[str, object]",
-        await handle_api_command(
+        await handle_command(
             MagicMock(),
             MagicMock(),
-            "serialize",
-            deserialized_notebook,
+            msgspec.convert(
+                {"kind": "serialize", **deserialized_notebook},
+                type=protocol.Command,
+            ),
         ),
     )
     serialized_source = serialized["source"]
@@ -384,10 +399,7 @@ if __name__ == "__main__":
 
     markdown = await export_as_markdown(
         _context(sessions),
-        NotebookCommand(
-            notebook_uri=NOTEBOOK_URI,
-            inner=ExportAsMarkdownRequest(),
-        ),
+        protocol.ExportMarkdown(notebook_uri=protocol.NotebookUri(NOTEBOOK_URI)),
     )
 
     assert "title: Report" in markdown
@@ -407,7 +419,9 @@ def _():
     return
 """
 
-    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+    result = await deserialize(
+        _context(MagicMock()), protocol.Deserialize(source=source)
+    )
 
     assert isinstance(result, DeserializeSuccess)
     assert [cell["code"] for cell in result.notebook.notebook["cells"]] == ["value = ("]
@@ -427,7 +441,7 @@ def _():
 """
     result = await deserialize(
         _context(MagicMock()),
-        DeserializeRequest(source=source),
+        protocol.Deserialize(source=source),
     )
 
     assert isinstance(result, DeserializeSuccess)
@@ -439,7 +453,7 @@ def _():
 @pytest.mark.asyncio
 async def test_deserialize_classifies_plain_python() -> None:
     result = await deserialize(
-        _context(MagicMock()), DeserializeRequest(source="print('hello')\n")
+        _context(MagicMock()), protocol.Deserialize(source="print('hello')\n")
     )
 
     assert isinstance(result, DeserializeConvertible)
@@ -449,7 +463,7 @@ async def test_deserialize_classifies_plain_python() -> None:
 async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
     result = await deserialize(
         _context(MagicMock()),
-        DeserializeRequest(source="# %%\nprint('hello')\n"),
+        protocol.Deserialize(source="# %%\nprint('hello')\n"),
     )
 
     assert isinstance(result, DeserializeConvertible)
@@ -466,7 +480,9 @@ async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
     ],
 )
 async def test_deserialize_accepts_convertible_notebook_syntax(source: str) -> None:
-    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+    result = await deserialize(
+        _context(MagicMock()), protocol.Deserialize(source=source)
+    )
 
     assert isinstance(result, DeserializeConvertible)
 
@@ -474,7 +490,7 @@ async def test_deserialize_accepts_convertible_notebook_syntax(source: str) -> N
 @pytest.mark.asyncio
 async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
     result = await deserialize(
-        _context(MagicMock()), DeserializeRequest(source="# %%\nprint(\n")
+        _context(MagicMock()), protocol.Deserialize(source="# %%\nprint(\n")
     )
 
     assert isinstance(result, DeserializeInvalidSyntax)
@@ -493,7 +509,9 @@ async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
 async def test_deserialize_reports_syntax_errors_in_non_marimo_python(
     source: str,
 ) -> None:
-    result = await deserialize(_context(MagicMock()), DeserializeRequest(source=source))
+    result = await deserialize(
+        _context(MagicMock()), protocol.Deserialize(source=source)
+    )
 
     assert isinstance(result, DeserializeInvalidSyntax)
     assert result.line is not None
@@ -502,7 +520,7 @@ async def test_deserialize_reports_syntax_errors_in_non_marimo_python(
 @pytest.mark.asyncio
 async def test_percent_marker_inside_string_is_just_convertible_python() -> None:
     result = await deserialize(
-        _context(MagicMock()), DeserializeRequest(source='x = "# %%"\n')
+        _context(MagicMock()), protocol.Deserialize(source='x = "# %%"\n')
     )
 
     assert isinstance(result, DeserializeConvertible)
@@ -518,7 +536,7 @@ async def test_deserialize_propagates_unexpected_converter_error() -> None:
         pytest.raises(RuntimeError, match="converter broke"),
     ):
         await deserialize(
-            _context(MagicMock()), DeserializeRequest(source="print('hello')")
+            _context(MagicMock()), protocol.Deserialize(source="print('hello')")
         )
 
 
@@ -526,36 +544,35 @@ def _context(sessions: MagicMock) -> ApiContext:
     return ApiContext(ls=MagicMock(), sessions=sessions)
 
 
-def test_api_builder_infers_contract_from_handler() -> None:
-    builder = ApiBuilder()
+def test_command_builder_infers_contract_from_handler() -> None:
+    builder = CommandBuilder()
 
-    @builder("example")
+    @builder(protocol.UpdateConfiguration)
     async def handler(
         _ctx: ApiContext,
-        request: UpdateConfigurationRequest,
+        request: protocol.UpdateConfiguration,
     ) -> str:
         return str(request.config)
 
-    (method,) = builder.build()
+    (command,) = builder.build()
 
-    assert method.name == "example"
-    assert method.request is UpdateConfigurationRequest
-    assert method.response is str
-    assert method.handler is handler
+    assert command.request is protocol.UpdateConfiguration
+    assert command.response is str
+    assert command.handler is handler
 
 
-def test_api_builder_rejects_duplicate_methods() -> None:
-    builder = ApiBuilder()
+def test_command_builder_rejects_duplicate_commands() -> None:
+    builder = CommandBuilder()
 
-    @builder("duplicate")
-    async def first(_ctx: ApiContext, _request: UpdateConfigurationRequest) -> None:
+    @builder(protocol.UpdateConfiguration)
+    async def first(_ctx: ApiContext, _request: protocol.UpdateConfiguration) -> None:
         pass
 
-    @builder("duplicate")
-    async def second(_ctx: ApiContext, _request: UpdateConfigurationRequest) -> None:
+    @builder(protocol.UpdateConfiguration)
+    async def second(_ctx: ApiContext, _request: protocol.UpdateConfiguration) -> None:
         pass
 
-    with pytest.raises(ValueError, match="duplicate API method"):
+    with pytest.raises(ValueError, match="duplicate command type"):
         builder.build()
 
 
@@ -568,9 +585,9 @@ async def test_update_configuration_returns_saved_config() -> None:
 
     result = await update_configuration(
         _context(sessions),
-        NotebookCommand(
-            notebook_uri="file:///notebook.py",
-            inner=UpdateConfigurationRequest(config={}),
+        protocol.UpdateConfiguration(
+            notebook_uri=protocol.NotebookUri("file:///notebook.py"),
+            config={},
         ),
     )
 
@@ -594,9 +611,9 @@ async def test_update_configuration_returns_effective_config_without_session(
     ) as get_manager:
         result = await update_configuration(
             _context(sessions),
-            NotebookCommand(
-                notebook_uri=notebook_path.as_uri(),
-                inner=UpdateConfigurationRequest(config=partial_config),
+            protocol.UpdateConfiguration(
+                notebook_uri=protocol.NotebookUri(notebook_path.as_uri()),
+                config=partial_config,
             ),
         )
 
@@ -620,9 +637,8 @@ async def test_get_configuration_loads_without_session(tmp_path: Path) -> None:
     ) as get_manager:
         result = await get_configuration(
             _context(sessions),
-            NotebookCommand(
-                notebook_uri=notebook_path.as_uri(),
-                inner=GetConfigurationRequest(),
+            protocol.GetConfiguration(
+                notebook_uri=protocol.NotebookUri(notebook_path.as_uri()),
             ),
         )
 
@@ -642,16 +658,19 @@ async def test_update_configuration_propagates_save_errors() -> None:
     with pytest.raises(OSError, match="config is read-only"):
         await update_configuration(
             _context(sessions),
-            NotebookCommand(
-                notebook_uri="file:///notebook.py",
-                inner=UpdateConfigurationRequest(config={}),
+            protocol.UpdateConfiguration(
+                notebook_uri=protocol.NotebookUri("file:///notebook.py"),
+                config={},
             ),
         )
 
 
 def test_display_theme_rejects_unresolved_theme() -> None:
     with pytest.raises(msgspec.ValidationError):
-        msgspec.convert({"theme": "system"}, type=SetDisplayThemeRequest)
+        msgspec.convert(
+            {"kind": "set-display-theme", "theme": "system"},
+            type=protocol.Command,
+        )
 
 
 @pytest.mark.asyncio
@@ -669,10 +688,13 @@ async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
 
     await list_sql_schemas(
         _context(sessions),
-        KernelCommand(
-            notebook_uri="file:///notebook.py",
-            session_id=session_id,
-            inner=request,
+        protocol.ListSqlSchemas(
+            notebook_uri=protocol.NotebookUri("file:///notebook.py"),
+            kernel_session_id=protocol.KernelSessionId(str(session_id)),
+            request_id="schemas",
+            engine="warehouse",
+            database="analytics",
+            schema_path=["catalog"],
         ),
     )
 
@@ -697,10 +719,14 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
 
     await list_sql_tables(
         _context(sessions),
-        KernelCommand(
-            notebook_uri="file:///notebook.py",
-            session_id=session_id,
-            inner=request,
+        protocol.ListSqlTables(
+            notebook_uri=protocol.NotebookUri("file:///notebook.py"),
+            kernel_session_id=protocol.KernelSessionId(str(session_id)),
+            request_id="tables",
+            engine="warehouse",
+            database="analytics",
+            schema="events",
+            schema_path=["catalog", "events"],
         ),
     )
 
@@ -710,20 +736,28 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
 
 
 @pytest.mark.parametrize(
-    ("handler", "sql_request"),
+    ("handler", "command"),
     [
         (
             list_sql_schemas,
-            ListSQLSchemasRequest(
-                request_id=RequestId("schemas"),
+            protocol.ListSqlSchemas(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(
+                    "00000000-0000-4000-8000-000000000001"
+                ),
+                request_id="schemas",
                 engine="warehouse",
                 database="analytics",
             ),
         ),
         (
             list_sql_tables,
-            ListSQLTablesRequest(
-                request_id=RequestId("tables"),
+            protocol.ListSqlTables(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(
+                    "00000000-0000-4000-8000-000000000001"
+                ),
+                request_id="tables",
                 engine="warehouse",
                 database="analytics",
                 schema="events",
@@ -734,7 +768,7 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
 @pytest.mark.asyncio
 async def test_list_sql_metadata_rejects_a_missing_session(
     handler: Callable[..., Awaitable[None]],
-    sql_request: ListSQLSchemasRequest | ListSQLTablesRequest,
+    command: protocol.ListSqlSchemas | protocol.ListSqlTables,
 ) -> None:
     sessions = MagicMock()
     sessions.get.return_value = None
@@ -742,9 +776,5 @@ async def test_list_sql_metadata_rejects_a_missing_session(
     with pytest.raises(ValueError, match=f"No session found for {NOTEBOOK_URI}"):
         await handler(
             _context(sessions),
-            KernelCommand(
-                notebook_uri=NOTEBOOK_URI,
-                session_id=SessionId("00000000-0000-4000-8000-000000000001"),
-                inner=sql_request,
-            ),
+            command,
         )

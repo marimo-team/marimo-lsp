@@ -55,9 +55,7 @@ async def test_wasm_server_handles_initialize_message() -> None:
                             "codeActionKinds": ["refactor.rewrite"],
                             "resolveProvider": False,
                         },
-                        "executeCommandProvider": {
-                            "commands": ["marimo.api", "marimo.convert"]
-                        },
+                        "executeCommandProvider": {"commands": ["marimo.convert"]},
                         "diagnosticProvider": {
                             "interFileDependencies": False,
                             "workspaceDiagnostics": False,
@@ -79,7 +77,7 @@ async def test_wasm_server_handles_initialize_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_wasm_server_drives_async_api_handler() -> None:
+async def test_wasm_server_drives_async_command_handler() -> None:
     messages: list[object] = []
     server = create_bridge(
         lambda message: messages.append(msgspec.json.decode(message)),
@@ -90,12 +88,9 @@ async def test_wasm_server_drives_async_api_handler() -> None:
         msgspec.json.encode(
             {
                 "id": 1,
-                "method": "workspace/executeCommand",
+                "method": "marimo/command",
                 "jsonrpc": "2.0",
-                "params": {
-                    "command": "marimo.api",
-                    "arguments": [{"method": "list-sessions", "params": {}}],
-                },
+                "params": {"kind": "list-sessions"},
             }
         ).decode()
     )

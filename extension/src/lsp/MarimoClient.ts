@@ -31,7 +31,6 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
 import type {
   DocumentAnalysis,
   KernelNotification,
-  MarimoApiCall,
   MarimoSessionsChanged,
 } from "../types.ts";
 
@@ -94,10 +93,7 @@ export class MarimoClientStartError extends Data.TaggedError(
 }> {}
 
 export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
-  readonly command: Redacted.Redacted<{
-    readonly command: "marimo.api";
-    readonly params: MarimoApiCall;
-  }>;
+  readonly command: Redacted.Redacted<typeof Api.Command.Encoded>;
   readonly cause: unknown;
   readonly mode: MarimoLspMode;
 }> {}
@@ -109,7 +105,9 @@ export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
  * transport without reproducing MarimoClient's named methods.
  */
 interface MarimoTransport<Error = never> {
-  readonly execute: (request: MarimoApiCall) => Effect.Effect<unknown, Error>;
+  readonly send: (
+    command: typeof Api.Command.Encoded,
+  ) => Effect.Effect<unknown, Error>;
   readonly kernelNotifications: Stream.Stream<KernelNotification>;
   readonly documentAnalysis?: Stream.Stream<DocumentAnalysis>;
   readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
@@ -120,7 +118,7 @@ export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
     kernelNotifications: transport.kernelNotifications,
     documentAnalysis: transport.documentAnalysis ?? Stream.never,
     sessionChanges: transport.sessionChanges ?? Stream.never,
-    ...Api.makeApiClient(transport.execute),
+    ...Api.makeCommandClient(transport.send),
   };
 }
 
@@ -401,19 +399,15 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
       const transport: MarimoTransport<
         MarimoClientStartError | MarimoCommandError
       > = {
-        execute: Effect.fn(function* (request) {
+        send: Effect.fn(function* (command) {
           if (!client.isRunning()) {
             yield* startClient();
           }
-          const command = {
-            command: "marimo.api",
-            params: request,
-          } as const;
           return yield* Effect.tryPromise({
             try: (signal) =>
               client.sendRequest<unknown>(
-                "workspace/executeCommand",
-                { command: command.command, arguments: [command.params] },
+                "marimo/command",
+                command,
                 tokenFromSignal(signal),
               ),
             catch: (cause) =>
@@ -426,8 +420,8 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
             Effect.tapError(() => Effect.forkDetach(notifyCustomLspFailure)),
             Effect.withSpan("lsp.executeCommand", {
               attributes: {
-                command: command.command,
-                method: request.method,
+                command: "marimo/command",
+                kind: command.kind,
               },
             }),
           );

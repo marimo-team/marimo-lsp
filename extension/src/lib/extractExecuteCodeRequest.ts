@@ -10,11 +10,9 @@ export function extractExecuteCodeRequest(
   rawCells: Array<vscode.NotebookCell>,
   LanguageId: Context.Service.Shape<typeof Constants>["LanguageId"],
 ): Option.Option<{
-  codes: Array<string>;
-  cellIds: Array<NotebookCellId>;
+  cells: Array<{ cellId: NotebookCellId; code: string }>;
 }> {
-  const codes: Array<string> = [];
-  const cellIds: Array<NotebookCellId> = [];
+  const cells: Array<{ cellId: NotebookCellId; code: string }> = [];
 
   for (const rawCell of rawCells) {
     const cell = MarimoNotebookCell.from(rawCell);
@@ -25,13 +23,12 @@ export function extractExecuteCodeRequest(
     const code = getCellExecutableCode(cell, LanguageId);
     const cellId = cell.id.value;
 
-    codes.push(code);
-    cellIds.push(cellId);
+    cells.push({ cellId, code });
   }
 
-  if (codes.length === 0) {
+  if (cells.length === 0) {
     return Option.none();
   }
 
-  return Option.some({ codes, cellIds });
+  return Option.some({ cells });
 }

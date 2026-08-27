@@ -1,15 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Result, Schema } from "effect";
 
+import commandProtocol from "../../../../tests/fixtures/command_protocol.json";
 import {
   CellMetadata,
-  ExecuteCellsPayload,
-  ExecuteScratchRequest,
-  GetPackageListPayload,
-  makeApiClient,
+  Command,
+  Execute,
+  ExecuteScratchpad,
+  GetDependencyTree,
+  makeCommandClient,
   NotebookDocument,
   NotebookDocumentMetadata,
-  PackageSource,
   VenvSource,
 } from "../Models.gen.ts";
 
@@ -62,46 +63,100 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
   });
 
   it("decodes tagged unions by their msgspec tag field", () => {
-    const venv = Schema.decodeUnknownSync(PackageSource)({
-      kind: "venv",
-      executable: "/usr/bin/python3",
-    });
+    const venv = Schema.decodeUnknownSync(GetDependencyTree)({
+      kind: "get-dependency-tree",
+      notebookUri: "file:///nb.py",
+      source: {
+        kind: "venv",
+        executable: "/usr/bin/python3",
+      },
+    }).source;
     expect(venv).toEqual({ kind: "venv", executable: "/usr/bin/python3" });
 
-    const bad = Schema.decodeUnknownResult(PackageSource)({ kind: "conda" });
+    const bad = Schema.decodeUnknownResult(GetDependencyTree)({
+      kind: "get-dependency-tree",
+      notebookUri: "file:///nb.py",
+      source: { kind: "conda" },
+    });
     expect(Result.isFailure(bad)).toBe(true);
 
     // msgspec accepts an omitted tag when decoding a concrete struct, but
-    // requires it when decoding the tagged union used at this wire boundary.
-    const missing = Schema.decodeUnknownResult(PackageSource)({
-      executable: "/usr/bin/python3",
+    // requires it when decoding the tagged union used by the command.
+    const missing = Schema.decodeUnknownResult(GetDependencyTree)({
+      kind: "get-dependency-tree",
+      notebookUri: "file:///nb.py",
+      source: {
+        executable: "/usr/bin/python3",
+      },
     });
     expect(Result.isFailure(missing)).toBe(true);
   });
 
+  it("decodes the flat owned command protocol", () => {
+    const decoded = Schema.decodeUnknownSync(Command)({
+      kind: "execute",
+      notebookUri: "file:///nb.py",
+      executable: "/usr/bin/python3",
+      workingDirectory: "/workspace",
+      cells: [{ cellId: "cell-1", code: "answer = 42" }],
+    });
+
+    expect(Schema.encodeSync(Command)(decoded)).toEqual({
+      kind: "execute",
+      notebookUri: "file:///nb.py",
+      executable: "/usr/bin/python3",
+      workingDirectory: "/workspace",
+      cells: [{ cellId: "cell-1", code: "answer = 42" }],
+    });
+
+    expect(
+      Result.isFailure(
+        Schema.decodeUnknownResult(Command)({
+          kind: "execute-cells",
+          notebookUri: "file:///nb.py",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches the shared command compatibility corpus", () => {
+    for (const command of commandProtocol.valid) {
+      const decoded = Schema.decodeUnknownSync(Command)(command);
+      expect(Schema.encodeSync(Command)(decoded)).toEqual(command);
+    }
+
+    for (const command of commandProtocol.invalid) {
+      expect(
+        Result.isFailure(Schema.decodeUnknownResult(Command)(command)),
+      ).toBe(true);
+    }
+  });
+
   it("rejects payloads msgspec would reject", () => {
-    const missingCode = Schema.decodeUnknownResult(ExecuteScratchRequest)({
+    const missingCode = Schema.decodeUnknownResult(ExecuteScratchpad)({
+      kind: "execute-scratchpad",
+      notebookUri: "file:///nb.py",
       runId: "abc",
     });
     expect(Result.isFailure(missingCode)).toBe(true);
   });
 
-  it("decodes a generated package command payload", () => {
-    const decoded = Schema.decodeUnknownSync(GetPackageListPayload)({
+  it("decodes a generated package command", () => {
+    const decoded = Schema.decodeUnknownSync(GetDependencyTree)({
+      kind: "get-dependency-tree",
       notebookUri: "file:///nb.py",
       source: { kind: "script" },
-      inner: {},
     });
-    expect(decoded.inner).toEqual({});
     expect(decoded.source).toEqual({ kind: "script" });
   });
 
-  it("requires workingDirectory for generated session command payloads", () => {
+  it("requires workingDirectory for execute commands", () => {
     expect(() =>
-      Schema.decodeUnknownSync(ExecuteCellsPayload)({
+      Schema.decodeUnknownSync(Execute)({
+        kind: "execute",
         notebookUri: "file:///nb.py",
         executable: "/usr/bin/python",
-        inner: { cellIds: ["cell-1"], codes: ["print(1)"] },
+        cells: [{ cellId: "cell-1", code: "print(1)" }],
       }),
     ).toThrow();
   });
@@ -165,9 +220,9 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
 
   it.effect("requires JSON null for fire-and-forget responses", () =>
     Effect.gen(function* () {
-      const api = makeApiClient(() => Effect.succeed(undefined));
+      const api = makeCommandClient(() => Effect.succeed(undefined));
       const result = yield* Effect.result(
-        api.interrupt({ notebookUri: "file:///nb.py", inner: {} }),
+        api.interrupt({ notebookUri: "file:///nb.py" }),
       );
       expect(Result.isFailure(result)).toBe(true);
     }),

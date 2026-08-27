@@ -1,9 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
 
-import { makeTestMarimoClient } from "../../../__tests__/__utils__/TestMarimoClient.ts";
+import {
+  makeTestMarimoClient,
+  type TestCommand,
+} from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
-import type { MarimoApiCall } from "../../../types.ts";
 import { SessionNotFoundError, LiveSessions } from "../LiveSessions.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
@@ -23,14 +25,14 @@ const SNAPSHOT = {
   ],
 } as const;
 
-function makeLayer(recorded: MarimoApiCall[], snapshot: unknown = SNAPSHOT) {
+function makeLayer(recorded: TestCommand[], snapshot: unknown = SNAPSHOT) {
   return LiveSessions.layer.pipe(
     Layer.provide(
       makeTestMarimoClient({
-        execute: (request) =>
+        send: (request) =>
           Effect.sync(() => {
             recorded.push(request);
-            return request.method === "list-sessions" ? snapshot : null;
+            return request.kind === "list-sessions" ? snapshot : null;
           }),
       }),
     ),
@@ -40,7 +42,7 @@ function makeLayer(recorded: MarimoApiCall[], snapshot: unknown = SNAPSHOT) {
 it.effect(
   "decodes the authoritative session snapshot",
   Effect.fn(function* () {
-    const recorded: MarimoApiCall[] = [];
+    const recorded: TestCommand[] = [];
 
     const live = yield* Effect.gen(function* () {
       const sessions = yield* LiveSessions;
@@ -48,14 +50,14 @@ it.effect(
     }).pipe(Effect.provide(makeLayer(recorded)));
 
     expect(live).toEqual(SNAPSHOT.sessions);
-    expect(recorded).toEqual([{ method: "list-sessions", params: {} }]);
+    expect(recorded).toEqual([{ kind: "list-sessions" }]);
   }),
 );
 
 it.effect(
   "shuts down every session and reconciles once",
   Effect.fn(function* () {
-    const recorded: MarimoApiCall[] = [];
+    const recorded: TestCommand[] = [];
     const secondNotebook = notebookId("file:///workspace/second.py");
     const snapshot = {
       sessions: [
@@ -75,9 +77,9 @@ it.effect(
     }).pipe(Effect.provide(makeLayer(recorded, snapshot)));
 
     expect(recorded).toEqual([
-      { method: "list-sessions", params: {} },
-      { method: "shutdown-all-sessions", params: {} },
-      { method: "list-sessions", params: {} },
+      { kind: "list-sessions" },
+      { kind: "shutdown-all-sessions" },
+      { kind: "list-sessions" },
     ]);
   }),
 );
@@ -85,7 +87,7 @@ it.effect(
 it.effect(
   "fails when a session disappears before restart",
   Effect.fn(function* () {
-    const recorded: MarimoApiCall[] = [];
+    const recorded: TestCommand[] = [];
     const result = yield* Effect.gen(function* () {
       const sessions = yield* LiveSessions;
       return yield* Effect.result(sessions.restart(NOTEBOOK_URI));
@@ -97,14 +99,14 @@ it.effect(
         new SessionNotFoundError({ notebookUri: NOTEBOOK_URI }),
       );
     }
-    expect(recorded).toEqual([{ method: "list-sessions", params: {} }]);
+    expect(recorded).toEqual([{ kind: "list-sessions" }]);
   }),
 );
 
 it.effect(
   "restarts a session and reconciles with the server snapshot",
   Effect.fn(function* () {
-    const recorded: MarimoApiCall[] = [];
+    const recorded: TestCommand[] = [];
 
     yield* Effect.gen(function* () {
       const sessions = yield* LiveSessions;
@@ -112,18 +114,14 @@ it.effect(
     }).pipe(Effect.provide(makeLayer(recorded)));
 
     expect(recorded).toEqual([
-      { method: "list-sessions", params: {} },
+      { kind: "list-sessions" },
       {
-        method: "restart-session",
-        params: {
-          notebookUri: NOTEBOOK_URI,
-          inner: {
-            executable: "/venv/bin/python",
-            workingDirectory: "/workspace",
-          },
-        },
+        kind: "restart-session",
+        notebookUri: NOTEBOOK_URI,
+        executable: "/venv/bin/python",
+        workingDirectory: "/workspace",
       },
-      { method: "list-sessions", params: {} },
+      { kind: "list-sessions" },
     ]);
   }),
 );

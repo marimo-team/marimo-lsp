@@ -7,13 +7,10 @@ import { Effect, Exit, Option, Ref, Stream } from "effect";
 import { vi } from "vite-plus/test";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
-import type {
-  DocumentAnalysis,
-  KernelNotification,
-  MarimoApiCall,
-} from "../../types.ts";
+import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
 import {
   disposeLanguageClient,
   findMarimoLspExecutable,
@@ -140,53 +137,51 @@ it.effect(
 );
 
 it.effect(
-  "constructs marimo.api commands through named methods",
+  "constructs private commands through named methods",
   Effect.fn(function* () {
-    const calls = yield* Ref.make<ReadonlyArray<MarimoApiCall>>([]);
+    const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const responses: Record<string, unknown> = {
-      "execute-cells": null,
+      execute: null,
       "set-display-theme": { success: true },
     };
     const marimo = makeMarimoCommands({
-      execute: (request) =>
+      send: (request) =>
         Ref.update(calls, (current) => [...current, request]).pipe(
-          Effect.as(responses[request.method]),
+          Effect.as(responses[request.kind]),
         ),
       kernelNotifications: Stream.empty,
     });
 
-    yield* marimo.executeCells({
+    yield* marimo.execute({
       notebookUri: notebook,
       executable: "/python",
       workingDirectory: "/workspace",
-      inner: { cellIds: [], codes: [] },
+      cells: [],
     });
     yield* marimo.setDisplayTheme({ theme: "dark" });
 
     assert.deepStrictEqual(yield* Ref.get(calls), [
       {
-        method: "execute-cells",
-        params: {
-          notebookUri: notebook,
-          executable: "/python",
-          workingDirectory: "/workspace",
-          inner: { cellIds: [], codes: [] },
-        },
+        kind: "execute",
+        notebookUri: notebook,
+        executable: "/python",
+        workingDirectory: "/workspace",
+        cells: [],
       },
       {
-        method: "set-display-theme",
-        params: { theme: "dark" },
+        kind: "set-display-theme",
+        theme: "dark",
       },
     ]);
   }),
 );
 
-describe("generated api client", () => {
+describe("generated command client", () => {
   it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
-        execute: () =>
+        send: () =>
           Effect.succeed({
             tree: { name: "root", version: null, tags: [], dependencies: [] },
           }),
@@ -196,7 +191,6 @@ describe("generated api client", () => {
       const response = yield* marimo.getDependencyTree({
         notebookUri: notebook,
         source: { kind: "script" },
-        inner: {},
       });
 
       // Response is parsed, not asserted: `tree` is a typed DependencyTreeNode.
@@ -208,7 +202,7 @@ describe("generated api client", () => {
     "fails with ParseError when the server response violates the contract",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
-        execute: () => Effect.succeed({ tree: "not-a-tree" }),
+        send: () => Effect.succeed({ tree: "not-a-tree" }),
         kernelNotifications: Stream.empty,
       });
 
@@ -216,7 +210,6 @@ describe("generated api client", () => {
         .getDependencyTree({
           notebookUri: notebook,
           source: { kind: "script" },
-          inner: {},
         })
         .pipe(Effect.exit);
 
@@ -233,7 +226,7 @@ describe("generated api client", () => {
     "rejects params the server would reject, before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
-        execute: () => Effect.die("should not reach the transport"),
+        send: () => Effect.die("should not reach the transport"),
         kernelNotifications: Stream.empty,
       });
 
@@ -242,12 +235,13 @@ describe("generated api client", () => {
           notebookUri: notebook,
           // @ts-expect-error -- deliberately malformed source
           source: { kind: "conda" },
-          inner: {},
         })
         .pipe(Effect.exit);
 
       assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), "PackageSource");
+      assert.include(String(exit), '["source"]');
+      assert.include(String(exit), 'readonly "kind": "venv"');
+      assert.include(String(exit), 'readonly "kind": "script"');
     }),
   );
 
@@ -255,7 +249,7 @@ describe("generated api client", () => {
     "requires tagged-union discriminators before hitting the wire",
     Effect.fn(function* () {
       const marimo = makeMarimoCommands({
-        execute: () => Effect.die("should not reach the transport"),
+        send: () => Effect.die("should not reach the transport"),
         kernelNotifications: Stream.empty,
       });
 
@@ -264,12 +258,13 @@ describe("generated api client", () => {
           notebookUri: notebook,
           // @ts-expect-error -- msgspec requires `kind` for union decoding
           source: { executable: "/usr/bin/python3" },
-          inner: {},
         })
         .pipe(Effect.exit);
 
       assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), "PackageSource");
+      assert.include(String(exit), '["source"]');
+      assert.include(String(exit), 'readonly "kind": "venv"');
+      assert.include(String(exit), 'readonly "kind": "script"');
     }),
   );
 });
@@ -390,7 +385,7 @@ it.effect(
   Effect.fn(function* () {
     let requestedNotification: string | undefined;
     const marimo = makeMarimoCommands({
-      execute: () => Effect.void,
+      send: () => Effect.void,
       // Stream.suspend defers to subscription time, so the assertion below
       // still observes that draining `kernelNotifications` evaluated the
       // transport.

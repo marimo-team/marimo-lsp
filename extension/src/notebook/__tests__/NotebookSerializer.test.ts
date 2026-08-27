@@ -36,7 +36,7 @@ it.effect(
   Effect.fn(function* () {
     const layer = Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
-      Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
+      Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
       Layer.provideMerge(Constants.layer),
     );
 
@@ -64,7 +64,7 @@ it.effect(
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
-      Layer.provideMerge(makeTestMarimoClient({ execute: () => Effect.never })),
+      Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
       Layer.provideMerge(Constants.layer),
       Layer.provideMerge(vscode.layer),
     );
@@ -106,7 +106,7 @@ it.effect(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(
         makeTestMarimoClient({
-          execute: () =>
+          send: () =>
             Effect.succeed({
               kind: "convertible",
             }),

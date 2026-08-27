@@ -42,18 +42,11 @@ export type MarimoConfig = Gen.MarimoConfig;
 export type SessionInfo = Gen.SessionInfo;
 export type SessionsSnapshot = Gen.ListSessionsResponse;
 
-/**
- * Wire shape of one `marimo.api` call. The generated client
- * (`schemas/Models.gen.ts`, from the `API_METHODS` registry in
- * `src/marimo_lsp/api.py`) owns the per-method payload/response schemas;
- * this is what they erase to at the transport.
- */
-export type MarimoApiCall = Gen.MarimoApiCall;
-
-/** The kernel-bound `inner` payload of a generated `marimo.api` method. */
-type InnerOf<Payload> = Payload extends { readonly inner: infer Inner }
-  ? Inner
-  : never;
+type EncodedCommand = typeof Gen.Command.Encoded;
+type CommandFields<K extends EncodedCommand["kind"]> = Omit<
+  Extract<EncodedCommand, { readonly kind: K }>,
+  "kind" | "notebookUri" | "kernelSessionId"
+>;
 
 /**
  * Subset of API methods allowed to be dispatched by the renderer.
@@ -73,10 +66,10 @@ type InnerOf<Payload> = Payload extends { readonly inner: infer Inner }
  * extension (which has access to the VSCode API and notebook editor).
  */
 type RendererCommandMap = {
-  // Forward to extension marimo.api
-  "update-ui-element": InnerOf<typeof Gen.UpdateUiElementPayload.Encoded>;
-  "set-model-value": InnerOf<typeof Gen.SetModelValuePayload.Encoded>;
-  "invoke-function": InnerOf<typeof Gen.InvokeFunctionPayload.Encoded>;
+  // Forward to the extension's private command protocol.
+  "update-ui-element": CommandFields<"update-ui-element">;
+  "set-model-value": CommandFields<"set-model-value">;
+  "invoke-function": CommandFields<"invoke-function">;
   // Custom
   "navigate-to-cell": { cellId: NotebookCellId };
   // Image toolbar: the sandboxed renderer can't read cross-origin image bytes,
