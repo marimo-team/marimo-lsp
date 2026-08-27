@@ -9,8 +9,6 @@
  *
  * SAFETY: every helper here is a brand smart constructor that performs no
  * runtime check; the whole file is the authorized escape hatch for tests.
- * See CLAUDE.md § "Prefer Schema or type guards over type assertions" — the
- * testing paragraph explicitly allows test-scoped brand helpers.
  */
 /* oxlint-disable typescript/no-unsafe-type-assertion */
 import type { components as Api } from "@marimo-team/openapi/src/api";

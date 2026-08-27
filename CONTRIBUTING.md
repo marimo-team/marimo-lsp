@@ -74,8 +74,16 @@ just test-ts --watch               # vitest in watch mode
 
 ## Architecture
 
-See the Architecture section of [CLAUDE.md](./CLAUDE.md) for how the LSP server
-and extension work together.
+This repository contains a Python language server under `src/marimo_lsp/` and
+a TypeScript VS Code extension under `extension/`. Start from these entry points
+when tracing the current architecture:
+
+- Python server: `src/marimo_lsp/server.py`
+- VS Code extension: `extension/src/extension.ts`
+- Effect layer composition: `extension/src/features/Main.ts`
+
+Use the source tree to discover individual modules; their names and locations
+change as the architecture evolves.
 
 ## Logging (Extension)
 
