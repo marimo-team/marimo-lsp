@@ -5,11 +5,12 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Context, Effect, Layer, Option, Result } from "effect";
+import { Context, Effect, Layer, Option, Ref, Result } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { resolveScriptEnvironmentPath, Uv } from "../../python/Uv.ts";
+import { decodeUvSyncOutput, decodeUvTreeOutput, Uv } from "../../python/Uv.ts";
+import { getVenvPythonPath } from "../getVenvPythonPath.ts";
 import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
@@ -42,6 +43,50 @@ const UvLive = Layer.empty.pipe(
 );
 
 describe("Uv", () => {
+  it.effect("does not prompt when optional cache discovery cannot run uv", () =>
+    Effect.gen(function* () {
+      const prompts = yield* Ref.make(0);
+      const missingUv = NodePath.join(NodeOs.tmpdir(), "marimo-lsp-missing-uv");
+      const vscode = yield* TestVsCode.make({
+        window: {
+          showErrorMessage: () =>
+            Ref.update(prompts, (count) => count + 1).pipe(
+              Effect.as(Option.none()),
+            ),
+        },
+        workspace: {
+          getConfiguration: (section) =>
+            Effect.succeed({
+              // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+              get: <T>(key: string, defaultValue?: T) => {
+                // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+                return (
+                  section === "marimo.uv" && key === "path"
+                    ? missingUv
+                    : defaultValue
+                ) as T;
+              },
+              has: (key: string) => section === "marimo.uv" && key === "path",
+              inspect: () => undefined,
+              async update() {},
+            }),
+        },
+      });
+      const layer = Uv.layer.pipe(
+        Layer.provide(TestTelemetryLive),
+        Layer.provide(vscode.layer),
+      );
+
+      const cacheDir = yield* Effect.gen(function* () {
+        const uv = yield* Uv;
+        return yield* uv.getCacheDirOption;
+      }).pipe(Effect.provide(layer));
+
+      expect(Option.isNone(cacheDir)).toBe(true);
+      expect(yield* Ref.get(prompts)).toBe(0);
+    }),
+  );
+
   it.layer(Layer.fresh(UvLive))((it) => {
     it.effect(
       "should create a new python venv",
@@ -51,6 +96,35 @@ describe("Uv", () => {
         const target = NodePath.join(tmpdir.path, ".venv");
         yield* uv.venv(target, { python });
         assert(NodeFs.existsSync(target), "Expected new venv.");
+      }),
+      { timeout },
+    );
+  });
+
+  it.layer(Layer.fresh(UvLive))((it) => {
+    it.effect(
+      "returns a stable canonical interpreter across script syncs",
+      Effect.fn(function* () {
+        const uv = yield* Uv;
+        const tmpdir = yield* TmpDir;
+        const script = NodePath.join(tmpdir.path, "notebook.py");
+        NodeFs.writeFileSync(
+          script,
+          `\
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+`,
+          { encoding: "utf8" },
+        );
+
+        const created = yield* uv.syncScript({ script });
+        const checked = yield* uv.syncScript({ script });
+
+        expect(created.executable).toBe(getVenvPythonPath(created.environment));
+        expect(checked).toEqual(created);
+        expect(yield* uv.currentDeps({ script })).toEqual([]);
       }),
       { timeout },
     );
@@ -225,13 +299,104 @@ print("This script has no PEP 723 metadata")
     );
   });
 
-  it("should resolve relative script environment paths", () => {
-    const envPath = resolveScriptEnvironmentPath(
-      "Using script environment at: .cache/uv/environments-v2/test",
-    );
+  it.effect("prefers the canonical interpreter reported by the env root", () =>
+    Effect.gen(function* () {
+      using tmpdir = NodeFs.mkdtempDisposableSync(
+        NodePath.join(NodeOs.tmpdir(), "marimo-lsp-uv-output-"),
+      );
+      const environment = NodePath.join(tmpdir.path, "environment");
+      const canonical = getVenvPythonPath(environment);
+      NodeFs.mkdirSync(NodePath.dirname(canonical), { recursive: true });
+      NodeFs.writeFileSync(canonical, "");
+      const reported = NodePath.join(environment, "reported-python");
 
-    expect(envPath).toBe(NodePath.resolve(".cache/uv/environments-v2/test"));
-  });
+      const handle = yield* decodeUvSyncOutput(
+        JSON.stringify({
+          schema: { version: "preview" },
+          sync: {
+            environment: {
+              path: environment,
+              python: { path: reported },
+            },
+          },
+        }),
+      );
+
+      expect(handle).toEqual({ environment, executable: canonical });
+    }),
+  );
+
+  it.effect("falls back to uv's reported interpreter", () =>
+    Effect.gen(function* () {
+      using tmpdir = NodeFs.mkdtempDisposableSync(
+        NodePath.join(NodeOs.tmpdir(), "marimo-lsp-uv-output-"),
+      );
+      const environment = NodePath.join(tmpdir.path, "environment");
+      const reported = NodePath.join(environment, "reported-python");
+
+      const handle = yield* decodeUvSyncOutput(
+        JSON.stringify({
+          schema: { version: "preview" },
+          sync: {
+            environment: {
+              path: environment,
+              python: { path: reported },
+            },
+          },
+        }),
+      );
+
+      expect(handle).toEqual({ environment, executable: reported });
+    }),
+  );
+
+  it.effect("decodes only a script's direct package dependencies", () =>
+    Effect.gen(function* () {
+      const packages = yield* decodeUvTreeOutput(
+        JSON.stringify({
+          schema: { version: "preview" },
+          script: { id: "script" },
+          resolution: {
+            script: {
+              kind: "script",
+              dependencies: [{ id: "marimo" }, { id: "polars" }],
+            },
+            marimo: {
+              kind: "package",
+              name: "marimo",
+              version: "0.24.0",
+              dependencies: [{ id: "click" }],
+            },
+            polars: {
+              kind: "package",
+              name: "polars",
+              version: "1.34.0",
+              dependencies: [],
+            },
+            click: {
+              kind: "package",
+              name: "click",
+              version: "8.2.1",
+              dependencies: [],
+            },
+          },
+        }),
+      );
+
+      expect(packages).toEqual([
+        { name: "marimo", version: "0.24.0" },
+        { name: "polars", version: "1.34.0" },
+      ]);
+    }),
+  );
+
+  it.effect("fails with a typed error when uv JSON is invalid", () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.result(decodeUvSyncOutput("not json"));
+      assert(Result.isFailure(result));
+      expect(result.failure._tag).toBe("UvOutputDecodeError");
+    }),
+  );
 
   describe("ensureLanguageServerBinaryInstalled", () => {
     const server = { name: "ruff", version: "0.11.4" } as const;
