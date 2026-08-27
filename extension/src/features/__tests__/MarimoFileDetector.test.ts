@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref } from "effect";
-import { TestClock } from "effect/testing";
 
 import {
   createTestTextDocument,
@@ -141,8 +140,8 @@ if __name__ == "__main__":
 
       // Set the active text editor
       yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
-      // Give the detector time to process the change
-      yield* TestClock.adjust("100 millis");
+      // Give the detector a scheduler turn to process the change
+      yield* Effect.yieldNow;
     }).pipe(Effect.provide(ctx.layer));
 
     expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
@@ -241,7 +240,7 @@ my_app = marimo.App()
 
       // set new notebook
       yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
-      yield* TestClock.adjust("100 millis");
+      yield* Effect.yieldNow;
     }).pipe(Effect.provide(ctx.layer));
 
     expect(yield* Ref.get(ctx.vscode.executions)).toEqual([

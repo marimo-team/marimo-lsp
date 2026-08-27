@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
-import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -52,7 +51,7 @@ it.effect(
     yield* Effect.provide(
       Effect.gen(function* () {
         const registry = yield* NotebookEditorRegistry;
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* registry.getActiveNotebookUri).toEqual(
           Option.some(editor.notebook.uri.toString()),
@@ -92,7 +91,7 @@ it.effect(
         yield* vscode.setActiveNotebookEditor(Option.some(mockEditor));
 
         // Tick
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
 
         // Verify the registry tracked the change
         const activeUri = yield* registry.getActiveNotebookUri;
@@ -112,7 +111,7 @@ it.effect(
 
         // Clear active editor
         yield* vscode.setActiveNotebookEditor(Option.none());
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
 
         const clearedActive = yield* registry.getActiveNotebookUri;
         expect(Option.isNone(clearedActive)).toBe(true);
@@ -159,7 +158,7 @@ it.effect(
 
         for (const change of changes) {
           yield* vscode.setActiveNotebookEditor(change);
-          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
         }
 
         const collected = yield* Fiber.join(streamResult);

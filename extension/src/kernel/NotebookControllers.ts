@@ -179,6 +179,7 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
   }) {
     const { notebook, sandboxController, handlesRef, code } = options;
     const handles = yield* SynchronizedRef.get(handlesRef);
+    const preferredControllerIds = new Set<string>();
 
     // Check if header includes "/// script"
     if (notebook.header.includes("/// script")) {
@@ -186,52 +187,55 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
         "Setting affinity to sandbox controller (script header detected)",
       ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
 
-      // Prefer sandbox controller
-      yield* sandboxController.updateNotebookAffinity(
-        notebook.rawNotebookDocument,
-        code.NotebookControllerAffinity.Preferred,
-      );
+      preferredControllerIds.add(sandboxController.id);
+    } else {
+      // Check for venv next to notebook
+      const notebookDir = NodePath.dirname(notebook.uri.fsPath);
+      const venvPath = findVenvPath(NodePath.join(notebookDir, ".venv"));
 
-      return;
-    }
-
-    // Check for venv next to notebook
-    const notebookDir = NodePath.dirname(notebook.uri.fsPath);
-    const venvPath = findVenvPath(NodePath.join(notebookDir, ".venv"));
-
-    if (Option.isSome(venvPath)) {
-      yield* Effect.logDebug(
-        "Setting affinity to venv controller (venv detected)",
-      ).pipe(
-        Effect.annotateLogs({
-          notebookUri: notebook.id,
-          venvPath: venvPath.value,
-        }),
-      );
-
-      // Find controller with matching venv path
-      // The venv path should contain the Python executable
-      const venvControllers = HashMap.filter(handles, (handle) => {
-        const controllerVenv = findVenvPath(handle.controller.executable);
-        return (
-          Option.isSome(controllerVenv) &&
-          controllerVenv.value === venvPath.value
+      if (Option.isSome(venvPath)) {
+        yield* Effect.logDebug(
+          "Setting affinity to venv controller (venv detected)",
+        ).pipe(
+          Effect.annotateLogs({
+            notebookUri: notebook.id,
+            venvPath: venvPath.value,
+          }),
         );
-      });
 
-      for (const handle of HashMap.values(venvControllers)) {
-        yield* handle.controller.updateNotebookAffinity(
-          notebook.rawNotebookDocument,
-          code.NotebookControllerAffinity.Preferred,
-        );
+        // Find controllers with matching venv paths. The venv path should
+        // contain the Python executable.
+        for (const handle of HashMap.values(handles)) {
+          const controllerVenv = findVenvPath(handle.controller.executable);
+          if (
+            Option.isSome(controllerVenv) &&
+            controllerVenv.value === venvPath.value
+          ) {
+            preferredControllerIds.add(handle.controller.id);
+          }
+        }
+      } else {
+        yield* Effect.logDebug(
+          "No affinity preference set (no script header or venv)",
+        ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
       }
-      return;
     }
 
-    // Otherwise, don't set any affinity (let VSCode use defaults)
-    yield* Effect.logDebug(
-      "No affinity preference set (no script header or venv)",
-    ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
+    const controllers = [
+      sandboxController,
+      ...Array.from(HashMap.values(handles), (handle) => handle.controller),
+    ];
+    yield* Effect.forEach(
+      controllers,
+      (controller) =>
+        controller.updateNotebookAffinity(
+          notebook.rawNotebookDocument,
+          preferredControllerIds.has(controller.id)
+            ? code.NotebookControllerAffinity.Preferred
+            : code.NotebookControllerAffinity.Default,
+        ),
+      { discard: true },
+    );
   },
 );
 

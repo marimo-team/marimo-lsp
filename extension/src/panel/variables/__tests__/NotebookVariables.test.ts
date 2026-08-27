@@ -1,6 +1,5 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect";
-import { TestClock } from "effect/testing";
 
 import {
   createTestNotebookDocument,
@@ -345,7 +344,7 @@ it.effect(
       );
 
       // Initial state
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       // Make changes
       yield* service.updateVariables(
@@ -354,7 +353,7 @@ it.effect(
           { name: "x", declared_by: ["cell1"], used_by: [] },
         ]),
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       yield* service.updateVariables(
         sessionFor(notebookUri),
@@ -362,7 +361,7 @@ it.effect(
           { name: "y", declared_by: ["cell2"], used_by: [] },
         ]),
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       yield* service.updateVariables(
         sessionFor(notebookUri),
@@ -371,7 +370,7 @@ it.effect(
           { name: "z", declared_by: ["cell3"], used_by: [] },
         ]),
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       return yield* Ref.get(collected);
     }).pipe(Effect.provide(layer));
@@ -402,20 +401,20 @@ it.effect(
       );
 
       // Let stream start
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       // Make changes
       yield* service.updateVariableValues(
         sessionFor(notebookUri),
         createMockVariableValuesOp([{ name: "x", value: 1, datatype: "int" }]),
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       yield* service.updateVariableValues(
         sessionFor(notebookUri),
         createMockVariableValuesOp([{ name: "x", value: 2, datatype: "int" }]),
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       return yield* Ref.get(collected);
     }).pipe(Effect.provide(layer));

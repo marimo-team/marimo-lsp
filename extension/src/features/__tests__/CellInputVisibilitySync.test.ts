@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref } from "effect";
-import { TestClock } from "effect/testing";
 
 import {
   createNotebookCell,
@@ -148,7 +147,7 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -179,7 +178,7 @@ describe("CellInputVisibilitySync", () => {
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       yield* Effect.gen(function* () {
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -207,11 +206,11 @@ describe("CellInputVisibilitySync", () => {
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       yield* Effect.gen(function* () {
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.none());
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
@@ -227,11 +226,11 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.none());
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -248,12 +247,12 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.none());
         yield* vscode.closeNotebook(editor.notebook);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* vscode.setActiveNotebookEditor(Option.some(reopened));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -269,9 +268,9 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, states([false]), states([true]));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -287,9 +286,9 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, states([true]), states([false]));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
@@ -305,12 +304,12 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, states([false, true]), [
           { stableId: "cell-1", hideCode: true },
           { stableId: "cell-0", hideCode: false },
         ]);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.collapseCellInput"),
@@ -337,9 +336,9 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, before, after);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           yield* commandRanges(vscode, "notebook.cell.expandCellInput"),
@@ -372,11 +371,11 @@ describe("CellInputVisibilitySync", () => {
 
       yield* Effect.gen(function* () {
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, states([false]), states([true]));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* changeNotebook(vscode, states([true]), states([true]));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* Ref.get(attempts)).toBe(2);
       }).pipe(Effect.provide(layer));
