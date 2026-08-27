@@ -2,7 +2,6 @@ import * as NodePath from "node:path";
 
 import type * as py from "@vscode/python-extension";
 import {
-  Cause,
   Effect,
   Exit,
   Filter,
@@ -70,14 +69,8 @@ export const layer = Layer.effectDiscard(
     const notebooks = yield* NotebookRuntime.Service;
     const sandboxController = yield* createSandboxController();
 
-    const uvCacheDir = yield* uv.getCacheDir.pipe(
-      Effect.map((path) => code.Uri.file(path)),
-      Effect.tapError((err) =>
-        Effect.logError("Failed to get uv cache directory").pipe(
-          Effect.annotateLogs({ cause: Cause.fail(err) }),
-        ),
-      ),
-      Effect.option,
+    const uvCacheDir = yield* uv.getCacheDirOption.pipe(
+      Effect.map(Option.map((path) => code.Uri.file(path))),
     );
 
     const handlesRef = yield* SynchronizedRef.make(

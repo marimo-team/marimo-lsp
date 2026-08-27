@@ -13,7 +13,6 @@ import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -69,14 +68,14 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         }
 
         // always ensure the env is up to date
-        const venv = yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
-          // Should be added by findRequirements or uvAddScriptSafe
-          Effect.catchTag("Uv.MissingPep723MetadataError", () =>
-            Effect.die("Expected PEP 723 metadata to be present"),
-          ),
-        );
-
-        const executable = getVenvPythonPath(venv);
+        const { executable } = yield* uv
+          .syncScript({ script: notebook.uri.fsPath })
+          .pipe(
+            // Should be added by findRequirements or uvAddScriptSafe
+            Effect.catchTag("Uv.MissingPep723MetadataError", () =>
+              Effect.die("Expected PEP 723 metadata to be present"),
+            ),
+          );
         yield* python.updateActiveEnvironmentPath(executable);
         return executable;
       },
@@ -157,6 +156,12 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               { channel: uv.channel },
             ),
           ),
+          Effect.catchTag("Uv.OutputDecodeError", () =>
+            showErrorAndPromptLogs(
+              "uv returned output that marimo could not parse. Update uv and try again.",
+              { channel: uv.channel },
+            ),
+          ),
           Effect.catchTag("MarimoClient.CommandError", (error) => {
             const detail = extractPythonError(error.cause);
             return showErrorAndPromptLogs(
@@ -177,6 +182,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               { channel: marimo.channel },
             ).pipe(Effect.annotateLogs({ error: String(error) })),
           ),
+          Effect.asVoid,
           Effect.annotateLogs({ notebook: rawNotebook.uri.fsPath }),
         ),
       );
@@ -268,11 +274,9 @@ const findRequirements = Effect.fn(
 
     let marimoOk = false;
 
-    for (const pkg of packages.split("\n")) {
-      if (pkg.startsWith("marimo ")) {
-        const version = Schema.decodeOption(Version.Schema)(
-          pkg.slice(0, "marimo ".length),
-        );
+    for (const pkg of packages) {
+      if (pkg.name === "marimo") {
+        const version = Schema.decodeOption(Version.Schema)(pkg.version);
 
         if (
           Option.isSome(version) &&
