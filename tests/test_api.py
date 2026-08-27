@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
+from inline_snapshot import snapshot
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
 from marimo._types.ids import RequestId, SessionId
@@ -18,9 +19,7 @@ from marimo_lsp.api import (
     CommandBuilder,
     KernelSessionMismatchError,
     KernelSessionRequiredError,
-    _restore_unknown_app_options,
     delete_cell,
-    deserialize,
     execute_scratch,
     export_as_markdown,
     function_call_request,
@@ -29,18 +28,19 @@ from marimo_lsp.api import (
     interrupt,
     list_sql_schemas,
     list_sql_tables,
+    parse_notebook,
+    print_notebook,
     send_stdin,
     set_model_value,
     set_ui_element_value,
     update_configuration,
 )
+from marimo_lsp.app_options import app_options_from_source, merge_app_options
 from marimo_lsp.models import (
-    DeserializeConvertible,
-    DeserializeInvalidSyntax,
-    DeserializeSuccess,
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
 )
+from marimo_lsp.notebook_source import _restore_unknown_app_options
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -297,7 +297,7 @@ async def test_interrupt_requires_a_kernel_session_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deserialize_native_marimo_notebook() -> None:
+async def test_parse_native_marimo_notebook() -> None:
     source = """\
 import marimo
 
@@ -307,15 +307,15 @@ if __name__ == "__main__":
     app.run()
 """
 
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source=source)
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
     )
 
-    assert isinstance(result, DeserializeSuccess)
+    assert isinstance(result, protocol.ParseNotebookSuccess)
 
 
 @pytest.mark.asyncio
-async def test_legacy_and_unknown_app_config_round_trip_over_command_wire() -> None:
+async def test_managed_and_passthrough_app_options_round_trip() -> None:
     source = """\
 import marimo
 
@@ -323,27 +323,33 @@ app = marimo.App(
     width="wide",
     auto_download=["html"],
     future_setting="keep",
-    asdict="method-name collision",
+    future_object={"answer": 42},
 )
 
 if __name__ == "__main__":
     app.run()
 """
 
-    deserialized = cast(
+    parsed = cast(
         "dict[str, object]",
         await handle_command(
             MagicMock(),
             MagicMock(),
-            protocol.Deserialize(source=source),
+            protocol.ParseNotebook(source=source),
         ),
     )
-    deserialized_notebook = cast("dict[str, object]", deserialized["notebook"])
-    app_config = cast("dict[str, object]", deserialized_notebook["appConfig"])
-    assert app_config["width"] == "wide"
-    assert app_config["auto_download"] == ["html"]
-    assert app_config["future_setting"] == "keep"
-    assert app_config["asdict"] == "method-name collision"
+    document = cast("dict[str, object]", parsed["document"])
+    app_options = cast("dict[str, object]", document["appOptions"])
+    assert app_options == snapshot(
+        {
+            "managed": {"autoDownload": ["html"]},
+            "passthrough": {
+                "width": "wide",
+                "future_setting": "keep",
+                "future_object": {"answer": 42},
+            },
+        }
+    )
 
     serialized = cast(
         "dict[str, object]",
@@ -351,18 +357,75 @@ if __name__ == "__main__":
             MagicMock(),
             MagicMock(),
             msgspec.convert(
-                {"kind": "serialize", **deserialized_notebook},
+                {"kind": "print-notebook", "document": document},
                 type=protocol.Command,
             ),
         ),
     )
     serialized_source = serialized["source"]
     assert isinstance(serialized_source, str)
-    reparsed_options = MarimoConvert.from_py(serialized_source).to_ir().app.options
-    assert reparsed_options["width"] == "wide"
-    assert reparsed_options["auto_download"] == ["html"]
-    assert reparsed_options["future_setting"] == "keep"
-    assert reparsed_options["asdict"] == "method-name collision"
+    parsed_options = MarimoConvert.from_py(serialized_source).to_ir().app.options
+    reparsed = app_options_from_source(serialized_source, parsed_options)
+    assert msgspec.to_builtins(reparsed) == snapshot(
+        {
+            "managed": {"autoDownload": ["html"]},
+            "passthrough": {
+                "width": "wide",
+                "future_setting": "keep",
+                "future_object": {"answer": 42},
+            },
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_passthrough_option_cannot_overwrite_marimo_config_method() -> None:
+    result = await print_notebook(
+        _context(MagicMock()),
+        protocol.PrintNotebook(
+            document=protocol.NotebookDocument(
+                version="1",
+                metadata={},
+                cells=[],
+                app_options=protocol.AppOptions(
+                    passthrough={"asdict": "method-name collision"}
+                ),
+            ),
+        ),
+    )
+
+    assert "asdict='method-name collision'" in result.source
+
+
+def test_managed_app_options_win_passthrough_collisions() -> None:
+    options = protocol.AppOptions(
+        managed=protocol.ManagedAppOptions(auto_download=["html"]),
+        passthrough={
+            "auto_download": ["ipynb"],
+            "width": "full",
+        },
+    )
+
+    assert merge_app_options(options) == snapshot(
+        {"auto_download": ["html"], "width": "full"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_auto_download_is_omitted_from_notebook_source() -> None:
+    result = await print_notebook(
+        _context(MagicMock()),
+        protocol.PrintNotebook(
+            document=protocol.NotebookDocument(
+                version="1",
+                metadata={},
+                cells=[],
+            ),
+        ),
+    )
+
+    assert "auto_download" not in result.source
+    assert "app = marimo.App()" in result.source
 
 
 def test_restore_unknown_app_options_reports_non_literal_value() -> None:
@@ -407,11 +470,11 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
-async def test_deserialize_recovers_syntax_error_inside_cell() -> None:
+async def test_parse_recovers_syntax_error_inside_cell() -> None:
     source = """\
 import marimo
 
-app = marimo.App()
+app = marimo.App(future_object={"answer": 42})
 
 @app.cell
 def _():
@@ -419,16 +482,51 @@ def _():
     return
 """
 
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source=source)
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
     )
 
-    assert isinstance(result, DeserializeSuccess)
-    assert [cell["code"] for cell in result.notebook.notebook["cells"]] == ["value = ("]
+    assert isinstance(result, protocol.ParseNotebookSuccess)
+    assert [cell["code"] for cell in result.document.cells] == ["value = ("]
+    assert result.document.app_options.passthrough == snapshot(
+        {"future_object": {"answer": 42}}
+    )
+
+    printed = await print_notebook(
+        _context(MagicMock()),
+        protocol.PrintNotebook(document=result.document),
+    )
+    assert "future_object={'answer': 42}" in printed.source
 
 
 @pytest.mark.asyncio
-async def test_deserialize_recovers_indentation_error_inside_cell() -> None:
+async def test_parse_drops_non_json_app_options() -> None:
+    source = """\
+import marimo
+
+app = marimo.App(
+    future_setting=1e999,
+    future_object={"values": [1e999]},
+)
+"""
+
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
+    )
+
+    assert isinstance(result, protocol.ParseNotebookSuccess)
+    assert result.document.app_options.passthrough == {}
+
+    printed = await print_notebook(
+        _context(MagicMock()),
+        protocol.PrintNotebook(document=result.document),
+    )
+    assert "future_setting" not in printed.source
+    assert "future_object" not in printed.source
+
+
+@pytest.mark.asyncio
+async def test_parse_recovers_indentation_error_inside_cell() -> None:
     source = """\
 import marimo
 app = marimo.App()
@@ -439,34 +537,34 @@ def _():
       y = 2
     return
 """
-    result = await deserialize(
+    result = await parse_notebook(
         _context(MagicMock()),
-        protocol.Deserialize(source=source),
+        protocol.ParseNotebook(source=source),
     )
 
-    assert isinstance(result, DeserializeSuccess)
-    assert [cell["code"] for cell in result.notebook.notebook["cells"]] == [
+    assert isinstance(result, protocol.ParseNotebookSuccess)
+    assert [cell["code"] for cell in result.document.cells] == [
         "if True:\n    x = 1\n  y = 2"
     ]
 
 
 @pytest.mark.asyncio
-async def test_deserialize_classifies_plain_python() -> None:
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source="print('hello')\n")
+async def test_parse_classifies_plain_python() -> None:
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source="print('hello')\n")
     )
 
-    assert isinstance(result, DeserializeConvertible)
+    assert isinstance(result, protocol.ParseNotebookConvertible)
 
 
 @pytest.mark.asyncio
-async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
-    result = await deserialize(
+async def test_parse_classifies_jupytext_percent_as_convertible() -> None:
+    result = await parse_notebook(
         _context(MagicMock()),
-        protocol.Deserialize(source="# %%\nprint('hello')\n"),
+        protocol.ParseNotebook(source="# %%\nprint('hello')\n"),
     )
 
-    assert isinstance(result, DeserializeConvertible)
+    assert isinstance(result, protocol.ParseNotebookConvertible)
 
 
 @pytest.mark.asyncio
@@ -479,21 +577,21 @@ async def test_deserialize_classifies_jupytext_percent_as_convertible() -> None:
         "# %%\n%%bash\necho hello\n",
     ],
 )
-async def test_deserialize_accepts_convertible_notebook_syntax(source: str) -> None:
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source=source)
+async def test_parse_accepts_convertible_notebook_syntax(source: str) -> None:
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
     )
 
-    assert isinstance(result, DeserializeConvertible)
+    assert isinstance(result, protocol.ParseNotebookConvertible)
 
 
 @pytest.mark.asyncio
-async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source="# %%\nprint(\n")
+async def test_parse_rejects_malformed_jupytext_cell() -> None:
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source="# %%\nprint(\n")
     )
 
-    assert isinstance(result, DeserializeInvalidSyntax)
+    assert isinstance(result, protocol.ParseNotebookInvalidSyntax)
     assert result.line == 2
 
 
@@ -506,37 +604,37 @@ async def test_deserialize_rejects_malformed_jupytext_cell() -> None:
         "import marimo\napp = marimo.App(\n",
     ],
 )
-async def test_deserialize_reports_syntax_errors_in_non_marimo_python(
+async def test_parse_reports_syntax_errors_in_non_marimo_python(
     source: str,
 ) -> None:
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source=source)
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
     )
 
-    assert isinstance(result, DeserializeInvalidSyntax)
+    assert isinstance(result, protocol.ParseNotebookInvalidSyntax)
     assert result.line is not None
 
 
 @pytest.mark.asyncio
 async def test_percent_marker_inside_string_is_just_convertible_python() -> None:
-    result = await deserialize(
-        _context(MagicMock()), protocol.Deserialize(source='x = "# %%"\n')
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source='x = "# %%"\n')
     )
 
-    assert isinstance(result, DeserializeConvertible)
+    assert isinstance(result, protocol.ParseNotebookConvertible)
 
 
 @pytest.mark.asyncio
-async def test_deserialize_propagates_unexpected_converter_error() -> None:
+async def test_parse_propagates_unexpected_converter_error() -> None:
     with (
         patch(
-            "marimo_lsp.api.MarimoConvert.from_py",
+            "marimo_lsp.notebook_source.parse_marimo_notebook",
             side_effect=RuntimeError("converter broke"),
         ),
         pytest.raises(RuntimeError, match="converter broke"),
     ):
-        await deserialize(
-            _context(MagicMock()), protocol.Deserialize(source="print('hello')")
+        await parse_notebook(
+            _context(MagicMock()), protocol.ParseNotebook(source="print('hello')")
         )
 
 

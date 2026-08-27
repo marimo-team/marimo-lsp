@@ -82,13 +82,13 @@ _StructLike = mi.StructType | mi.DataclassType | mi.TypedDictType
 # (exported name, type) pairs. The emitter topologically orders dependencies.
 CONCRETE: list[tuple[str, type | object]] = [
     ("Command", protocol.Command),
-    ("OwnedAppConfig", models.OwnedAppConfig),
+    ("AppOptions", protocol.AppOptions),
     ("KernelNotification", models.KernelNotification),
     ("DocumentAnalysis", models.DocumentAnalysis),
     ("CellMetadata", models.CellMetadata),
     ("NotebookDocumentMetadata", models.NotebookDocumentMetadata),
-    ("NotebookDocument", models.NotebookDocument),
-    ("DeserializeResult", models.DeserializeResult),
+    ("NotebookDocument", protocol.NotebookDocument),
+    ("ParseNotebookResult", protocol.ParseNotebookResult),
     ("ConvertRequest", models.ConvertRequest),
     ("CellOutputReplay", models.CellOutputReplay),
 ]

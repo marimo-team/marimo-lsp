@@ -4,21 +4,15 @@
 
 from __future__ import annotations
 
-import ast
 import dataclasses
 import inspect
 import json
-import keyword
 import typing
 from typing import TYPE_CHECKING, cast
 
 import msgspec
-from marimo._ast.app_config import _AppConfig
-from marimo._ast.compiler import module_compile
-from marimo._ast.parse import MarimoFileError
 from marimo._config.config import MarimoConfig  # noqa: TC002 - API introspection
 from marimo._config.manager import get_default_config_manager
-from marimo._convert.converters import MarimoConvert
 from marimo._export.exporter import Exporter, export_markdown
 from marimo._export.requests import (
     HTMLExportRequest,
@@ -38,11 +32,6 @@ from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
 from marimo._schemas.export import ExportAsHTMLRequest, to_html_export_options
 from marimo._schemas.export_options import IPYNBExportOptions, MarkdownExportOptions
-from marimo._schemas.notebook import NotebookV1
-from marimo._schemas.serialization import (
-    AppInstantiation,
-    Header,
-)
 from marimo._session.requests import InstantiateNotebookRequest
 from marimo._session.state.serialize import serialize_session_view
 from marimo._types.ids import (
@@ -55,16 +44,12 @@ from marimo._types.ids import (
 from pygls.uris import to_fs_path
 from typing_extensions import TypeForm
 
-from marimo_lsp import protocol
+from marimo_lsp import notebook_source, protocol
 from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     DeleteCellRequest,
     DependencyTreeResponse,
-    DeserializeConvertible,
-    DeserializeInvalidSyntax,
-    DeserializeResult,
-    DeserializeSuccess,
     ExecuteCellsRequest,
     GetConfigurationResponse,
     ListPackagesResponse,
@@ -72,9 +57,7 @@ from marimo_lsp.models import (
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
     ModelRequest,
-    NotebookDocument,
     ReadNotebookOutputsResponse,
-    SerializeResponse,
     SetDisplayThemeResponse,
     UpdateUIElementRequest,
 )
@@ -89,11 +72,6 @@ if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
 
     from marimo_lsp.sessions import Session, Sessions
-
-
-_APP_CONFIG_FIELD_NAMES = frozenset(
-    field.name for field in dataclasses.fields(_AppConfig)
-)
 
 
 __all__ = ["COMMANDS", "CommandBuilder", "CommandSpec", "handle_command"]
@@ -662,163 +640,20 @@ def _package_manager_for(source: protocol.PackageSource) -> LspPackageManager:
     )
 
 
-@command(protocol.Serialize)
-async def serialize(_ctx: ApiContext, args: protocol.Serialize) -> SerializeResponse:
-    notebook = msgspec.convert(args.notebook, type=NotebookV1)
-    ir = MarimoConvert.from_notebook_v1(notebook).to_ir()
-    known_options = {
-        name: value
-        for name, value in args.app_config.items()
-        if name in _APP_CONFIG_FIELD_NAMES
-    }
-    ir = dataclasses.replace(
-        ir,
-        app=AppInstantiation(options=known_options),
-        header=Header(value=args.header) if args.header is not None else None,
-    )
-    source = MarimoConvert.from_ir(ir).to_py()
-    return SerializeResponse(
-        source=_restore_unknown_app_options(source, args.app_config)
-    )
-
-
-def _restore_unknown_app_options(source: str, options: dict[str, object]) -> str:
-    """Restore opaque options dropped by marimo's current code generator.
-
-    Marimo parses unknown literal kwargs, but ``generate_filecontents_from_ir``
-    projects them through its installed ``_AppConfig`` and loses them. Replace
-    only the generated ``marimo.App(...)`` expression so future options survive
-    a save without reformatting the rest of the notebook.
-    """
-    known_options = _APP_CONFIG_FIELD_NAMES
-    unknown_options = [
-        (name, value) for name, value in options.items() if name not in known_options
-    ]
-    if not unknown_options:
-        return source
-
-    rendered_options: list[str] = []
-    for name, value in unknown_options:
-        if not name.isidentifier() or keyword.iskeyword(name):
-            msg = f"App config key cannot be represented as a keyword: {name!r}"
-            raise ValueError(msg)
-        rendered = repr(value)
-        try:
-            ast.literal_eval(rendered)
-        except (ValueError, SyntaxError) as error:
-            msg = f"App config value is not a Python literal: {name!r}={rendered}"
-            raise ValueError(msg) from error
-        rendered_options.append(f"{name}={rendered}")
-
-    tree = ast.parse(source)
-    call = next(
-        (
-            node.value
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "app"
-                for target in node.targets
-            )
-            and isinstance(node.value, ast.Call)
-            and isinstance(node.value.func, ast.Attribute)
-            and isinstance(node.value.func.value, ast.Name)
-            and node.value.func.value.id == "marimo"
-            and node.value.func.attr == "App"
-        ),
-        None,
-    )
-    if call is None or call.end_lineno is None or call.end_col_offset is None:
-        msg = "Generated notebook did not contain marimo.App(...)"
-        raise ValueError(msg)
-
-    lines = source.splitlines(keepends=True)
-
-    def offset(line_number: int, byte_column: int) -> int:
-        line = lines[line_number - 1]
-        char_column = len(line.encode()[:byte_column].decode())
-        return sum(map(len, lines[: line_number - 1])) + char_column
-
-    end = offset(call.end_lineno, call.end_col_offset)
-    separator = ", " if call.args or call.keywords else ""
-    insertion = f"{separator}{', '.join(rendered_options)}"
-    return f"{source[: end - 1]}{insertion}{source[end - 1 :]}"
-
-
-@command(protocol.Deserialize)
-async def deserialize(
+@command(protocol.PrintNotebook)
+async def print_notebook(
     _ctx: ApiContext,
-    args: protocol.Deserialize,
-) -> DeserializeResult:
-    try:
-        converter = MarimoConvert.from_py(args.source)
-        ir = converter.to_ir()
-    except SyntaxError as error:
-        return _classify_convertible(args.source, syntax_error=error)
-    except MarimoFileError as error:
-        if str(error) != "`marimo.App` definition expected.":
-            raise
-        return _classify_convertible(args.source)
-
-    if not ir.valid:
-        return _classify_convertible(args.source)
-
-    return DeserializeSuccess(
-        notebook=NotebookDocument(
-            notebook=converter.to_notebook_v1(),
-            app_config={**_AppConfig().asdict(), **ir.app.options},
-            header=ir.header.value if ir.header is not None else None,
-        )
-    )
+    args: protocol.PrintNotebook,
+) -> protocol.PrintNotebookResult:
+    return notebook_source.print_notebook(args.document)
 
 
-def _syntax_error_position(
-    source: str, error: SyntaxError
-) -> tuple[int | None, int | None]:
-    if error.filename == "notebook.py":
-        return error.lineno, error.offset
-
-    # Some failures in marimo's cell fallback are relative to the extracted
-    # cell body. Only translate them when the offending line is unambiguous.
-    if error.text is None:
-        return None, None
-    error_line = error.text.rstrip("\r\n")
-    matches = [
-        line_number
-        for line_number, source_line in enumerate(source.splitlines(), start=1)
-        if source_line == error_line
-    ]
-    if len(matches) != 1:
-        return None, None
-    return matches[0], error.offset
-
-
-def _classify_convertible(
-    source: str,
-    syntax_error: SyntaxError | None = None,
-) -> DeserializeConvertible | DeserializeInvalidSyntax:
-    try:
-        # Use the same compiler as marimo cells so valid notebook constructs,
-        # notably top-level await, are not rejected as ordinary scripts.
-        module_compile(source)
-    except SyntaxError as error:
-        if "# %%" in source:
-            try:
-                # Jupytext magics are not Python syntax until the percent
-                # converter rewrites them. Validate the conversion we actually
-                # offer instead of guessing from the original source.
-                converted = MarimoConvert.from_non_marimo_python_script(source).to_ir()
-                for cell in converted.cells:
-                    module_compile(cell.code)
-            except SyntaxError:
-                pass
-            else:
-                return DeserializeConvertible()
-
-        failure = syntax_error or error
-        line, column = _syntax_error_position(source, failure)
-        return DeserializeInvalidSyntax(line=line, column=column)
-    return DeserializeConvertible()
+@command(protocol.ParseNotebook)
+async def parse_notebook(
+    _ctx: ApiContext,
+    args: protocol.ParseNotebook,
+) -> protocol.ParseNotebookResult:
+    return notebook_source.parse_notebook(args.source)
 
 
 @command(protocol.GetConfiguration)

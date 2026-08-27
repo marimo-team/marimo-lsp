@@ -20,39 +20,15 @@ from marimo._messaging.notification import (  # noqa: TC002
     VariablesNotification,
 )
 from marimo._runtime.packages.package_manager import PackageDescription  # noqa: TC002
-from marimo._schemas.notebook import (
-    NotebookCellConfig,
-    NotebookMetadata,
-    NotebookV1,
-)
 from marimo._server.models.packages import DependencyTreeNode  # noqa: TC002
 from marimo._types.ids import SessionId  # noqa: TC002
+
+from marimo_lsp.protocol import AppOptions, NotebookCellConfig, NotebookMetadata
 
 # Sentinel the frontend `@marimo-team/smart-cells` SQL parser writes into
 # `sourceProjections.sql.engine` for the implicit default engine. We must not
 # emit `engine=__marimo_duckdb` when round-tripping these cells.
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
-
-
-# Opaque ``marimo.App`` constructor options preserved across the wire.
-#
-# Marimo deliberately accepts ``**kwargs`` for forward/backward compatibility:
-# unknown keys are ignored by the installed runtime, while known keys accept
-# legacy values. The extension should therefore type and validate only options
-# it owns instead of duplicating marimo's evolving private ``_AppConfig``.
-type AppConfig = dict[str, object]
-
-
-class OwnedAppConfig(msgspec.Struct):
-    """App options understood by the extension, projected from ``AppConfig``.
-
-    Codegen preserves excess properties in TypeScript so parsing this owned
-    subset never discards options belonging to marimo or a future extension.
-    """
-
-    __preserve_unknown_fields__: typing.ClassVar[bool] = True
-
-    auto_download: list[str] = msgspec.field(default_factory=list)
 
 
 class KernelNotification(msgspec.Struct, rename="camel"):
@@ -120,10 +96,10 @@ class MarimoCellMetadata(msgspec.Struct, rename="camel", forbid_unknown_fields=T
     """The marimo cell name."""
 
     config: NotebookCellConfig = msgspec.field(
-        default_factory=NotebookCellConfig,
+        default_factory=dict,
         name="options",
     )
-    """The marimo `NotebookCellConfig`.
+    """The owned notebook cell configuration.
 
     Synced on the wire as ``options`` (VS Code's notebook cell config key); we
     expose it as ``config`` to match marimo's downstream vocabulary
@@ -167,7 +143,7 @@ class MarimoNotebookMetadata(
 ):
     """Persisted marimo-owned metadata on an LSP notebook document."""
 
-    app_config: AppConfig = msgspec.field(default_factory=dict)
+    app_options: AppOptions = msgspec.field(default_factory=AppOptions)
     header: str | None = None
     notebook_metadata: NotebookMetadata = msgspec.field(default_factory=dict)
 
@@ -180,42 +156,6 @@ class NotebookDocumentMetadata(
     __preserve_unknown_fields__: typing.ClassVar[bool] = True
 
     marimo: MarimoNotebookMetadata
-
-
-class NotebookDocument(msgspec.Struct, rename="camel"):
-    """Strict JSON notebook data plus source-level application metadata."""
-
-    notebook: NotebookV1
-    app_config: AppConfig = msgspec.field(default_factory=dict)
-    header: str | None = None
-
-
-class DeserializeSuccess(
-    msgspec.Struct, tag="success", tag_field="kind", rename="camel"
-):
-    """A successfully parsed native marimo notebook."""
-
-    notebook: NotebookDocument
-
-
-class DeserializeInvalidSyntax(
-    msgspec.Struct, tag="invalid-syntax", tag_field="kind", rename="camel"
-):
-    """Python syntax prevented the source from being inspected."""
-
-    line: int | None = None
-    column: int | None = None
-
-
-class DeserializeConvertible(
-    msgspec.Struct, tag="convertible", tag_field="kind", rename="camel"
-):
-    """Valid Python source that can be converted to a marimo notebook."""
-
-
-type DeserializeResult = (
-    DeserializeSuccess | DeserializeInvalidSyntax | DeserializeConvertible
-)
 
 
 class ConvertRequest(msgspec.Struct, rename="camel"):
@@ -256,13 +196,6 @@ class DependencyTreeResponse(msgspec.Struct, rename="camel"):
 
     tree: DependencyTreeNode | None = None
     """The environment's dependency tree, or ``None`` when unresolvable."""
-
-
-class SerializeResponse(msgspec.Struct, rename="camel"):
-    """Response for ``serialize``."""
-
-    source: str
-    """The notebook rendered as Python source."""
 
 
 class GetConfigurationResponse(msgspec.Struct, rename="camel"):

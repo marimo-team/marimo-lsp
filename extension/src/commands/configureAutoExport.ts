@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import type { AutoExportFormat } from "../features/AutoExport.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import type { OwnedAppConfig } from "../schemas/Models.gen.ts";
+import type { ManagedAppOptions } from "../schemas/Models.gen.ts";
 
 const FORMATS = ["html", "ipynb", "markdown"] as const;
 
@@ -11,9 +11,9 @@ const isManagedFormat = (format: string): format is AutoExportFormat =>
   format === "html" || format === "ipynb" || format === "markdown";
 
 export function mergeAutoDownloadFormats(
-  current: OwnedAppConfig["auto_download"],
+  current: ManagedAppOptions["autoDownload"],
   selected: ReadonlyArray<AutoExportFormat>,
-): OwnedAppConfig["auto_download"] {
+): ManagedAppOptions["autoDownload"] {
   const retained = current.filter(
     (format) => !isManagedFormat(format) || selected.includes(format),
   );
@@ -36,7 +36,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     }
 
     const metadata = yield* notebook.value.parseMetadata();
-    const current = metadata.appConfig.auto_download;
+    const current = metadata.appOptions.managed.autoDownload;
     const selected = yield* code.window.showQuickPickItemsMany(
       [
         {
@@ -68,7 +68,7 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     // The picker can stay open while another command updates notebook metadata.
     // Merge into the latest app config so those concurrent changes survive.
     const latestMetadata = yield* notebook.value.parseMetadata();
-    const latest = latestMetadata.appConfig.auto_download;
+    const latest = latestMetadata.appOptions.managed.autoDownload;
     const next = mergeAutoDownloadFormats(
       latest,
       selected.value.map((item) => item.value),
@@ -81,7 +81,13 @@ export const configureAutoExport = Effect.fn("command.configureAutoExport")(
     }
 
     const nextMetadata = notebook.value.buildMetadataUpdate({
-      appConfig: { ...latestMetadata.appConfig, auto_download: next },
+      appOptions: {
+        ...latestMetadata.appOptions,
+        managed: {
+          ...latestMetadata.appOptions.managed,
+          autoDownload: next,
+        },
+      },
     });
     const edit = new code.WorkspaceEdit();
     edit.set(notebook.value.uri, [

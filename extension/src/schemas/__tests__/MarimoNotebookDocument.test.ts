@@ -108,17 +108,19 @@ describe("MarimoNotebookCell metadata updates", () => {
   );
 });
 
-describe("MarimoNotebookDocument app config", () => {
-  it("validates owned options and preserves options it does not understand", () => {
+describe("MarimoNotebookDocument app options", () => {
+  it("validates managed options and preserves passthrough options", () => {
     const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
       data: {
         cells: [],
         metadata: {
           marimo: {
-            appConfig: {
-              auto_download: ["html", "future-format"],
-              width: "wide",
-              future_setting: { answer: 42 },
+            appOptions: {
+              managed: { autoDownload: ["html", "future-format"] },
+              passthrough: {
+                width: "wide",
+                future_setting: { answer: 42 },
+              },
             },
           },
         },
@@ -128,11 +130,22 @@ describe("MarimoNotebookDocument app config", () => {
     const parsed = Effect.runSync(
       MarimoNotebookDocument.from(raw).parseMetadata(),
     );
-    expect(parsed.appConfig.auto_download).toEqual(["html", "future-format"]);
-    expect(parsed.appConfig).toMatchObject({
-      width: "wide",
-      future_setting: { answer: 42 },
-    });
+    expect(parsed.appOptions).toMatchInlineSnapshot(`
+      {
+        "managed": {
+          "autoDownload": [
+            "html",
+            "future-format",
+          ],
+        },
+        "passthrough": {
+          "future_setting": {
+            "answer": 42,
+          },
+          "width": "wide",
+        },
+      }
+    `);
   });
 
   it("rejects invalid values for the option owned by the extension", () => {
@@ -140,7 +153,9 @@ describe("MarimoNotebookDocument app config", () => {
       data: {
         cells: [],
         metadata: {
-          marimo: { appConfig: { auto_download: [42] } },
+          marimo: {
+            appOptions: { managed: { autoDownload: [42] }, passthrough: {} },
+          },
         },
       },
     });

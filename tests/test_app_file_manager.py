@@ -97,7 +97,13 @@ class TestSyncAppWithWorkspace:
             uri,
             metadata={
                 "marimo": {
-                    "appConfig": {"width": "medium", "sql_output": "polars"},
+                    "appOptions": {
+                        "managed": {"autoDownload": []},
+                        "passthrough": {
+                            "width": "medium",
+                            "sql_output": "polars",
+                        },
+                    },
                     "header": "",
                     "notebookMetadata": {"marimo_version": "0.23.16"},
                 }
@@ -113,7 +119,12 @@ class TestSyncAppWithWorkspace:
             uri,
             metadata={
                 "marimo": {
-                    "appConfig": {"width": "wide", "future_setting": True},
+                    "appOptions": {
+                        "passthrough": {
+                            "width": "wide",
+                            "future_setting": True,
+                        }
+                    },
                 }
             },
         )
@@ -128,7 +139,7 @@ class TestSyncAppWithWorkspace:
             uri,
             metadata={
                 "foreign": {"anything": True},
-                "marimo": {"appConfig": {"width": "full"}},
+                "marimo": {"appOptions": {"passthrough": {"width": "full"}}},
             },
         )
 

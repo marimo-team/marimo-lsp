@@ -3,7 +3,7 @@ import { Data } from "effect";
 import type * as Api from "../schemas/Models.gen.ts";
 
 export type NotebookSourceFailure = Exclude<
-  Api.DeserializeResult,
+  Api.ParseNotebookResult,
   { readonly kind: "success" }
 >;
 

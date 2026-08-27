@@ -405,8 +405,7 @@ async def test_file_notebook_did_close_detaches_session() -> None:
     sessions.close.assert_not_called()
 
 
-async def test_marimo_serialize_command(client: LanguageClient) -> None:
-    """Test the marimo.serialize command."""
+async def test_print_notebook_command(client: LanguageClient) -> None:
     notebook = {
         "version": "1",
         "metadata": {},
@@ -423,7 +422,14 @@ async def test_marimo_serialize_command(client: LanguageClient) -> None:
 
     result = await send_command(
         client,
-        {"kind": "serialize", "notebook": notebook, "header": "marimo app"},
+        {
+            "kind": "print-notebook",
+            "document": {
+                **notebook,
+                "appOptions": {},
+                "header": "marimo app",
+            },
+        },
     )
 
     assert result is not None
@@ -448,8 +454,7 @@ if __name__ == "__main__":
 """)
 
 
-async def test_marimo_deserialize_command(client: LanguageClient) -> None:
-    """Test the marimo.deserialize command."""
+async def test_parse_notebook_command(client: LanguageClient) -> None:
     source = """
 import marimo
 
@@ -465,38 +470,31 @@ if __name__ == "__main__":
     app.run()
 """
 
-    result = await send_command(client, {"kind": "deserialize", "source": source})
-    result["notebook"]["notebook"]["metadata"]["marimo_version"] = "<marimo-version>"
+    result = await send_command(client, {"kind": "parse-notebook", "source": source})
+    result["document"]["metadata"]["marimo_version"] = "<marimo-version>"
 
     assert result == snapshot(
         {
             "kind": "success",
-            "notebook": {
-                "notebook": {
-                    "version": "1",
-                    "cells": [
-                        {
-                            "id": "Hbol",
-                            "code": "import marimo as mo",
-                            "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
-                            "name": "__",
-                            "config": {
-                                "column": None,
-                                "disabled": False,
-                                "hide_code": False,
-                            },
-                        }
-                    ],
-                    "metadata": {"marimo_version": "<marimo-version>"},
-                },
-                "appConfig": {
-                    "width": "compact",
-                    "app_title": None,
-                    "layout_file": None,
-                    "css_file": None,
-                    "html_head_file": None,
-                    "auto_download": [],
-                    "sql_output": "auto",
+            "document": {
+                "version": "1",
+                "cells": [
+                    {
+                        "id": "Hbol",
+                        "code": "import marimo as mo",
+                        "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+                        "name": "__",
+                        "config": {
+                            "column": None,
+                            "disabled": False,
+                            "hide_code": False,
+                        },
+                    }
+                ],
+                "metadata": {"marimo_version": "<marimo-version>"},
+                "appOptions": {
+                    "managed": {"autoDownload": []},
+                    "passthrough": {},
                 },
                 "header": "",
             },

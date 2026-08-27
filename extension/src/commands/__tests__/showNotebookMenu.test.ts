@@ -181,7 +181,7 @@ describe("showNotebookMenu", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
         data: {
           metadata: MarimoNotebookDocument.createMetadata({
-            appConfig: { auto_download: [] },
+            appOptions: { managed: { autoDownload: [] }, passthrough: {} },
           }),
           cells: [
             {
