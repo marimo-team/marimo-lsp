@@ -60,6 +60,20 @@ const REPLACEMENT_SESSION_ID = kernelSessionId(
   "00000000-0000-4000-8000-000000000002",
 );
 
+const settle = <A, E, R>(
+  get: Effect.Effect<A, E, R>,
+  predicate: (value: A) => boolean,
+  failure: string,
+) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt <= 100; attempt++) {
+      const value = yield* get;
+      if (predicate(value)) return value;
+      if (attempt < 100) yield* Effect.yieldNow;
+    }
+    return yield* Effect.fail(failure);
+  });
+
 const withTestCtx = Effect.fn(function* (
   activeSessionId: KernelSessionId = ACTIVE_SESSION_ID,
   workspace: {
@@ -495,12 +509,57 @@ describe("NotebookRuntime cell identity", () => {
             },
           ],
         });
-        yield* Effect.yieldNow;
 
-        const commands = yield* SubscriptionRef.get(ctx.executions);
-        expect(commands.some((command) => command.kind === "delete-cell")).toBe(
-          false,
+        // The assertion below is negative, so the unchanged command list
+        // cannot tell us when the move has been processed. Follow it with an
+        // observable deletion on the same sequential change stream. Once the
+        // marker deletion is recorded, the preceding move event has completed.
+        const markerCell = createTestNotebookDocument(
+          NodePath.join(process.cwd(), "cell-move-marker_mo.py"),
+          {
+            data: {
+              cells: [
+                {
+                  kind: 1,
+                  value: "",
+                  languageId: "python",
+                  metadata: MarimoNotebookCell.createMetadata({
+                    marimoRuntime: { stableId: "cell-move-marker" },
+                  }),
+                },
+              ],
+            },
+          },
+        ).cellAt(0);
+        yield* ctx.vscode.notebookChange({
+          notebook: ctx.editor.notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [
+            {
+              range: new NotebookRange(1, 1),
+              removedCells: [markerCell],
+              addedCells: [],
+            },
+          ],
+        });
+        const commands = yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) =>
+            calls.some(
+              (command) =>
+                command.kind === "delete-cell" &&
+                command.cellId === "cell-move-marker",
+            ),
+          "cell change pipeline did not settle",
         );
+
+        expect(
+          commands.some(
+            (command) =>
+              command.kind === "delete-cell" && command.cellId === "cell-1",
+          ),
+        ).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -1096,7 +1155,7 @@ describe("NotebookRuntime state eviction", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime;
         const variables = yield* NotebookVariables;
         const datasources = yield* NotebookDatasources;
 
@@ -1204,7 +1263,18 @@ describe("NotebookRuntime state eviction", () => {
         // A delayed close from the old document must not clear replacement
         // session state.
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow;
+        // Opening a marker document on the same sequential lifecycle stream
+        // gives the stale close an observable ordering barrier. Once the
+        // marker has a session, the preceding close has been handled.
+        const lifecycleMarker = createTestNotebookDocument(
+          NodePath.join(process.cwd(), "lifecycle-marker_mo.py"),
+        );
+        yield* ctx.vscode.openNotebook(lifecycleMarker);
+        yield* settle(
+          runtime.forDocument(lifecycleMarker).pipe(Effect.option),
+          Option.isSome,
+          "notebook lifecycle pipeline did not settle",
+        );
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, SubscriptionRef } from "effect";
+import { Effect, Layer, Option, Ref, Schedule, SubscriptionRef } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -65,6 +65,19 @@ const withTestCtx = Effect.fn(function* (
   };
 });
 
+const waitForExecutions = (
+  executions: Ref.Ref<ReadonlyArray<TestCommand>>,
+  predicate: (executions: ReadonlyArray<TestCommand>) => boolean,
+) =>
+  Effect.yieldNow.pipe(
+    Effect.andThen(Ref.get(executions)),
+    Effect.filterOrFail(
+      predicate,
+      () => "ThemeSync executions have not settled" as const,
+    ),
+    Effect.retry(Schedule.recurs(100)),
+  );
+
 describe("ThemeSync", () => {
   it.effect(
     "sends set-display-theme on theme change",
@@ -73,10 +86,19 @@ describe("ThemeSync", () => {
 
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* waitForExecutions(
+          ctx.executions,
+          (executions) => executions.length >= 2,
+        );
 
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* Effect.yieldNow;
+        yield* waitForExecutions(ctx.executions, (executions) =>
+          executions.some(
+            (execution) =>
+              execution.kind === "set-display-theme" &&
+              execution.theme === "dark",
+          ),
+        );
 
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
@@ -106,10 +128,19 @@ describe("ThemeSync", () => {
       yield* Effect.gen(function* () {
         // The focus is on a text editor. The registry has no notebook.
         yield* ctx.vscode.setActiveNotebookEditor(Option.none());
-        yield* Effect.yieldNow;
+        yield* waitForExecutions(
+          ctx.executions,
+          (executions) => executions.length >= 1,
+        );
 
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* Effect.yieldNow;
+        yield* waitForExecutions(ctx.executions, (executions) =>
+          executions.some(
+            (execution) =>
+              execution.kind === "set-display-theme" &&
+              execution.theme === "dark",
+          ),
+        );
 
         // set-display-theme updates all running sessions. The kernels must
         // get the change when no notebook is focused.
@@ -128,7 +159,10 @@ describe("ThemeSync", () => {
 
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* waitForExecutions(
+          ctx.executions,
+          (executions) => executions.length >= 2,
+        );
 
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
