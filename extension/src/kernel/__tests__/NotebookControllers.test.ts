@@ -1,7 +1,10 @@
+import * as NodeFs from "node:fs";
+import * as NodeOs from "node:os";
+import * as NodePath from "node:path";
+
 import { assert, expect, it } from "@effect/vitest";
 import type * as py from "@vscode/python-extension";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
-import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
@@ -15,7 +18,26 @@ import {
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { Constants } from "../../platform/Constants.ts";
+import { VsCode } from "../../platform/VsCode.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
+
+const affinityMap = (
+  updates: ReadonlyArray<{
+    controllerId: string;
+    affinity: vscode.NotebookControllerAffinity;
+  }>,
+) =>
+  Object.fromEntries(
+    updates.map(({ controllerId, affinity }) => [controllerId, affinity]),
+  );
+
+const scriptNotebookEditor = (uri: string) =>
+  TestVsCode.makeNotebookEditor(uri, {
+    data: {
+      cells: [],
+      metadata: { marimo: { header: "/// script" } },
+    },
+  });
 
 const withTestCtx = Effect.fn(function* (
   options: {
@@ -100,7 +122,7 @@ it.effect(
         editor.notebook,
         true,
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       const selectedNotebook = yield* notebooks.forNotebook(
         notebookId(editor.notebook.uri.toString()),
@@ -164,10 +186,10 @@ it.effect(
       // the mock PubSub before we publish; the PubSub has no replay, so an
       // event published before the fork first runs would be silently lost.
       // Production wraps a vscode event listener registered at activation.
-      yield* TestClock.adjust("1 millis");
+      yield* Effect.yieldNow;
 
       yield* ctx.python.addEnvironment(second);
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect((yield* ctx.vscode.snapshot()).controllers).toEqual([
         "marimo-/home/user/.venv/bin/python",
         "marimo-/usr/local/bin/python3.11",
@@ -175,7 +197,7 @@ it.effect(
       ]);
 
       yield* ctx.python.removeEnvironment(first);
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect((yield* ctx.vscode.snapshot()).controllers).toEqual([
         "marimo-/usr/local/bin/python3.11",
         "marimo-sandbox",
@@ -198,16 +220,16 @@ it.effect(
       // Drain so the selection listener and the environmentChanges consumer
       // (both forked during layer construction) are attached before the mock
       // events below fire; see the comments in the two tests above.
-      yield* TestClock.adjust("1 millis");
+      yield* Effect.yieldNow;
       yield* ctx.vscode.selectNotebookController(
         `marimo-${executable}`,
         editor.notebook,
         true,
       );
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       yield* ctx.python.removeEnvironment(environment);
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       expect((yield* ctx.vscode.snapshot()).controllers).toContain(
         `marimo-${executable}`,
@@ -217,20 +239,151 @@ it.effect(
 );
 
 it.effect(
-  "does not set affinity without a script header or adjacent venv",
+  "sets all controllers to default without a script header or adjacent venv",
   Effect.fn(function* () {
+    const executable = "/usr/local/bin/python3.11";
     const ctx = yield* withTestCtx({
-      initialEnvs: [TestPythonExtension.makeVenv("/usr/local/bin/python3.11")],
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
     });
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime;
+      const code = yield* VsCode;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* TestClock.adjust("100 millis");
+      yield* Effect.yieldNow;
 
-      expect(yield* ctx.vscode.getAffinityUpdates()).toEqual([]);
+      const updates = yield* ctx.vscode.getAffinityUpdates();
+      expect(updates).toHaveLength(2);
+      expect(affinityMap(updates)).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Default,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
+      });
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "resets sandbox affinity after the script header is removed",
+  Effect.fn(function* () {
+    const executable = "/usr/local/bin/python3.11";
+    const ctx = yield* withTestCtx({
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
+    });
+
+    yield* Effect.gen(function* () {
+      yield* NotebookRuntime;
+      const code = yield* VsCode;
+      const uri = "/test/notebook_mo.py";
+
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(scriptNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(TestVsCode.makeNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+
+      const updates = yield* ctx.vscode.getAffinityUpdates();
+      expect(updates).toHaveLength(4);
+      expect(affinityMap(updates.slice(0, 2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Preferred,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
+      });
+      expect(affinityMap(updates.slice(2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Default,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
+      });
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "resets venv affinity after the adjacent venv is removed",
+  Effect.fn(function* () {
+    using project = NodeFs.mkdtempDisposableSync(
+      NodePath.join(NodeOs.tmpdir(), "marimo-controller-affinity-"),
+    );
+    const venv = NodePath.join(project.path, ".venv");
+    const executable = NodePath.join(venv, "bin", "python");
+    const pyvenvConfig = NodePath.join(venv, "pyvenv.cfg");
+    NodeFs.mkdirSync(NodePath.dirname(executable), { recursive: true });
+    NodeFs.writeFileSync(pyvenvConfig, "");
+
+    const ctx = yield* withTestCtx({
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
+    });
+
+    yield* Effect.gen(function* () {
+      yield* NotebookRuntime;
+      const code = yield* VsCode;
+      const uri = NodePath.join(project.path, "notebook_mo.py");
+
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(TestVsCode.makeNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+      NodeFs.unlinkSync(pyvenvConfig);
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(TestVsCode.makeNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+
+      const updates = yield* ctx.vscode.getAffinityUpdates();
+      expect(updates).toHaveLength(4);
+      expect(affinityMap(updates.slice(0, 2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Default,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Preferred,
+      });
+      expect(affinityMap(updates.slice(2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Default,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
+      });
+    }).pipe(Effect.provide(ctx.layer));
+  }),
+);
+
+it.effect(
+  "demotes sandbox affinity when an adjacent venv replaces the script header",
+  Effect.fn(function* () {
+    using project = NodeFs.mkdtempDisposableSync(
+      NodePath.join(NodeOs.tmpdir(), "marimo-controller-affinity-"),
+    );
+    const venv = NodePath.join(project.path, ".venv");
+    const executable = NodePath.join(venv, "bin", "python");
+    NodeFs.mkdirSync(NodePath.dirname(executable), { recursive: true });
+    NodeFs.writeFileSync(NodePath.join(venv, "pyvenv.cfg"), "");
+
+    const ctx = yield* withTestCtx({
+      initialEnvs: [TestPythonExtension.makeVenv(executable)],
+    });
+
+    yield* Effect.gen(function* () {
+      yield* NotebookRuntime;
+      const code = yield* VsCode;
+      const uri = NodePath.join(project.path, "notebook_mo.py");
+
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(scriptNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+      yield* ctx.vscode.setActiveNotebookEditor(
+        Option.some(TestVsCode.makeNotebookEditor(uri)),
+      );
+      yield* Effect.yieldNow;
+
+      const updates = yield* ctx.vscode.getAffinityUpdates();
+      expect(updates).toHaveLength(4);
+      expect(affinityMap(updates.slice(0, 2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Preferred,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
+      });
+      expect(affinityMap(updates.slice(2))).toEqual({
+        "marimo-sandbox": code.NotebookControllerAffinity.Default,
+        [`marimo-${executable}`]: code.NotebookControllerAffinity.Preferred,
+      });
     }).pipe(Effect.provide(ctx.layer));
   }),
 );

@@ -14,7 +14,6 @@ import {
   Stream,
   SubscriptionRef,
 } from "effect";
-import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -387,7 +386,7 @@ describe("NotebookRuntime operation processing", () => {
       yield* Effect.gen(function* () {
         yield* NotebookRuntime;
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
@@ -410,7 +409,7 @@ describe("NotebookRuntime operation processing", () => {
         yield* Deferred.await(editStarted);
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* Ref.get(ctx.errorMessages)).toEqual([]);
       }).pipe(Effect.provide(ctx.layer));
@@ -432,7 +431,7 @@ describe("NotebookRuntime cell identity", () => {
         // vscode event listener registered during activation, so the event
         // cannot fire before the listener exists; the mock's PubSub has no
         // replay, so a publish before the fork first runs is silently lost.
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -447,9 +446,15 @@ describe("NotebookRuntime cell identity", () => {
             },
           ],
         });
-        yield* TestClock.adjust("10 millis");
+        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
+          Stream.filter((commands) =>
+            commands.some((command) => command.kind === "delete-cell"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
 
-        expect(yield* SubscriptionRef.get(ctx.executions)).toContainEqual({
+        expect(executions).toContainEqual({
           kind: "delete-cell",
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
@@ -470,7 +475,7 @@ describe("NotebookRuntime cell identity", () => {
         // deleted-cell test above); without it this test would pass vacuously
         // because the mock PubSub drops events published before the forked
         // consumer subscribes.
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -490,7 +495,7 @@ describe("NotebookRuntime cell identity", () => {
             },
           ],
         });
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
 
         const commands = yield* SubscriptionRef.get(ctx.executions);
         expect(commands.some((command) => command.kind === "delete-cell")).toBe(
@@ -513,7 +518,7 @@ describe("NotebookRuntime stdin", () => {
 
         // Set active editor so NotebookEditorRegistry can find it
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         // Push a cell-op with stdin console output
         yield* PubSub.publish(
@@ -530,7 +535,7 @@ describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         // Provide the input (unblocks showInputBox)
         yield* Queue.offer(ctx.inputQueue, Option.some("foo"));
@@ -564,7 +569,7 @@ describe("NotebookRuntime stdin", () => {
         const cellId = Option.getOrThrow(cell.id);
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(
           ctx.operationsPubSub,
@@ -580,7 +585,7 @@ describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         // User cancels the input box
         yield* Queue.offer(ctx.inputQueue, Option.none());
@@ -615,7 +620,7 @@ describe("NotebookRuntime stdin", () => {
       yield* Effect.gen(function* () {
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(
           ctx.operationsPubSub,
@@ -634,9 +639,9 @@ describe("NotebookRuntime stdin", () => {
         yield* ctx.inputRequested.await;
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           (yield* SubscriptionRef.get(ctx.executions)).some(
@@ -656,7 +661,7 @@ describe("NotebookRuntime stdin", () => {
         const runtime = yield* NotebookRuntime;
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(
           ctx.operationsPubSub,
@@ -677,7 +682,7 @@ describe("NotebookRuntime stdin", () => {
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         yield* notebook.restart;
         yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(
           (yield* SubscriptionRef.get(ctx.executions)).some(
@@ -717,7 +722,7 @@ describe("NotebookRuntime scratch stream", () => {
         // Extra drain: give the second scratchpad every chance to
         // (incorrectly) bypass the per-notebook lock before asserting that
         // exactly one command went out.
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         const first_ = scratchpadCalls(
           yield* SubscriptionRef.get(ctx.executions),
@@ -784,7 +789,7 @@ describe("NotebookRuntime scratch stream", () => {
         // lifecycle subscription before its layer finishes building, so an
         // open published this early is delivered rather than dropped.
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         yield* runtime.attachController(otherNotebook.id, ctx.mockController);
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
@@ -860,7 +865,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         // Route cell-op notifications through processSessionOperation.
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -957,7 +962,7 @@ describe("NotebookRuntime scratch stream", () => {
         const runtime = yield* NotebookRuntime;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -1008,7 +1013,7 @@ describe("NotebookRuntime scratch stream", () => {
         const runtime = yield* NotebookRuntime;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -1017,7 +1022,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         // Wait until the command is recorded. Do not count scheduler
         // drains. The scratchpad setup can need more than one drain, which
-        // makes a single `TestClock.adjust` flaky.
+        // makes a single scheduler yield flaky.
         const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((current) =>
             current.some((call) => call.kind === "execute-scratchpad"),
@@ -1060,14 +1065,14 @@ describe("NotebookRuntime state eviction", () => {
       yield* Effect.gen(function* () {
         yield* NotebookRuntime;
         const variables = yield* NotebookVariables;
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(ctx.operationsPubSub, {
           notebookUri: ctx.notebookUri,
           sessionId: staleSessionId,
           notification: { op: "variables", variables: [] },
         });
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
         expect(
           Option.isNone(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
@@ -1101,7 +1106,7 @@ describe("NotebookRuntime state eviction", () => {
         // dropped since the PubSub has no replay). In production, operations
         // only flow for sessions started via this same runtime, so nothing
         // can be published before the pipeline subscribes.
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* PubSub.publish(ctx.documentAnalysisPubSub, {
           notebookUri: ctx.notebookUri,
@@ -1168,7 +1173,7 @@ describe("NotebookRuntime state eviction", () => {
             ],
           },
         });
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(false);
@@ -1179,12 +1184,19 @@ describe("NotebookRuntime state eviction", () => {
           { notebookType: ctx.editor.notebook.notebookType },
         );
         yield* ctx.vscode.openNotebook(replacement);
-        yield* TestClock.adjust("10 millis");
-        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
-          notebookUri: ctx.notebookUri,
-          analysis: { op: "variables", variables: [] },
-        });
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.gen(function* () {
+          yield* PubSub.publish(ctx.documentAnalysisPubSub, {
+            notebookUri: ctx.notebookUri,
+            analysis: { op: "variables", variables: [] },
+          });
+          return yield* variables.getVariables(ctx.notebookUri);
+        }).pipe(
+          Effect.filterOrFail(
+            Option.isSome,
+            () => "replacement session not ready" as const,
+          ),
+          Effect.eventually,
+        );
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
@@ -1192,7 +1204,7 @@ describe("NotebookRuntime state eviction", () => {
         // A delayed close from the old document must not clear replacement
         // session state.
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* TestClock.adjust("10 millis");
+        yield* Effect.yieldNow;
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);

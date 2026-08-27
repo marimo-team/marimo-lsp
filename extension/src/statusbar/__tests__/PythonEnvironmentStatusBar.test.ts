@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref } from "effect";
-import { TestClock } from "effect/testing";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -61,7 +60,7 @@ it.effect(
       yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       const isVisible = yield* Ref.get(ctx.statusBarVisible);
       expect(isVisible).toBe(true);
@@ -81,7 +80,7 @@ it.effect(
       yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect(yield* Ref.get(ctx.statusBarVisible)).toBe(true);
 
       // Switch to Jupyter notebook
@@ -94,7 +93,7 @@ it.effect(
       yield* ctx.vscode.addNotebookDocument(jupyterEditor.notebook);
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(jupyterEditor));
 
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect(yield* Ref.get(ctx.statusBarVisible)).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -112,13 +111,13 @@ it.effect(
       yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect(yield* Ref.get(ctx.statusBarVisible)).toBe(true);
 
       // Switch to no active notebook (e.g., user opens a text file)
       yield* ctx.vscode.setActiveNotebookEditor(Option.none());
 
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
       expect(yield* Ref.get(ctx.statusBarVisible)).toBe(false);
     }).pipe(Effect.provide(ctx.layer));
   }),
@@ -129,7 +128,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
-      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
 
       const isVisible = yield* Ref.get(ctx.statusBarVisible);
       expect(isVisible).toBe(false);

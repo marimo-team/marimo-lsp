@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, SubscriptionRef } from "effect";
-import { TestClock } from "effect/testing";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -74,10 +73,10 @@ describe("ThemeSync", () => {
 
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [
@@ -107,10 +106,10 @@ describe("ThemeSync", () => {
       yield* Effect.gen(function* () {
         // The focus is on a text editor. The registry has no notebook.
         yield* ctx.vscode.setActiveNotebookEditor(Option.none());
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         // set-display-theme updates all running sessions. The kernels must
         // get the change when no notebook is focused.
@@ -129,7 +128,7 @@ describe("ThemeSync", () => {
 
       yield* Effect.gen(function* () {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
           [

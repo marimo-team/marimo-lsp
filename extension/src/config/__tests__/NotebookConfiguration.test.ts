@@ -1,6 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
-import { TestClock } from "effect/testing";
 
 import {
   createTestNotebookDocument,
@@ -74,7 +73,11 @@ const invalidateConfig = (notebookUri: NotebookId) =>
     ),
   );
 
-const configurationChanges = (notebookUri: NotebookId, take: number) =>
+const configurationChanges = (
+  notebookUri: NotebookId,
+  take: number,
+  ready: Deferred.Deferred<void>,
+) =>
   Effect.gen(function* () {
     const sessions = yield* NotebookDocumentSessions;
     const resources = yield* NotebookSessionResources;
@@ -85,7 +88,15 @@ const configurationChanges = (notebookUri: NotebookId, take: number) =>
         session.value,
         NotebookConfiguration.pipe(
           Effect.flatMap((configuration) =>
-            configuration.changes.pipe(Stream.take(take), Stream.runCollect),
+            configuration.changes.pipe(
+              Stream.tap((value) =>
+                Option.isSome(value)
+                  ? Deferred.succeed(ready, undefined)
+                  : Effect.void,
+              ),
+              Stream.take(take),
+              Stream.runCollect,
+            ),
           ),
         ),
       )
@@ -212,10 +223,11 @@ describe("NotebookConfiguration", () => {
       });
 
       yield* Effect.gen(function* () {
+        const ready = yield* Deferred.make<void>();
         const collected = yield* Effect.forkChild(
-          configurationChanges(NOTEBOOK_URI, 4),
+          configurationChanges(NOTEBOOK_URI, 4, ready),
         );
-        yield* TestClock.adjust("1 millis");
+        yield* Deferred.await(ready);
 
         yield* updateConfig(NOTEBOOK_URI, {
           runtime: { on_cell_change: "lazy" },
@@ -362,7 +374,7 @@ describe("NotebookConfiguration", () => {
         yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
         const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
         yield* ctx.vscode.openNotebook(replacement);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
 
         expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
       }).pipe(Effect.provide(ctx.layer));
@@ -383,12 +395,12 @@ describe("NotebookConfiguration", () => {
         yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
         const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
         yield* ctx.vscode.openNotebook(replacement);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
 
         yield* ctx.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
         yield* ctx.vscode.closeNotebook(first);
-        yield* TestClock.adjust("1 millis");
+        yield* Effect.yieldNow;
         expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
       }).pipe(Effect.provide(ctx.layer));
     }),
