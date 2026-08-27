@@ -54,7 +54,6 @@ def generate() -> str:
     notebook_type = contributes.notebooks[0].type
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     version = pyproject["tool"]["marimo-lsp"]["minimum-kernel-version"]
-    major, minor, patch = (int(part) for part in version.split("."))
     context_keys = [
         "marimo.notebook.hasStaleCells",
         "marimo.notebook.hasKernel",
@@ -67,6 +66,7 @@ def generate() -> str:
 //
 // Generated from `extension/package.json` and `pyproject.toml` by `scripts.codegen`.
 // Regenerate with `just codegen`.
+import {{ Version }} from "./lib/Version.ts";
 import type {{ CellId }} from "./types.ts";
 
 export type MarimoView = {_union(view_ids)};
@@ -93,11 +93,7 @@ export const LanguageId = {{
   Markdown: "markdown",
 }} as const;
 
-export const MINIMUM_MARIMO_KERNEL_VERSION = {{
-  major: {major},
-  minor: {minor},
-  patch: {patch},
-}} as const;
+export const MINIMUM_MARIMO_KERNEL_VERSION = Version.make({_quoted(version)});
 
 export type MarimoContextKey = {_union(context_keys)};
 """

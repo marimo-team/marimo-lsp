@@ -1,6 +1,5 @@
 import * as NodeProcess from "node:process";
 
-import * as semver from "@std/semver";
 import { Context, Effect, Layer, Option } from "effect";
 
 import { Config, MarimoLspServer } from "../config/Config.ts";
@@ -215,7 +214,7 @@ export class HealthService extends Context.Service<HealthService>()(
           lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
           lines.push("\t2. If features are missing:");
           lines.push(
-            `\t\t - Ensure marimo version is >= ${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
+            `\t\t - Ensure marimo version is >= ${MINIMUM_MARIMO_KERNEL_VERSION.toString()}`,
           );
           lines.push("\t\t- Try reloading the window");
 

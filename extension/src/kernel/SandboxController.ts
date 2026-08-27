@@ -1,5 +1,4 @@
-import * as semver from "@std/semver";
-import { Effect, flow, Option, Schema } from "effect";
+import { Effect, flow, Option, Order, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
@@ -9,6 +8,7 @@ import { extractPythonError } from "../lib/extractPythonError.ts";
 import { uvAddScriptSafe } from "../lib/installPackages.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
+import { Version } from "../lib/Version.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
@@ -17,7 +17,6 @@ import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import {
   ExecutableResolutionError,
@@ -276,13 +275,16 @@ const findRequirements = Effect.fn(
 
     for (const pkg of packages.split("\n")) {
       if (pkg.startsWith("marimo ")) {
-        const version = Schema.decodeOption(SemVerFromString)(
+        const version = Schema.decodeOption(Version.Schema)(
           pkg.slice(0, "marimo ".length),
         );
 
         if (
           Option.isSome(version) &&
-          semver.greaterOrEqual(version.value, MINIMUM_MARIMO_KERNEL_VERSION)
+          Order.isGreaterThanOrEqualTo(Version.Order)(
+            version.value,
+            MINIMUM_MARIMO_KERNEL_VERSION,
+          )
         ) {
           marimoOk = true;
         }
@@ -291,9 +293,7 @@ const findRequirements = Effect.fn(
 
     const requirements = [];
     if (!marimoOk) {
-      requirements.push(
-        `marimo>=${semver.format(MINIMUM_MARIMO_KERNEL_VERSION)}`,
-      );
+      requirements.push(`marimo>=${MINIMUM_MARIMO_KERNEL_VERSION.toString()}`);
     }
 
     return requirements satisfies ReadonlyArray<string>;

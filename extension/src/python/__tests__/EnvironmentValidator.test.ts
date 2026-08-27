@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Context, Effect, Exit, Layer, Result, Schema } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
@@ -13,7 +13,6 @@ import { EnvironmentValidator } from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
 import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
 import { Uv } from "../../python/Uv.ts";
-import { SemVerFromString } from "../../schemas/SemVerFromString.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 
@@ -88,6 +87,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ]
       `);
     }),
+    { timeout: 30_000 },
   );
 
   // Skipped on Windows: pygls intermittently hits OSError [Errno 22] on
@@ -116,22 +116,18 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
       );
       expect(result.failure.diagnostics).toMatchInlineSnapshot(`
-      	[
-      	  {
-      	    "currentVersion": {
-      	      "major": 0,
-      	      "minor": 15,
-      	      "patch": 5,
-      	    },
-      	    "kind": "outdated",
-      	    "package": "marimo",
-      	    "requiredVersion": {
-      	      "major": 0,
-      	      "minor": 23,
-      	      "patch": 3,
-      	    },
-      	  },
-      	]
+        [
+          {
+            "currentVersion": Version {
+              "value": "0.15.5",
+            },
+            "kind": "outdated",
+            "package": "marimo",
+            "requiredVersion": Version {
+              "value": "0.23.3",
+            },
+          },
+        ]
       `);
     }),
     { timeout: 30_000 },
@@ -475,55 +471,3 @@ function runCount(countFile: string): number {
 function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
-
-// -- SemVerFromString schema edge cases --
-
-const decodeSemVer = Schema.decodeUnknownExit(SemVerFromString);
-
-it.effect(
-  "SemVerFromString: parses standard semver",
-  Effect.fn(function* () {
-    yield* Effect.void;
-    const result = decodeSemVer("1.2.3");
-    assert(Exit.isSuccess(result));
-    expect(result.value).toEqual({ major: 1, minor: 2, patch: 3 });
-  }),
-);
-
-it.effect(
-  "SemVerFromString: parses two-part version (PyPI style)",
-  Effect.fn(function* () {
-    yield* Effect.void;
-    const result = decodeSemVer("26.2");
-    assert(Exit.isSuccess(result));
-    expect(result.value).toEqual({ major: 26, minor: 2, patch: 0 });
-  }),
-);
-
-it.effect(
-  "SemVerFromString: parses version with prerelease suffix",
-  Effect.fn(function* () {
-    yield* Effect.void;
-    const result = decodeSemVer("0.21.0-rc1");
-    assert(Exit.isSuccess(result));
-    expect(result.value).toEqual({ major: 0, minor: 21, patch: 0 });
-  }),
-);
-
-it.effect(
-  "SemVerFromString: fails on garbage input",
-  Effect.fn(function* () {
-    yield* Effect.void;
-    const result = decodeSemVer("not-a-version");
-    assert(Exit.isFailure(result));
-  }),
-);
-
-it.effect(
-  "SemVerFromString: fails on empty string",
-  Effect.fn(function* () {
-    yield* Effect.void;
-    const result = decodeSemVer("");
-    assert(Exit.isFailure(result));
-  }),
-);

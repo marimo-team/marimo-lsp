@@ -1,11 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import * as semver from "@std/semver";
 import { Effect, Logger, Option, References } from "effect";
 
 import {
   BinarySource,
   type ResolutionSource,
-  isVersionAtLeast,
   parseVersionOutput,
   resolveBinary,
 } from "../binaryResolution.ts";
@@ -37,40 +35,6 @@ describe("parseVersionOutput", () => {
 
   it("returns null for output without version number", () => {
     expect(parseVersionOutput("ruff")).toBeNull();
-  });
-});
-
-describe("isVersionAtLeast", () => {
-  it("returns true when actual equals minimum", () => {
-    const actual = semver.parse("0.15.0");
-    expect(isVersionAtLeast(actual, "0.15.0")).toBe(true);
-  });
-
-  it("returns true when actual is greater than minimum", () => {
-    const actual = semver.parse("0.16.0");
-    expect(isVersionAtLeast(actual, "0.15.0")).toBe(true);
-  });
-
-  it("returns true when actual has higher patch", () => {
-    const actual = semver.parse("0.15.1");
-    expect(isVersionAtLeast(actual, "0.15.0")).toBe(true);
-  });
-
-  it("returns false when actual is less than minimum", () => {
-    const actual = semver.parse("0.14.0");
-    expect(isVersionAtLeast(actual, "0.15.0")).toBe(false);
-  });
-
-  it("returns false for invalid minimum version", () => {
-    const actual = semver.parse("0.15.0");
-    expect(isVersionAtLeast(actual, "not-a-version")).toBe(false);
-  });
-
-  it("works with ty versioning (0.0.x)", () => {
-    const actual = semver.parse("0.0.15");
-    expect(isVersionAtLeast(actual, "0.0.15")).toBe(true);
-    expect(isVersionAtLeast(actual, "0.0.14")).toBe(true);
-    expect(isVersionAtLeast(actual, "0.0.16")).toBe(false);
   });
 });
 

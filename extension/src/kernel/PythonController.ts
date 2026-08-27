@@ -1,4 +1,3 @@
-import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import { Brand, Cause, Effect, Option, Redacted, Stream } from "effect";
 import type * as vscode from "vscode";
@@ -155,7 +154,7 @@ export const createPythonController = Effect.fn("createPythonController")(
                   case "missing":
                     return `• ${d.package}: not installed`;
                   case "outdated":
-                    return `• ${d.package}: v${semver.format(d.currentVersion)} (requires >=v${semver.format(d.requiredVersion)})`;
+                    return `• ${d.package}: v${d.currentVersion.toString()} (requires >=v${d.requiredVersion.toString()})`;
                   case "unknown":
                     return `• ${d.package}: unable to detect`;
                   default:
@@ -185,7 +184,7 @@ export const createPythonController = Effect.fn("createPythonController")(
                 }
                 const packages = error.diagnostics.map((d) =>
                   d.kind === "outdated"
-                    ? `${d.package}>=${semver.format(d.requiredVersion)}`
+                    ? `${d.package}>=${d.requiredVersion.toString()}`
                     : d.package,
                 );
                 yield* installPackages(packages, {
