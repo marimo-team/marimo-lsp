@@ -15,6 +15,7 @@ import {
   createTestNotebookDocument,
   Uri,
 } from "../../../__mocks__/TestVsCode.ts";
+import { makeScopedResourceCounter } from "../../../__tests__/__utils__/scopedResourceCounter.ts";
 import {
   makeTestMarimoClient,
   type TestCommand,
@@ -546,7 +547,7 @@ it.effect("interrupts an expansion send when its document session closes", () =>
   }),
 );
 
-it.effect("detaches completed expansions from the session scope", () => {
+it.effect("releases resources owned by completed expansions", () => {
   const session = makeTestNotebookDocumentSession(
     createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
       notebookType: NOTEBOOK_TYPE,
@@ -556,23 +557,24 @@ it.effect("detaches completed expansions from the session scope", () => {
 
   return Effect.gen(function* () {
     const service = yield* NotebookDatasources;
+    const resources = yield* makeScopedResourceCounter();
     yield* service.updateConnections(
       session,
       KERNEL_SESSION_ID,
       connections([], false),
     );
-    const finalizerCount = () =>
-      session.scope.state._tag === "Open"
-        ? session.scope.state.finalizers.size
-        : 0;
-    const baseline = finalizerCount();
 
     for (let index = 0; index < 3; index++) {
-      const load = yield* service
-        .loadSchemas(session, "warehouse", "analytics", [])
+      const load = yield* resources
+        .track(service.loadSchemas(session, "warehouse", "analytics", []))
         .pipe(Effect.forkChild);
       const request = yield* nextCall(index);
       assert(request.kind === "list-sql-schemas");
+      expect(yield* resources.counts).toEqual({
+        acquired: index + 1,
+        released: index,
+        active: 1,
+      });
 
       yield* service.updateSchemaList(session, KERNEL_SESSION_ID, {
         op: "sql-schema-list-preview",
@@ -584,7 +586,11 @@ it.effect("detaches completed expansions from the session scope", () => {
         schemas: [schema(`schema_${index}`)],
       });
       yield* Fiber.join(load);
-      expect(finalizerCount()).toBe(baseline);
+      expect(yield* resources.counts).toEqual({
+        acquired: index + 1,
+        released: index + 1,
+        active: 0,
+      });
 
       yield* service.updateConnections(
         session,

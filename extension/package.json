@@ -29,9 +29,9 @@
     "verify:wasm-lsp": "node scripts/run-turbo.mjs build:wasm-lsp:bundle build:extension && pnpm test:wasm-lsp"
   },
   "devDependencies": {
-    "@effect/platform-node": "4.0.0-beta.103",
+    "@effect/platform-node": "4.0.0-rc.112",
     "@effect/tsgo": "0.31.0",
-    "@effect/vitest": "4.0.0-beta.103",
+    "@effect/vitest": "4.0.0-rc.112",
     "@marimo-team/frontend": "link:../../marimo/frontend",
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@marimo-team/smart-cells": "link:../../marimo/packages/smart-cells",
@@ -51,7 +51,7 @@
     "@vscode/python-extension": "^1.0.6",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^3.1.0",
-    "effect": "4.0.0-beta.103",
+    "effect": "4.0.0-rc.112",
     "esbuild": "^0.28.1",
     "happy-dom": "^20.11.1",
     "jest-mock-vscode": "^4.12.0",

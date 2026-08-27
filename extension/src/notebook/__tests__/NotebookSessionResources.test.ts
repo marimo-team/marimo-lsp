@@ -16,6 +16,7 @@ import {
   TestVsCode,
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
+import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NotebookConfiguration } from "../../config/NotebookConfiguration.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
@@ -113,9 +114,10 @@ describe("NotebookSessionResources", () => {
     }),
   );
 
-  it.effect("releases per-call ownership after programs finish", () =>
+  it.effect("releases scoped resources after programs finish", () =>
     Effect.gen(function* () {
       const ctx = yield* withTestContext();
+      const tracked = yield* makeScopedResourceCounter();
 
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions;
@@ -128,23 +130,18 @@ describe("NotebookSessionResources", () => {
           .runScoped(session, Effect.scope)
           .pipe(Scope.provide(session.scope));
         expect(providedScope).toBe(session.scope);
-        const baseline =
-          session.scope.state._tag === "Open"
-            ? session.scope.state.finalizers.size
-            : 0;
 
         for (let index = 0; index < 100; index++) {
           yield* resources
-            .runScoped(session, NotebookConfiguration)
+            .runScoped(session, tracked.track(NotebookConfiguration))
             .pipe(Scope.provide(session.scope));
         }
-        yield* Effect.yieldNow;
 
-        const finalizerCount =
-          session.scope.state._tag === "Open"
-            ? session.scope.state.finalizers.size
-            : 0;
-        expect(finalizerCount).toBe(baseline);
+        expect(yield* tracked.counts).toEqual({
+          acquired: 100,
+          released: 100,
+          active: 0,
+        });
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

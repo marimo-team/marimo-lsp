@@ -13,6 +13,7 @@ extension/.vscode-test/
 !.claude/skills/
 .claude/settings.local.json
 .pnpm-store
+.codex/
 
 # Reference checkouts (read-only; never imported)
 .repos/

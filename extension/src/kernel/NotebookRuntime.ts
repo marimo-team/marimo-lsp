@@ -9,7 +9,7 @@ import {
   Option,
   PubSub,
   Ref,
-  type SchemaError,
+  type Schema,
   Semaphore,
   Scope,
   Stream,
@@ -144,7 +144,7 @@ export interface NotebookHandle {
     | MarimoCommandError
     | NoActiveKernelError
     | NotebookFileRootError
-    | SchemaError.SchemaError
+    | Schema.SchemaError
     | UnsavedNotebookError
   >;
   readonly updateUIElements: (
@@ -177,7 +177,7 @@ export interface NotebookDocumentHandle {
     | MarimoCommandError
     | NoActiveKernelError
     | NotebookFileRootError
-    | SchemaError.SchemaError
+    | Schema.SchemaError
   >;
 }
 

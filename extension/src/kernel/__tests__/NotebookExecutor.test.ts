@@ -1,6 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Fiber, Latch, Ref, Scope } from "effect";
 
+import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import {
   makeNotebookExecutor,
@@ -177,23 +178,24 @@ describe("NotebookExecutor", () => {
   );
 
   it.effect(
-    "releases scope-close watchers after submissions finish",
+    "releases resources owned by completed scoped submissions",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
       const documentScope = yield* Scope.make();
       const notebook = notebookId("notebook");
+      const resources = yield* makeScopedResourceCounter();
 
       for (let index = 0; index < 100; index++) {
         yield* executor
-          .submitScoped(notebook, Effect.void)
+          .submitScoped(notebook, resources.track(Effect.void))
           .pipe(Scope.provide(documentScope));
       }
 
-      const finalizerCount =
-        documentScope.state._tag === "Open"
-          ? documentScope.state.finalizers.size
-          : 0;
-      assert.strictEqual(finalizerCount, 0);
+      assert.deepStrictEqual(yield* resources.counts, {
+        acquired: 100,
+        released: 100,
+        active: 0,
+      });
       yield* Scope.close(documentScope, Exit.void);
     }),
   );
