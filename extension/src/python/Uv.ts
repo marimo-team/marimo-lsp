@@ -21,6 +21,7 @@ import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
 import { Config } from "../config/Config.ts";
+import { Version } from "../lib/Version.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import type { ProjectDependencyTarget } from "./ProjectDependencyTarget.ts";
@@ -212,7 +213,7 @@ export class Uv extends Context.Service<Uv>()("Uv", {
         }
 
         const version = Option.match(bin.version, {
-          onSome: (value) => value.version,
+          onSome: (value) => value.version.toString(),
           onNone: () => "unknown",
         });
         yield* telemetry.binaryResolved({
@@ -623,7 +624,7 @@ const findUvBin = Effect.fn("findUvBin")(function* (
 
 class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   package_name: Schema.String,
-  version: Schema.String,
+  version: Version.Schema,
   commit_info: Schema.NullOr(
     Schema.Struct({
       short_commit_hash: Schema.String,
@@ -635,10 +636,11 @@ class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   ),
 }) {
   format() {
+    const version = this.version.toString();
     if (!this.commit_info) {
-      return this.version;
+      return version;
     }
-    return `${this.version} (${this.commit_info.short_commit_hash} ${this.commit_info.commit_date})`;
+    return `${version} (${this.commit_info.short_commit_hash} ${this.commit_info.commit_date})`;
   }
 }
 

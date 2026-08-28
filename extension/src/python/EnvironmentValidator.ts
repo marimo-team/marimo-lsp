@@ -1,5 +1,4 @@
 import { NodeServices } from "@effect/platform-node";
-import * as semver from "@std/semver";
 import type * as py from "@vscode/python-extension";
 import {
   Cache,
@@ -12,6 +11,7 @@ import {
   Hash,
   Layer,
   Option,
+  Order,
   Schema,
   Stream,
   String,
@@ -20,8 +20,8 @@ import type { PlatformError } from "effect/PlatformError";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
+import { Version } from "../lib/Version.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { SemVerFromString } from "../schemas/SemVerFromString.ts";
 import { PythonEnvInvalidation } from "./PythonEnvInvalidation.ts";
 
 class InvalidExecutableError extends Data.TaggedError(
@@ -106,7 +106,7 @@ export class EnvironmentValidator extends Context.Service<EnvironmentValidator>(
       const EnvCheck = Schema.Array(
         Schema.Struct({
           name: Schema.String,
-          version: Schema.NullOr(SemVerFromString),
+          version: Schema.NullOr(Version.Schema),
         }),
       );
 
@@ -206,7 +206,10 @@ print(json.dumps(packages), flush=True)`,
             diagnostics.push({ kind: "missing", package: pkg.name });
           } else if (
             pkg.name === "marimo" &&
-            !semver.greaterOrEqual(pkg.version, MINIMUM_MARIMO_KERNEL_VERSION)
+            !Order.isGreaterThanOrEqualTo(Version.Order)(
+              pkg.version,
+              MINIMUM_MARIMO_KERNEL_VERSION,
+            )
           ) {
             diagnostics.push({
               kind: "outdated",
@@ -287,8 +290,8 @@ type RequirementDiagnostic =
   | {
       kind: "outdated";
       package: string;
-      currentVersion: semver.SemVer;
-      requiredVersion: semver.SemVer;
+      currentVersion: Version;
+      requiredVersion: Version;
     };
 
 /** Collect a stream of Uint8Array chunks into a single string. */

@@ -2,6 +2,7 @@
 //
 // Generated from `extension/package.json` and `pyproject.toml` by `scripts.codegen`.
 // Regenerate with `just codegen`.
+import { Version } from "./lib/Version.ts";
 import type { CellId } from "./types.ts";
 
 export type MarimoView =
@@ -32,11 +33,7 @@ export const LanguageId = {
   Markdown: "markdown",
 } as const;
 
-export const MINIMUM_MARIMO_KERNEL_VERSION = {
-  major: 0,
-  minor: 23,
-  patch: 3,
-} as const;
+export const MINIMUM_MARIMO_KERNEL_VERSION = Version.make("0.23.3");
 
 export type MarimoContextKey =
   | "marimo.config.runtime.auto_reload"

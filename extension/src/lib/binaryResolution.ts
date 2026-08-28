@@ -2,11 +2,11 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodePath from "node:path";
 
-import * as semver from "@std/semver";
-import { Data, Effect, Option } from "effect";
+import { Data, Effect, Option, Order, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { resolvePlatformBinaryName } from "../python/Uv.ts";
+import { Version } from "./Version.ts";
 
 /**
  * Runs `<binary> --version` and parses the version string.
@@ -15,7 +15,7 @@ import { resolvePlatformBinaryName } from "../python/Uv.ts";
  */
 export function getBinaryVersion(
   binaryPath: string,
-): Effect.Effect<Option.Option<semver.SemVer>> {
+): Effect.Effect<Option.Option<Version>> {
   return Effect.try(() =>
     NodeChildProcess.execFileSync(binaryPath, ["--version"], {
       encoding: "utf8",
@@ -25,11 +25,11 @@ export function getBinaryVersion(
     Effect.map((output) => {
       const version = parseVersionOutput(output);
       if (version === null) {
-        return Option.none<semver.SemVer>();
+        return Option.none<Version>();
       }
-      return Option.fromNullishOr(semver.tryParse(version));
+      return Schema.decodeOption(Version.Schema)(version);
     }),
-    Effect.catch(() => Effect.succeed(Option.none<semver.SemVer>())),
+    Effect.catch(() => Effect.succeed(Option.none<Version>())),
   );
 }
 
@@ -40,20 +40,6 @@ export function getBinaryVersion(
 export function parseVersionOutput(output: string): string | null {
   const match = output.trim().match(/^\S+\s+(\d+\.\d+\.\d+\S*)/);
   return match?.[1] ?? null;
-}
-
-/**
- * Check if `actual` is >= `minimum` using semver comparison.
- */
-export function isVersionAtLeast(
-  actual: semver.SemVer,
-  minimum: string,
-): boolean {
-  const min = semver.tryParse(minimum);
-  if (min == null) {
-    return false;
-  }
-  return semver.greaterOrEqual(actual, min);
 }
 
 /**
@@ -80,15 +66,26 @@ export function validateBinary(
       return Option.none<string>();
     }
 
-    if (!isVersionAtLeast(versionOption.value, minimumVersion)) {
+    const minimum = Schema.decodeOption(Version.Schema)(minimumVersion);
+    if (Option.isNone(minimum)) {
+      yield* Effect.logWarning(`Invalid minimum version: ${minimumVersion}`);
+      return Option.none<string>();
+    }
+
+    if (
+      !Order.isGreaterThanOrEqualTo(Version.Order)(
+        versionOption.value,
+        minimum.value,
+      )
+    ) {
       yield* Effect.logWarning(
-        `Binary at ${binaryPath} has version ${semver.format(versionOption.value)}, minimum required is ${minimumVersion}`,
+        `Binary at ${binaryPath} has version ${versionOption.value.toString()}, minimum required is ${minimumVersion}`,
       );
       return Option.none<string>();
     }
 
     yield* Effect.logDebug(
-      `Validated binary at ${binaryPath} (version ${semver.format(versionOption.value)})`,
+      `Validated binary at ${binaryPath} (version ${versionOption.value.toString()})`,
     );
     return Option.some(binaryPath);
   });
