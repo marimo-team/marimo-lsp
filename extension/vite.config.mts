@@ -1,6 +1,7 @@
 import * as process from "node:process";
 
 import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
 import * as vite from "vite-plus";
 
 import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mts";
@@ -19,7 +20,12 @@ export default vite.defineConfig({
       formats: ["es"],
     },
   },
-  plugins: [tailwindcss(), stylesheet()],
+  plugins:
+    // Compiling the linked frontend in every Vitest worker adds substantial startup
+    // overhead without changing the Node unit-test behavior.
+    process.env.VITEST
+      ? []
+      : [react({ compiler: true }), tailwindcss(), stylesheet()],
   resolve: {
     dedupe: ["react", "react-dom", "jotai"],
     tsconfigPaths: true,
