@@ -1758,8 +1758,9 @@ async def test_cell_addition(client: LanguageClient) -> None:
     )
 
 
-async def test_scratchpad_execution(client: LanguageClient) -> None:
-    """Test that scratchpad executes code outside the dependency graph."""
+@pytest.mark.parametrize("retained", [False, True])
+async def test_scratchpad_execution(client: LanguageClient, *, retained: bool) -> None:
+    """Scratchpad output arrives before completion, including after detaching."""
     # First, open a notebook with a cell (required to have a session)
     notebook_code = "x = 10"
     client.notebook_document_did_open(
@@ -1791,27 +1792,32 @@ async def test_scratchpad_execution(client: LanguageClient) -> None:
     scratch_messages: list[dict] = []
     scratch_completion_event = asyncio.Event()
     waiting_for_scratch = False
+    session_id: str | None = None
+    run_id = "scratch-output"
 
     @client.feature("marimo/kernelNotification")
-    async def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
-        nonlocal waiting_for_scratch
+    def on_marimo_operation(params: Any) -> None:  # noqa: ANN401
+        nonlocal session_id
         msg = asdict(params)
         op = msg.get("notification", {})
 
         # Handle cell completion (kernel startup)
         if op.get("op") == "completed-run" and not waiting_for_scratch:
-            # `completed-run` fires before trailing notifications drain.
-            await asyncio.sleep(0.1)
+            session_id = msg["sessionId"]
             cell_completion_event.set()
             return
 
+        if op.get("op") == "completed-run" and op.get("run_id") == run_id:
+            scratch_completion_event.set()
+            return
+
         # Handle scratchpad operations
-        if op.get("op") == "cell-op" and op.get("cell_id") == "__scratch__":
+        if (
+            op.get("op") == "cell-op"
+            and op.get("cell_id") == "__scratch__"
+            and not scratch_completion_event.is_set()
+        ):
             scratch_messages.append(msg)
-            # Scratchpad completes when status is "idle"
-            if op.get("status") == "idle":
-                await asyncio.sleep(0.1)
-                scratch_completion_event.set()
 
     # Execute a cell to start the kernel session
     await send_command(
@@ -1837,16 +1843,35 @@ y = 42
 print("scratchpad output")
 y\
 """
-    await send_command(
-        client,
-        {
+    command: dict[str, object]
+    if retained:
+        client.notebook_document_did_close(
+            lsp.DidCloseNotebookDocumentParams(
+                notebook_document=lsp.NotebookDocumentIdentifier(
+                    uri="file:///scratch_test.py"
+                ),
+                cell_text_documents=[
+                    lsp.TextDocumentIdentifier(uri="file:///scratch_test.py#cell1")
+                ],
+            ),
+        )
+        command = {
+            "kind": "execute-session-scratchpad",
+            "notebookUri": "file:///scratch_test.py",
+            "kernelSessionId": session_id,
+            "code": scratchpad_code,
+            "runId": run_id,
+        }
+    else:
+        command = {
             "kind": "execute-scratchpad",
             "notebookUri": "file:///scratch_test.py",
             "executable": sys.executable,
             "workingDirectory": str(Path.cwd()),
             "code": scratchpad_code,
-        },
-    )
+            "runId": run_id,
+        }
+    await send_command(client, command)
 
     await asyncio.wait_for(scratch_completion_event.wait(), timeout=5.0)
     assert_one_kernel_session(scratch_messages)

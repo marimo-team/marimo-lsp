@@ -144,8 +144,8 @@ class _OperationSink:
         """Route future operations to a renamed notebook."""
         self._notebook_uri = notebook_uri
 
-    def notify(self, message: KernelMessage) -> None:
-        if not self._attached:
+    def notify(self, message: KernelMessage, *, force: bool = False) -> None:
+        if not self._attached and not force:
             return
 
         try:
@@ -215,6 +215,7 @@ class Session:
         self._idle.set()
         self._scratchpad_running = False
         self._scratchpad_run_id: str | None = None
+        self._scratchpad_forward_operations = False
         self._on_change = on_change or (lambda: None)
         self._on_kernel_failure: typing.Callable[[Session, str], None] = (
             lambda _session, _error: None
@@ -345,9 +346,13 @@ class Session:
         """Record and forward an operation received from the kernel."""
         if self._closed:
             return
+        with self._state_lock:
+            # Capture before completion clears the claim so detached clients
+            # receive the terminal notification too.
+            force_forward = self._scratchpad_forward_operations
         self.session_view.add_raw_notification(message)
         kernel_error = self._update_status(message)
-        self._operation_sink.notify(message)
+        self._operation_sink.notify(message, force=force_forward)
         if kernel_error is not None:
             self._on_kernel_failure(self, kernel_error)
 
@@ -386,6 +391,7 @@ class Session:
                     return
                 self._scratchpad_running = False
                 self._scratchpad_run_id = None
+                self._scratchpad_forward_operations = False
             if self._status == "idle":
                 return
             self._status = "idle"
@@ -402,13 +408,19 @@ class Session:
         with self._state_lock:
             return not self._closed
 
-    def try_start_scratchpad(self, run_id: str | None) -> bool:
+    def try_start_scratchpad(
+        self,
+        run_id: str | None,
+        *,
+        forward_operations: bool = False,
+    ) -> bool:
         """Claim an idle session for one scratchpad run without yielding."""
         with self._state_lock:
             if self._closed or self._status != "idle":
                 return False
             self._scratchpad_running = True
             self._scratchpad_run_id = run_id
+            self._scratchpad_forward_operations = forward_operations
             self._status = "running"
             self._idle.clear()
         self._on_change()
@@ -433,6 +445,7 @@ class Session:
                 executable=self.executable,
                 working_directory=self.working_directory,
                 started_at=self.started_at,
+                marimo_version=self._kernel.marimo_version,
                 status=self._status,
                 attached=self.attached,
             )

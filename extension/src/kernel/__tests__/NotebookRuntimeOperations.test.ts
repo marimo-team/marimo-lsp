@@ -128,6 +128,7 @@ const withTestCtx = Effect.fn(function* (
         executable: "/usr/bin/python3",
         workingDirectory: process.cwd(),
         startedAt: 1,
+        marimoVersion: "0.24.0",
         status: "idle",
         attached: true,
       },
@@ -203,6 +204,7 @@ const withTestCtx = Effect.fn(function* (
                 executable: request.executable,
                 workingDirectory: request.workingDirectory,
                 startedAt: 1,
+                marimoVersion: "0.24.0",
                 status: "idle",
                 attached: true,
               });

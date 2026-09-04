@@ -45,7 +45,11 @@ from pygls.uris import to_fs_path
 from typing_extensions import TypeForm
 
 from marimo_lsp import notebook_source, protocol
-from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
+from marimo_lsp.app_file_manager import (
+    find_notebook_document,
+    snapshot_for_scratchpad,
+    snapshot_retained_scratchpad,
+)
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
     DeleteCellRequest,
@@ -64,6 +68,7 @@ from marimo_lsp.models import (
 from marimo_lsp.package_manager import LspPackageManager
 
 if TYPE_CHECKING:
+    from lsprotocol.types import NotebookDocument
     from marimo._config.config import (
         DisplayConfig,
         PartialMarimoConfig,
@@ -463,19 +468,71 @@ async def shutdown_all_sessions(
     ctx.sessions.close_all()
 
 
+async def _dispatch_scratchpad(
+    ctx: ApiContext,
+    session: Session,
+    args: protocol.ExecuteScratchpad | protocol.ExecuteSessionScratchpad,
+    notebook: NotebookDocument | None,
+) -> None:
+    """Claim a session and dispatch through marimo's scratchpad path.
+
+    Exact-session requests forward operations even when the notebook is detached.
+    """
+    notebook_uri = str(args.notebook_uri)
+    exact_session = isinstance(args, protocol.ExecuteSessionScratchpad)
+    run_id = args.run_id
+    while True:
+        if not await session.wait_until_idle():
+            if exact_session:
+                raise SessionNotFoundError(notebook_uri)
+            logger.info(f"Skipping scratchpad run {run_id}; session closed")
+            return
+        if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
+            notebook_uri, run_id
+        ):
+            logger.info(f"Skipping scratchpad run {run_id} cancelled before dispatch")
+            return
+        if session.try_start_scratchpad(run_id, forward_operations=exact_session):
+            break
+
+    try:
+        session.instantiate(
+            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
+            http_request=None,
+        )
+        if notebook is None:
+            notebook_cells, cell_outputs = snapshot_retained_scratchpad(session)
+        else:
+            notebook_cells, cell_outputs = snapshot_for_scratchpad(
+                ctx.ls.workspace, session, notebook
+            )
+        session.put_control_request(
+            ExecuteScratchpadCommand(
+                code=args.code,
+                run_id=run_id,
+                notebook_cells=notebook_cells,
+                cell_outputs=cell_outputs,
+            ),
+            from_consumer_id=None,
+        )
+    except BaseException:
+        session.release_scratchpad(run_id)
+        raise
+    if exact_session:
+        logger.info(f"Retained scratchpad execution sent for {notebook_uri}")
+    else:
+        logger.info(f"Scratchpad execution request sent for {notebook_uri}")
+
+
 @command(protocol.ExecuteScratchpad)
 async def execute_scratch(
     ctx: ApiContext,
     args: protocol.ExecuteScratchpad,
 ) -> None:
-    """Execute code in the scratchpad (isolated from dependency graph).
+    """Execute isolated scratchpad code against the notebook's active session.
 
-    Populates the document + output snapshot on the command so that
-    ``marimo._code_mode.get_context()`` can bind inside the kernel. Cells come
-    from the LSP notebook document (id-aligned with VS Code);
-    outputs come from the session view.
-
-    Creates the session on demand when none exists, like :func:`run`.
+    The open LSP document supplies cells; the session view supplies outputs.
+    Start a session on demand, as ordinary notebook execution does.
     """
     logger.info(f"execute_scratch for {args.notebook_uri}")
     run_id = args.run_id
@@ -497,43 +554,37 @@ async def execute_scratch(
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
     )
-    while True:
-        if not await session.wait_until_idle():
-            logger.info(f"Skipping scratchpad run {run_id}; session closed")
-            return
-        if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
-            args.notebook_uri, run_id
-        ):
-            logger.info(f"Skipping scratchpad run {run_id} cancelled before dispatch")
-            return
-        if session.try_start_scratchpad(run_id):
-            break
+    await _dispatch_scratchpad(
+        ctx,
+        session,
+        args,
+        notebook,
+    )
 
-    try:
-        session.instantiate(
-            InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
-            http_request=None,
-        )
 
-        notebook_cells, cell_outputs = snapshot_for_scratchpad(
-            workspace=ctx.ls.workspace,
-            session=session,
-            notebook=notebook,
-        )
+@command(protocol.ExecuteSessionScratchpad)
+async def execute_session_scratch(
+    ctx: ApiContext,
+    args: protocol.ExecuteSessionScratchpad,
+) -> None:
+    """Execute a scratchpad against one exact retained session."""
+    notebook_uri = str(args.notebook_uri)
+    run_id = args.run_id
+    if run_id is not None and ctx.sessions.take_scratchpad_cancellation(
+        notebook_uri, run_id
+    ):
+        logger.info(f"Skipping cancelled retained scratchpad run {run_id}")
+        return
 
-        session.put_control_request(
-            ExecuteScratchpadCommand(
-                code=args.code,
-                run_id=args.run_id,
-                notebook_cells=notebook_cells,
-                cell_outputs=cell_outputs,
-            ),
-            from_consumer_id=None,
-        )
-    except BaseException:
-        session.release_scratchpad(run_id)
-        raise
-    logger.info(f"Scratchpad execution request sent for {args.notebook_uri}")
+    session = _require_kernel_session(
+        ctx, notebook_uri, SessionId(str(args.kernel_session_id))
+    )
+    await _dispatch_scratchpad(
+        ctx,
+        session,
+        args,
+        None,
+    )
 
 
 @command(protocol.ListPackages)
