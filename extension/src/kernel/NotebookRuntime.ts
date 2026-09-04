@@ -87,6 +87,14 @@ type WithNoActiveKernel<T> =
     ? Effect.Effect<A, E | NoActiveKernelError, R>
     : never;
 
+type SessionScratchpadStream = Stream.Stream<
+  CellOperationNotification,
+  | MarimoClientStartError
+  | MarimoCommandError
+  | NoActiveKernelError
+  | Schema.SchemaError
+>;
+
 type RespondToStdin = (
   notebookId: NotebookId,
   sessionId: KernelSessionId,
@@ -115,6 +123,11 @@ export interface NotebookControllerSelection {
 export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
 )<{ readonly notebookUri: NotebookId }> {}
+
+/** The requested kernel session is no longer live. */
+export class KernelSessionNotFoundError extends Data.TaggedError(
+  "KernelSessionNotFoundError",
+)<{ readonly sessionId: KernelSessionId }> {}
 
 /** A controller could not resolve a Python executable for the notebook. */
 export class ExecutableResolutionError extends Data.TaggedError(
@@ -184,6 +197,10 @@ export interface NotebookDocumentHandle {
 interface NotebookState {
   readonly handle: NotebookHandle;
   readonly controller: Ref.Ref<Option.Option<NotebookController>>;
+  readonly executeSessionScratchpad: (
+    sessionId: KernelSessionId,
+    code: string,
+  ) => SessionScratchpadStream;
 }
 
 type SessionNotification = KernelNotification & {
@@ -227,11 +244,18 @@ function isCompletedRunFor(runId: string) {
     message.notification.run_id === runId;
 }
 
+/**
+ * Select scratchpad results and cascade output.
+ *
+ * The scratch cell owns the result; cascade cells contribute console output
+ * and failures only.
+ */
 function isScratchpadOutput(
   notification: KernelNotification["notification"],
 ): notification is CellOperationNotification {
   if (notification.op !== "cell-op") return false;
   if (notification.cell_id === SCRATCH_CELL_ID) return true;
+  if (notification.output?.channel === "marimo-error") return true;
   if (notification.console == null) return false;
   return EffectArray.ensure(notification.console).some(
     (output) => output.channel === "stdout" || output.channel === "stderr",
@@ -267,6 +291,10 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const liveSessions = yield* LiveSessions;
       const documentSessions = yield* NotebookDocumentSessions;
       const operations = yield* PubSub.unbounded<SessionNotification>();
+      const kernelOperations = yield* PubSub.unbounded<KernelNotification>();
+      // Subscribe the normal notebook-operation consumer before starting the
+      // upstream fan-out so no startup notification can fall into a gap.
+      const runtimeOperations = yield* PubSub.subscribe(kernelOperations);
       const notebookStates = new Map<
         NotebookId | NotebookDocumentSession,
         NotebookState
@@ -283,8 +311,20 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 
       yield* Effect.addFinalizer(() =>
         Effect.all(
-          [PubSub.shutdown(operations), PubSub.shutdown(controllerSelections)],
+          [
+            PubSub.shutdown(operations),
+            PubSub.shutdown(kernelOperations),
+            PubSub.shutdown(controllerSelections),
+          ],
           { discard: true },
+        ),
+      );
+
+      yield* Effect.forkScoped(
+        marimo.kernelNotifications.pipe(
+          Stream.runForEach((message) =>
+            PubSub.publish(kernelOperations, message),
+          ),
         ),
       );
 
@@ -442,6 +482,117 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           ),
       });
 
+      /**
+       * Own one scratchpad stream from dispatch through completion.
+       *
+       * Only dispatch occupies the notebook FIFO; stdin and interrupts must
+       * remain available while output streams. The permit serializes callers.
+       */
+      const streamScratchpad = <Message extends KernelNotification, E>(
+        notebookId: NotebookId,
+        scratchpadLock: Semaphore.Semaphore,
+        notifications: PubSub.PubSub<Message>,
+        dispatch: (
+          runId: string,
+        ) => Effect.Effect<
+          (message: Message) => boolean,
+          E,
+          RuntimeWorkRequirements
+        >,
+        sessionId?: KernelSessionId,
+      ) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            yield* Effect.acquireRelease(
+              scratchpadLock.take(1),
+              () => scratchpadLock.release(1),
+              { interruptible: true },
+            );
+            const subscription = yield* PubSub.subscribe(notifications);
+            const runId = crypto.randomUUID();
+            const abandoned = yield* Deferred.make<void>();
+
+            yield* Effect.addFinalizer((exit) =>
+              Exit.hasInterrupts(exit)
+                ? Deferred.succeed(abandoned, undefined).pipe(
+                    Effect.andThen(
+                      marimo
+                        .interrupt({
+                          notebookUri: notebookId,
+                          kernelSessionId: sessionId,
+                          runId,
+                        })
+                        .pipe(
+                          Effect.timeout("5 seconds"),
+                          Effect.catchCause((cause) =>
+                            Effect.logWarning(
+                              "Failed to interrupt abandoned scratchpad execution",
+                            ).pipe(Effect.annotateLogs({ cause })),
+                          ),
+                        ),
+                    ),
+                  )
+                : Effect.void,
+            );
+
+            const send = Effect.raceFirst(
+              dispatch(runId),
+              Deferred.await(abandoned).pipe(Effect.andThen(Effect.interrupt)),
+            );
+            const accepts = yield* sessionId === undefined
+              ? runInNotebook(notebookId, send)
+              : runInKernelSession(notebookId, sessionId, send);
+
+            return Stream.fromSubscription(subscription).pipe(
+              Stream.filter(accepts),
+              // marimo >= 0.23.3 flushes console output before cell idle.
+              // The matching completed-run also includes the full cascade.
+              Stream.takeUntil(isCompletedRunFor(runId)),
+              Stream.filterMap(
+                Filter.fromPredicateOption(({ notification }) =>
+                  isScratchpadOutput(notification)
+                    ? Option.some(notification)
+                    : Option.none(),
+                ),
+              ),
+              Stream.tap((operation) =>
+                sessionId === undefined
+                  ? Effect.void
+                  : handleStdinPrompt(
+                      operation,
+                      notebookId,
+                      sessionId,
+                      respondToStdin,
+                    ).pipe(Effect.provideService(VsCode, code)),
+              ),
+            );
+          }),
+        );
+
+      const executeSessionScratchpad = (
+        notebookId: NotebookId,
+        scratchpadLock: Semaphore.Semaphore,
+        sessionId: KernelSessionId,
+        sourceCode: string,
+      ): SessionScratchpadStream =>
+        streamScratchpad(
+          notebookId,
+          scratchpadLock,
+          kernelOperations,
+          Effect.fnUntraced(function* (runId) {
+            yield* marimo.executeSessionScratchpad({
+              notebookUri: notebookId,
+              kernelSessionId: sessionId,
+              code: sourceCode,
+              runId,
+            });
+            return (message: KernelNotification) =>
+              message.notebookUri === notebookId &&
+              message.sessionId === sessionId;
+          }),
+          sessionId,
+        );
+
       const makeHandle = (
         notebookId: NotebookId,
         controller: Ref.Ref<Option.Option<NotebookController>>,
@@ -450,99 +601,45 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         id: notebookId,
         getController: Ref.get(controller),
         executeScratchpad: (sourceCode) =>
-          Stream.unwrap(
-            Effect.gen(function* () {
-              // Hold one permit for the lifetime of the stream's scope.
-              yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
-                scratchpadLock.release(1),
-              );
-              const subscription = yield* PubSub.subscribe(operations);
-              const runId = crypto.randomUUID();
-              const abandoned = yield* Deferred.make<void>();
+          streamScratchpad(
+            notebookId,
+            scratchpadLock,
+            operations,
+            Effect.fnUntraced(function* (runId) {
+              const selectedController = yield* Ref.get(controller);
+              if (Option.isNone(selectedController)) {
+                return yield* new NoActiveKernelError({
+                  notebookUri: notebookId,
+                });
+              }
 
-              // Register cancellation in the stream scope before the command
-              // enters the notebook worker.
-              yield* Effect.addFinalizer((exit) =>
-                Exit.hasInterrupts(exit)
-                  ? Deferred.succeed(abandoned, undefined).pipe(
-                      Effect.andThen(
-                        marimo
-                          .interrupt({
-                            notebookUri: notebookId,
-                            runId,
-                          })
-                          .pipe(
-                            Effect.timeout("5 seconds"),
-                            Effect.catchCause((cause) =>
-                              Effect.logWarning(
-                                "Failed to interrupt kernel after scratchpad stream was abandoned",
-                              ).pipe(Effect.annotateLogs({ cause })),
-                            ),
-                          ),
-                      ),
-                    )
-                  : Effect.void,
-              );
-
-              return yield* runInNotebook(
+              const session = documentSessions.current(notebookId);
+              if (Option.isNone(session)) {
+                return yield* new NoActiveKernelError({
+                  notebookUri: notebookId,
+                });
+              }
+              const notebook = yield* findOpenNotebook(notebookId);
+              const executable =
+                yield* selectedController.value.resolveExecutable(notebook);
+              const workingDirectory = yield* resolveWorkingDirectory(
                 notebookId,
-                Effect.raceFirst(
-                  Effect.gen(function* () {
-                    const selectedController = yield* Ref.get(controller);
-                    if (Option.isNone(selectedController)) {
-                      return yield* new NoActiveKernelError({
-                        notebookUri: notebookId,
-                      });
-                    }
-
-                    const session = documentSessions.current(notebookId);
-                    if (Option.isNone(session)) {
-                      return yield* new NoActiveKernelError({
-                        notebookUri: notebookId,
-                      });
-                    }
-                    const notebook = yield* findOpenNotebook(notebookId);
-                    const executable =
-                      yield* selectedController.value.resolveExecutable(
-                        notebook,
-                      );
-                    const workingDirectory = yield* resolveWorkingDirectory(
-                      notebookId,
-                      executable,
-                      notebook,
-                    );
-                    yield* marimo.executeScratchpad({
-                      notebookUri: notebookId,
-                      executable,
-                      workingDirectory,
-                      code: sourceCode,
-                      runId,
-                    });
-                    yield* liveSessions.refresh();
-                    yield* reconcileKernelSession(notebookId);
-
-                    return Stream.fromSubscription(subscription).pipe(
-                      // Only output owned by the requesting document session;
-                      // a reopened notebook's operations belong to a new one.
-                      Stream.filter(
-                        (operation) => operation.session === session.value,
-                      ),
-                      Stream.takeUntil(isCompletedRunFor(runId)),
-                      Stream.filterMap(
-                        Filter.fromPredicateOption(
-                          ({ notification }: KernelNotification) =>
-                            isScratchpadOutput(notification)
-                              ? Option.some(notification)
-                              : Option.none(),
-                        ),
-                      ),
-                    );
-                  }),
-                  Deferred.await(abandoned).pipe(
-                    Effect.andThen(Effect.interrupt),
-                  ),
-                ),
+                executable,
+                notebook,
               );
+              yield* marimo.executeScratchpad({
+                notebookUri: notebookId,
+                executable,
+                workingDirectory,
+                code: sourceCode,
+                runId,
+              });
+              yield* liveSessions.refresh();
+              yield* reconcileKernelSession(notebookId);
+
+              // A reopened notebook belongs to a new document session.
+              return (message: SessionNotification) =>
+                message.session === session.value;
             }),
           ),
         updateUIElements: (request) =>
@@ -617,9 +714,17 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
           Option.none(),
         );
+        const scratchpadLock = Semaphore.makeUnsafe(1);
         return {
           controller,
-          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
+          handle: makeHandle(notebookId, controller, scratchpadLock),
+          executeSessionScratchpad: (sessionId, sourceCode) =>
+            executeSessionScratchpad(
+              notebookId,
+              scratchpadLock,
+              sessionId,
+              sourceCode,
+            ),
         };
       };
 
@@ -694,7 +799,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         ),
       );
       yield* Effect.forkScoped(
-        marimo.kernelNotifications.pipe(
+        Stream.fromSubscription(runtimeOperations).pipe(
           Stream.filterMap(
             Filter.fromPredicateOption((message: KernelNotification) => {
               return Option.map(
@@ -1052,6 +1157,24 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           });
         },
         forNotebook,
+        executeSessionScratchpad(
+          sessionId: KernelSessionId,
+          sourceCode: string,
+        ) {
+          return Stream.unwrap(
+            Effect.gen(function* () {
+              const session = EffectArray.findFirst(
+                yield* liveSessions.get,
+                (candidate) => candidate.sessionId === sessionId,
+              );
+              if (Option.isNone(session)) {
+                return yield* new KernelSessionNotFoundError({ sessionId });
+              }
+              const state = yield* stateForNotebook(session.value.notebookUri);
+              return state.executeSessionScratchpad(sessionId, sourceCode);
+            }),
+          );
+        },
       };
 
       function findOpenNotebook(notebookId: NotebookId) {

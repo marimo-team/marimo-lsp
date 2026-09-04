@@ -181,6 +181,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           shutdownAll: client.shutdownAllSessions({}).pipe(Effect.asVoid),
           forDocument,
           forNotebook,
+          executeSessionScratchpad: () => Stream.empty,
         };
         return runtime;
       }),
