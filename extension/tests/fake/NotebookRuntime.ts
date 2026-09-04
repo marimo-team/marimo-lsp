@@ -127,6 +127,7 @@ function makeRuntimeLayer(options: Options, client: MarimoClient.Interface) {
       };
 
       const runtime: NotebookRuntime.Interface = {
+        executeSessionScratchpad: () => Stream.empty,
         attachController: (notebookId, controller) =>
           Effect.gen(function* () {
             controllers.set(notebookId, controller);
