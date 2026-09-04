@@ -102,6 +102,13 @@
       "runId": null
     },
     {
+      "kind": "execute-session-scratchpad",
+      "notebookUri": "file:///notebook.py",
+      "kernelSessionId": "kernel-1",
+      "code": "answer + 1",
+      "runId": "run-1"
+    },
+    {
       "kind": "list-packages",
       "notebookUri": "file:///notebook.py",
       "source": { "kind": "venv", "executable": "/venv/bin/python" }

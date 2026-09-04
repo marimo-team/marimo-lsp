@@ -115,6 +115,7 @@ export const layerWith = (options: Options) =>
             executable: "/usr/bin/python3",
             workingDirectory: process.cwd(),
             startedAt: 1,
+            marimoVersion: "0.24.0",
             status: "idle",
             attached: true,
           },
@@ -164,6 +165,7 @@ export const layerWith = (options: Options) =>
                     executable: request.executable,
                     workingDirectory: request.workingDirectory,
                     startedAt: 1,
+                    marimoVersion: "0.24.0",
                     status: "idle",
                     attached: true,
                   });

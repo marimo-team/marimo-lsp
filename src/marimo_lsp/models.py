@@ -174,6 +174,7 @@ class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
     executable: str
     working_directory: str
     started_at: float
+    marimo_version: str | None
     status: typing.Literal["idle", "running"]
     attached: bool
 

@@ -193,6 +193,7 @@ export function defaultResponse(request: Command): Effect.Effect<unknown> {
             executable: request.executable,
             workingDirectory: request.workingDirectory,
             startedAt: 1,
+            marimoVersion: "0.24.0",
             status: "running",
             attached: true,
           },
