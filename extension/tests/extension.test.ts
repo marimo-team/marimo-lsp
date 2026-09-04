@@ -35,7 +35,10 @@ const withTestCtx = Effect.fn(function* (
   return makeExtension(layer, "Error");
 });
 
-const it = EffectTest.make(VsCodeTest.layer);
+// Remote test hosts do not publish a host-machine discovery record.
+const it = EffectTest.make(
+  VsCodeTest.layerWith({}, { env: { remoteName: "test" } }),
+);
 
 Vitest.describe("extension.activate", () => {
   it.effect(

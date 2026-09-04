@@ -638,7 +638,8 @@
     ]
   },
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onUri"
   ],
   "extensionDependencies": [
     "ms-python.python"

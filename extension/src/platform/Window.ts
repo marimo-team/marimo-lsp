@@ -38,6 +38,9 @@ export const makeActiveNotebookEditorChanges = (
   );
 
 export interface Interface {
+  readonly registerUriHandler: (
+    handler: (uri: vscode.Uri) => Effect.Effect<void>,
+  ) => Effect.Effect<void, never, Scope.Scope>;
   readonly createTerminal: (
     options: vscode.TerminalOptions,
   ) => Effect.Effect<
@@ -261,6 +264,27 @@ export const layer = Layer.effect(
       },
     );
 
+    const registerUriHandler = Effect.fn("Window.registerUriHandler")(
+      function* (handler: (uri: vscode.Uri) => Effect.Effect<void>) {
+        const runFork = Effect.runForkWith(yield* Effect.context());
+        yield* acquireDisposable(() =>
+          api.registerUriHandler({
+            handleUri(uri) {
+              runFork(
+                handler(uri).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("Failed to handle extension URI").pipe(
+                      Effect.annotateLogs({ cause }),
+                    ),
+                  ),
+                ),
+              );
+            },
+          }),
+        );
+      },
+    );
+
     const createOutputChannel = Effect.fn("Window.createOutputChannel")(
       function* (name: string) {
         return yield* acquireDisposable(() => api.createOutputChannel(name));
@@ -365,6 +389,7 @@ export const layer = Layer.effect(
     });
 
     return Service.of({
+      registerUriHandler,
       createTerminal,
       showSaveDialog,
       showInputBox,

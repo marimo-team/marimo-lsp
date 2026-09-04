@@ -79,6 +79,9 @@ export const makeNotebookLifecycle = Effect.fn(
 });
 
 export interface FileSystem {
+  readonly stat: (
+    uri: vscode.Uri,
+  ) => Effect.Effect<vscode.FileStat, FileSystemError>;
   readonly createDirectory: (
     uri: vscode.Uri,
   ) => Effect.Effect<void, FileSystemError>;
@@ -92,6 +95,8 @@ export interface FileSystem {
 }
 
 export interface Interface {
+  readonly notebookDocumentSaved: Stream.Stream<vscode.NotebookDocument>;
+  readonly workspaceFoldersChanges: Stream.Stream<vscode.WorkspaceFoldersChangeEvent>;
   readonly fs: FileSystem;
   readonly getNotebookDocuments: Effect.Effect<
     readonly vscode.NotebookDocument[]
@@ -241,8 +246,31 @@ export const layer = Layer.effect(
         }),
       );
 
+    const stat = Effect.fn("Workspace.stat")(function* (uri: vscode.Uri) {
+      return yield* Effect.tryPromise({
+        try: () => api.fs.stat(uri),
+        catch: (cause) => new FileSystemError({ cause }),
+      });
+    });
+
     return Service.of({
+      notebookDocumentSaved: Stream.callback<vscode.NotebookDocument>((queue) =>
+        acquireDisposable(() =>
+          api.onDidSaveNotebookDocument((document) =>
+            Queue.offerUnsafe(queue, document),
+          ),
+        ),
+      ),
+      workspaceFoldersChanges:
+        Stream.callback<vscode.WorkspaceFoldersChangeEvent>((queue) =>
+          acquireDisposable(() =>
+            api.onDidChangeWorkspaceFolders((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
+          ),
+        ),
       fs: {
+        stat,
         createDirectory,
         readFile,
         writeFile,

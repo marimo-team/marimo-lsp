@@ -427,6 +427,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const layer = Layer.succeed(VsCode.Service, {
     // namespaces
     window: {
+      registerUriHandler: () => Effect.void,
       showSaveDialog() {
         return Effect.succeed(Option.none());
       },
@@ -753,6 +754,21 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
     },
     workspace: {
       fs: {
+        stat(uri: vscode.Uri) {
+          const entry = files.get(uri.toString());
+          return entry === undefined || entry instanceof Error
+            ? Effect.fail(
+                new Workspace.FileSystemError({
+                  cause: entry ?? new Error(`ENOENT: ${uri.toString()}`),
+                }),
+              )
+            : Effect.succeed({
+                type: 1,
+                ctime: 0,
+                mtime: 0,
+                size: entry.byteLength,
+              });
+        },
         createDirectory(uri: vscode.Uri) {
           return Ref.update(directories, (current) => [
             ...current,
@@ -820,6 +836,8 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
         );
       },
       notebookDocumentOpened: Stream.fromPubSub(documentOpened),
+      notebookDocumentSaved: Stream.never,
+      workspaceFoldersChanges: Stream.never,
       notebookDocumentChanges: Stream.fromPubSub(documentChanges),
       notebookDocumentClosed: Stream.fromPubSub(documentClosed),
       // Mirrors the real implementation's guarantee: the subscription is
@@ -881,6 +899,9 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
       ...behavior.workspace,
     },
     env: {
+      remoteName: undefined,
+      uriScheme: "vscode",
+      asExternalUri: (target) => Effect.succeed(target),
       appName: "Marimo Test",
       appRoot: "/mocks",
       appHost: "desktop",
