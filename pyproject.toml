@@ -90,6 +90,12 @@ ignore = [
 [tool.typos.default.extend-words]
 somes = "somes"
 
+[tool.typos.type.windows-discovery]
+extend-glob = ["windowsPrivatePath.ts"]
+
+[tool.typos.type.windows-discovery.extend-identifiers]
+BA = "BA" # Windows SDDL alias for Built-in Administrators.
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

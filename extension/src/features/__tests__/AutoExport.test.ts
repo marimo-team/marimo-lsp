@@ -103,6 +103,7 @@ const withTestCtx = Effect.fn(function* (
             next.set(uri.toString(), new TextDecoder().decode(contents));
             return next;
           }),
+        stat: () => Effect.succeed({ type: 1, ctime: 0, mtime: 0, size: 0 }),
       },
     },
   });
