@@ -1,15 +1,15 @@
 import * as NodeChildProcess from "node:child_process";
-import type { EventEmitter } from "node:events";
+import type * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
-import type { Readable, Writable } from "node:stream";
-import { StringDecoder } from "node:string_decoder";
+import type * as NodeStream from "node:stream";
+import * as NodeStringDecoder from "node:string_decoder";
 
 const MAX_STDERR_TAIL_LENGTH = 16_000;
 
-interface SpawnedProcess extends EventEmitter {
-  readonly stdin: Writable | null;
-  readonly stdout: Readable | null;
-  readonly stderr: Readable | null;
+interface SpawnedProcess extends NodeEvents.EventEmitter {
+  readonly stdin: NodeStream.Writable | null;
+  readonly stdout: NodeStream.Readable | null;
+  readonly stderr: NodeStream.Readable | null;
   kill(): boolean;
 }
 
@@ -21,8 +21,8 @@ type SpawnProcess = (
 
 interface ProcessState {
   readonly child: SpawnedProcess;
-  readonly input: Writable;
-  readonly stderrDecoder: StringDecoder;
+  readonly input: NodeStream.Writable;
+  readonly stderrDecoder: NodeStringDecoder.StringDecoder;
   stderrTail: string;
   expectedClose: boolean;
   exited: boolean;
@@ -82,7 +82,7 @@ export class Processes {
     const state: ProcessState = {
       child,
       input: child.stdin,
-      stderrDecoder: new StringDecoder("utf8"),
+      stderrDecoder: new NodeStringDecoder.StringDecoder("utf8"),
       stderrTail: "",
       expectedClose: false,
       exited: false,

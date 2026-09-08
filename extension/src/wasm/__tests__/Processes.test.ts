@@ -1,5 +1,5 @@
-import { EventEmitter } from "node:events";
-import { PassThrough } from "node:stream";
+import * as NodeEvents from "node:events";
+import * as NodeStream from "node:stream";
 
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
@@ -32,10 +32,10 @@ it("reports a selected-Python spawn failure", async () => {
 });
 
 it("drains stdout before reporting process exit", () => {
-  const child = Object.assign(new EventEmitter(), {
-    stdin: new PassThrough(),
-    stdout: new PassThrough(),
-    stderr: new PassThrough(),
+  const child = Object.assign(new NodeEvents.EventEmitter(), {
+    stdin: new NodeStream.PassThrough(),
+    stdout: new NodeStream.PassThrough(),
+    stderr: new NodeStream.PassThrough(),
     kill: vi.fn(() => true),
   });
   const spawn = vi.fn(() => child);
@@ -59,10 +59,10 @@ it("drains stdout before reporting process exit", () => {
 });
 
 it("includes captured stderr when reporting process exit", () => {
-  const child = Object.assign(new EventEmitter(), {
-    stdin: new PassThrough(),
-    stdout: new PassThrough(),
-    stderr: new PassThrough(),
+  const child = Object.assign(new NodeEvents.EventEmitter(), {
+    stdin: new NodeStream.PassThrough(),
+    stdout: new NodeStream.PassThrough(),
+    stderr: new NodeStream.PassThrough(),
     kill: vi.fn(() => true),
   });
   const spawn = vi.fn(() => child);
