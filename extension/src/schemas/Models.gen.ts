@@ -637,6 +637,9 @@ export const KernelNotification = Schema.Struct({
   notebookUri: NotebookIdFromString,
   sessionId: KernelSessionIdFromString,
   notification: MarimoNotification,
+  scratchpadRunId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 }).annotate({ identifier: "KernelNotification" });
 export type KernelNotification = typeof KernelNotification.Type;
 

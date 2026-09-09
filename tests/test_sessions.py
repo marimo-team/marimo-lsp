@@ -432,6 +432,7 @@ def test_retained_scratchpad_forwards_through_matching_completion() -> None:
                     {
                         "notebookUri": "file:///test.py",
                         "sessionId": "00000000-0000-4000-8000-000000000001",
+                        "scratchpadRunId": "scratch-1",
                         "notification": {"op": "completed-run", "run_id": "other"},
                     },
                 ),
@@ -440,6 +441,7 @@ def test_retained_scratchpad_forwards_through_matching_completion() -> None:
                     {
                         "notebookUri": "file:///test.py",
                         "sessionId": "00000000-0000-4000-8000-000000000001",
+                        "scratchpadRunId": "scratch-1",
                         "notification": {"op": "completed-run", "run_id": "scratch-1"},
                     },
                 ),
@@ -492,7 +494,9 @@ def test_terminal_kernel_operation_invokes_failure_callback() -> None:
     session.accept_kernel_message(message)
 
     session._on_kernel_failure.assert_called_once_with(session, "bridge exited")
-    assert session._operation_sink.notify.call_count == 1
+    session._operation_sink.notify.assert_called_once_with(
+        message, force=False, scratchpad_run_id=None
+    )
 
 
 def test_pending_scratchpad_cancellation_does_not_interrupt_other_work() -> None:
@@ -916,3 +920,40 @@ def test_close_all_clears_collection_and_notifies_once() -> None:
     first.close.assert_called_once_with()
     second.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
+
+
+@pytest.mark.parametrize("attached", [False, True])
+def test_scratchpad_claim_correlates_output_and_completion(*, attached: bool) -> None:
+    session, _ = _make_session()
+    server = Mock()
+    session._operation_sink = _OperationSink(server, "file:///test.py", SESSION_ID)
+    if not attached:
+        session._operation_sink.detach()
+    output = KernelMessage(
+        b'{"op":"cell-op","cell_id":"child","run_id":"cell-run",'
+        b'"console":[{"channel":"stdout","mimetype":"text/plain","data":"hello"}]}'
+    )
+
+    session.accept_kernel_message(output)
+    assert session.try_start_scratchpad("scratch-1", forward_operations=True)
+    session.accept_kernel_message(output)
+    session.accept_kernel_message(
+        KernelMessage(b'{"op":"completed-run","run_id":"scratch-1"}')
+    )
+    session.accept_kernel_message(output)
+    assert session.try_start_scratchpad("scratch-2", forward_operations=True)
+    session.accept_kernel_message(output)
+    session.release_scratchpad("scratch-2")
+    session.accept_kernel_message(output)
+
+    messages = [call.args[1] for call in server.protocol.notify.call_args_list]
+    assert [message.get("scratchpadRunId") for message in messages] == (
+        [None, "scratch-1", "scratch-1", None, "scratch-2", None]
+        if attached
+        else ["scratch-1", "scratch-1", "scratch-2"]
+    )
+    assert all(
+        message["notification"]["run_id"] == "cell-run"
+        for message in messages
+        if message["notification"]["op"] == "cell-op"
+    )

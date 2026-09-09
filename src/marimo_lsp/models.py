@@ -31,12 +31,14 @@ from marimo_lsp.protocol import AppOptions, NotebookCellConfig, NotebookMetadata
 DEFAULT_SQL_ENGINE = "__marimo_duckdb"
 
 
-class KernelNotification(msgspec.Struct, rename="camel"):
+class KernelNotification(msgspec.Struct, rename="camel", omit_defaults=True):
     """A notification emitted by one exact live kernel."""
 
     notebook_uri: str
     session_id: SessionId
     notification: NotificationMessage
+    scratchpad_run_id: str | None = None
+    """The server's scratchpad claim, separate from each cell's kernel run ID."""
 
 
 class DocumentAnalysis(msgspec.Struct, rename="camel"):

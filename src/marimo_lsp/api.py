@@ -476,7 +476,7 @@ async def _dispatch_scratchpad(
 ) -> None:
     """Claim a session and dispatch through marimo's scratchpad path.
 
-    Exact-session requests forward operations even when the notebook is detached.
+    Correlated streams retain their output even when the notebook is detached.
     """
     notebook_uri = str(args.notebook_uri)
     exact_session = isinstance(args, protocol.ExecuteSessionScratchpad)
@@ -492,7 +492,9 @@ async def _dispatch_scratchpad(
         ):
             logger.info(f"Skipping scratchpad run {run_id} cancelled before dispatch")
             return
-        if session.try_start_scratchpad(run_id, forward_operations=exact_session):
+        if session.try_start_scratchpad(
+            run_id, forward_operations=exact_session or run_id is not None
+        ):
             break
 
     try:

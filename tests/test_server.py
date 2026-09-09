@@ -1880,6 +1880,7 @@ y\
             {
                 "notebookUri": "file:///scratch_test.py",
                 "sessionId": IsUUID(4),
+                "scratchpadRunId": "scratch-output",
                 "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
@@ -1894,6 +1895,7 @@ y\
             {
                 "notebookUri": "file:///scratch_test.py",
                 "sessionId": IsUUID(4),
+                "scratchpadRunId": "scratch-output",
                 "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
@@ -1908,6 +1910,7 @@ y\
             {
                 "notebookUri": "file:///scratch_test.py",
                 "sessionId": IsUUID(4),
+                "scratchpadRunId": "scratch-output",
                 "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
@@ -1927,6 +1930,7 @@ y\
             {
                 "notebookUri": "file:///scratch_test.py",
                 "sessionId": IsUUID(4),
+                "scratchpadRunId": "scratch-output",
                 "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",
@@ -1946,6 +1950,7 @@ y\
             {
                 "notebookUri": "file:///scratch_test.py",
                 "sessionId": IsUUID(4),
+                "scratchpadRunId": "scratch-output",
                 "notification": {
                     "op": "cell-op",
                     "cell_id": "__scratch__",

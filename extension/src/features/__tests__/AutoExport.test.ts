@@ -226,6 +226,7 @@ describe("AutoExport", () => {
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
           sessionId: SESSION_ID,
+          scratchpadRunId: null,
           notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
@@ -280,6 +281,7 @@ describe("AutoExport", () => {
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
           sessionId: SESSION_ID,
+          scratchpadRunId: null,
           notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
