@@ -29,7 +29,10 @@ import {
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import { CellOutputProjections } from "../../kernel/CellOutputProjections.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import {
+  KernelSessionNotFoundError,
+  NotebookRuntime,
+} from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
 import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
 import {
@@ -85,6 +88,7 @@ const withTestCtx = Effect.fn(function* (
   // Controllable showInputBox via Queue
   const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
   const inputRequested = yield* Latch.make();
+  const inputPrompts = yield* Ref.make(0);
 
   // Capture executeCommand calls
   const executions = yield* SubscriptionRef.make<ReadonlyArray<TestCommand>>(
@@ -141,7 +145,10 @@ const withTestCtx = Effect.fn(function* (
     workspace,
     window: {
       showInputBox: () =>
-        inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
+        Ref.update(inputPrompts, (count) => count + 1).pipe(
+          Effect.andThen(inputRequested.open),
+          Effect.andThen(Queue.take(inputQueue)),
+        ),
       showErrorMessage: (message) =>
         Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
           Effect.as(Option.none()),
@@ -216,6 +223,20 @@ const withTestCtx = Effect.fn(function* (
               request.kind === "execute-session-scratchpad"
             )
               yield* scratchpadDispatch;
+            if (request.kind === "move-session") {
+              const current = serverSessions.get(
+                notebookId(request.notebookUri),
+              );
+              if (current !== undefined) {
+                serverSessions.delete(notebookId(request.notebookUri));
+                serverSessions.set(notebookId(request.newNotebookUri), {
+                  ...current,
+                  notebookUri: notebookId(request.newNotebookUri),
+                });
+              }
+            }
+            if (request.kind === "close-session")
+              serverSessions.delete(notebookId(request.notebookUri));
             if (request.kind === "restart-session") {
               const id = notebookId(request.notebookUri);
               const current = serverSessions.get(id);
@@ -259,6 +280,7 @@ const withTestCtx = Effect.fn(function* (
     errorMessages,
     inputQueue,
     inputRequested,
+    inputPrompts,
     operationsPubSub,
     documentAnalysisPubSub,
   };
@@ -772,6 +794,69 @@ describe("NotebookRuntime stdin", () => {
 
 describe("NotebookRuntime scratch stream", () => {
   it.effect(
+    "releases the notebook queue when dispatch is cancelled",
+    Effect.fn(function* () {
+      const pending = yield* Latch.make();
+      const ctx = yield* withTestCtx(ACTIVE_SESSION_ID, {}, pending.await);
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const execution = yield* Effect.forkChild(
+          notebook.executeScratchpad("42").pipe(Stream.runDrain),
+        );
+        yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) => calls.some((c) => c.kind === "execute-scratchpad"),
+          "dispatch",
+        );
+        yield* Fiber.interrupt(execution);
+        const interrupted = yield* Ref.make(false);
+        yield* Effect.forkChild(
+          notebook.interrupt.pipe(Effect.andThen(Ref.set(interrupted, true))),
+        );
+        yield* settle(
+          Ref.get(interrupted),
+          Boolean,
+          "interrupt blocked by cancelled dispatch",
+        );
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect.each(["close", "restart"] as const)(
+    "fails an active execution on kernel %s",
+    Effect.fn(function* (action) {
+      const ctx = yield* withTestCtx();
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const failure = yield* Deferred.make<unknown>();
+        yield* Effect.forkChild(
+          runtime.executeSessionScratchpad(ACTIVE_SESSION_ID, "42").pipe(
+            Stream.runDrain,
+            Effect.flip,
+            Effect.flatMap((error) => Deferred.succeed(failure, error)),
+          ),
+        );
+        yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "dispatch",
+        );
+        yield* notebook[action];
+        yield* settle(
+          Deferred.isDone(failure),
+          Boolean,
+          "stream outlived its kernel",
+        );
+        expect(yield* Deferred.await(failure)).toEqual(
+          new KernelSessionNotFoundError({ sessionId: ACTIVE_SESSION_ID }),
+        );
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
     "rejects a replaced session without dispatching scratchpad code",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
@@ -1159,110 +1244,12 @@ describe("NotebookRuntime scratch stream", () => {
   );
 
   it.effect(
-    "streams an exact retained session after its notebook document closes",
+    "keeps stdin and interrupts available after renaming a retained notebook",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
-        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow;
-
-        const streamFiber = yield* Effect.forkChild(
-          runtime
-            .executeSessionScratchpad(ACTIVE_SESSION_ID, "print('retained')")
-            .pipe(Stream.runCollect),
-        );
-        const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
-          Stream.filter((current) =>
-            current.some((call) => call.kind === "execute-session-scratchpad"),
-          ),
-          Stream.runHead,
-          Effect.map(Option.getOrThrow),
-        );
-        const executeCmd = calls.find(
-          (call) => call.kind === "execute-session-scratchpad",
-        );
-        assert(executeCmd !== undefined);
-
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
-          makeIdleCellOperation(
-            ctx.notebookUri,
-            SCRATCH_CELL_ID,
-            {
-              console: [
-                {
-                  channel: "stdout",
-                  data: "retained\n",
-                  mimetype: "text/plain",
-                  timestamp: 0,
-                },
-              ],
-            },
-            executeCmd.runId,
-          ),
-        );
-        yield* PubSub.publish(ctx.operationsPubSub, {
-          notebookUri: ctx.notebookUri,
-          sessionId: ACTIVE_SESSION_ID,
-          scratchpadRunId: executeCmd.runId ?? null,
-          notification: {
-            op: "completed-run",
-            run_id: executeCmd.runId,
-          },
-        });
-        // Output after completion does not belong to this request.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
-          makeIdleCellOperation(
-            ctx.notebookUri,
-            SCRATCH_CELL_ID,
-            {
-              console: [
-                {
-                  channel: "stdout",
-                  data: "trailing\n",
-                  mimetype: "text/plain",
-                  timestamp: 1,
-                },
-              ],
-            },
-            executeCmd.runId,
-          ),
-        );
-
-        const operations = yield* Fiber.join(streamFiber);
-        expect(
-          operations.flatMap((operation) => {
-            const console = Array.isArray(operation.console)
-              ? operation.console
-              : operation.console == null
-                ? []
-                : [operation.console];
-            return console.map(({ channel, data }) => ({ channel, data }));
-          }),
-        ).toMatchInlineSnapshot(`
-          [
-            {
-              "channel": "stdout",
-              "data": "retained
-          ",
-            },
-          ]
-        `);
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  );
-
-  it.effect(
-    "keeps stdin and interrupts available during retained execution",
-    Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
-      yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
-        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         const streamFiber = yield* Effect.forkChild(
           runtime
             .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
@@ -1300,6 +1287,10 @@ describe("NotebookRuntime scratch stream", () => {
             executeCmd.runId,
           ),
         );
+        yield* ctx.inputRequested.await;
+        const renamed = notebookId("file:///workspace/renamed.py");
+        yield* runtime.moveSession(ctx.notebookUri, renamed);
+        const notebook = yield* runtime.forNotebook(renamed);
         yield* Queue.offer(ctx.inputQueue, Option.some("foo"));
         const responses = yield* SubscriptionRef.changes(ctx.executions).pipe(
           Stream.filter((calls) =>
@@ -1311,7 +1302,7 @@ describe("NotebookRuntime scratch stream", () => {
         expect(
           responses.find((call) => call.kind === "send-stdin"),
         ).toMatchObject({
-          notebookUri: ctx.notebookUri,
+          notebookUri: renamed,
           kernelSessionId: ACTIVE_SESSION_ID,
           text: "foo",
         });
@@ -1324,12 +1315,12 @@ describe("NotebookRuntime scratch stream", () => {
           (yield* SubscriptionRef.get(ctx.executions)).at(-1),
         ).toMatchObject({
           kind: "interrupt",
-          notebookUri: ctx.notebookUri,
+          notebookUri: renamed,
           kernelSessionId: ACTIVE_SESSION_ID,
         });
 
         yield* PubSub.publish(ctx.operationsPubSub, {
-          notebookUri: ctx.notebookUri,
+          notebookUri: renamed,
           sessionId: ACTIVE_SESSION_ID,
           scratchpadRunId: executeCmd.runId ?? null,
           notification: {
@@ -1343,7 +1334,7 @@ describe("NotebookRuntime scratch stream", () => {
   );
 
   it.effect(
-    "interrupts the exact retained run when its stream disconnects",
+    "interrupts the exact retained run after rename when its stream disconnects",
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
@@ -1366,6 +1357,8 @@ describe("NotebookRuntime scratch stream", () => {
         );
         assert(executeCmd !== undefined);
 
+        const renamed = notebookId("file:///workspace/renamed.py");
+        yield* runtime.moveSession(ctx.notebookUri, renamed);
         yield* Fiber.interrupt(streamFiber);
 
         expect(
@@ -1374,7 +1367,7 @@ describe("NotebookRuntime scratch stream", () => {
           ),
         ).toMatchObject({
           kind: "interrupt",
-          notebookUri: ctx.notebookUri,
+          notebookUri: renamed,
           kernelSessionId: ACTIVE_SESSION_ID,
           runId: executeCmd.runId,
         });
@@ -1382,13 +1375,13 @@ describe("NotebookRuntime scratch stream", () => {
     }),
   );
   it.effect.each([
-    { reopen: false, caller: "discovery" },
+    { reopen: false, caller: "discovery", rename: true },
     { reopen: true, caller: "discovery" },
-    { reopen: false, caller: "notebook" },
+    { reopen: false, caller: "notebook", rename: true },
     { reopen: true, caller: "notebook" },
   ])(
-    "preserves $caller scratchpad serialization after closing (reopen=$reopen)",
-    Effect.fn(function* ({ reopen, caller }) {
+    "preserves $caller scratchpad serialization across lifecycle changes (reopen=$reopen)",
+    Effect.fn(function* ({ reopen, caller, rename }) {
       const ctx = yield* withTestCtx();
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
@@ -1422,6 +1415,10 @@ describe("NotebookRuntime scratch stream", () => {
         assert(firstCommand !== undefined);
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         if (reopen) yield* ctx.vscode.openNotebook(ctx.editor.notebook);
+        const target = rename
+          ? notebookId("file:///workspace/renamed.py")
+          : ctx.notebookUri;
+        if (rename) yield* runtime.moveSession(ctx.notebookUri, target);
         const second = yield* Effect.forkChild(
           runtime
             .executeSessionScratchpad(ACTIVE_SESSION_ID, "second")
@@ -1437,7 +1434,7 @@ describe("NotebookRuntime scratch stream", () => {
           ),
         ).toHaveLength(1);
         yield* PubSub.publish(ctx.operationsPubSub, {
-          notebookUri: ctx.notebookUri,
+          notebookUri: target,
           sessionId: ACTIVE_SESSION_ID,
           scratchpadRunId: firstCommand.runId ?? null,
           notification: { op: "completed-run", run_id: firstCommand.runId },
@@ -1459,12 +1456,13 @@ describe("NotebookRuntime scratch stream", () => {
   );
 
   it.effect(
-    "excludes earlier output buffered while dispatch waits for an idle kernel",
+    "streams only the retained run through completion after its editor closes",
     Effect.fn(function* () {
       const dispatch = yield* Latch.make();
       const ctx = yield* withTestCtx(ACTIVE_SESSION_ID, {}, dispatch.await);
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime;
+        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         const execution = yield* Effect.forkChild(
           runtime
             .executeSessionScratchpad(ACTIVE_SESSION_ID, "42")
@@ -1522,6 +1520,8 @@ describe("NotebookRuntime scratch stream", () => {
           scratchpadRunId: command.runId ?? null,
           notification: { op: "completed-run", run_id: command.runId },
         });
+        // Even a notification with the same claim is excluded after completion.
+        yield* PubSub.publish(ctx.operationsPubSub, ownOutput);
         expect(yield* Fiber.join(execution)).toEqual([ownOutput.notification]);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -1590,6 +1590,144 @@ describe("NotebookRuntime scratch stream", () => {
           });
         }
         expect(yield* Fiber.join(second)).toEqual([]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+  it.effect.each([
+    { caller: "detached", cell: "cell-1" },
+    { caller: "attached", cell: "cell-1" },
+    { caller: "notebook", cell: "cell-1" },
+    { caller: "notebook", cell: SCRATCH_CELL_ID },
+  ])(
+    "answers exactly one stdin prompt for $caller execution in $cell",
+    Effect.fn(function* ({ caller, cell }) {
+      const ctx = yield* withTestCtx();
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        if (caller === "detached")
+          yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        const execution = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            if (caller === "notebook") {
+              const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+              yield* notebook
+                .executeScratchpad("input()")
+                .pipe(Stream.runDrain);
+            } else {
+              yield* runtime
+                .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
+                .pipe(Stream.runDrain);
+            }
+          }),
+        );
+        const calls = yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) =>
+            calls.some(
+              (c) =>
+                c.kind === "execute-session-scratchpad" ||
+                c.kind === "execute-scratchpad",
+            ),
+          "scratchpad dispatch",
+        );
+        const command = calls.find(
+          (c) =>
+            c.kind === "execute-session-scratchpad" ||
+            c.kind === "execute-scratchpad",
+        );
+        assert(command !== undefined);
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            cell,
+            {
+              console: [
+                { channel: "stdin", data: "Name?", mimetype: "text/plain" },
+              ],
+            },
+            command.runId,
+          ),
+        );
+        yield* ctx.inputRequested.await;
+        yield* Queue.offer(ctx.inputQueue, Option.some("answer"));
+        yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) => calls.some((c) => c.kind === "send-stdin"),
+          "stdin response",
+        );
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: command.runId ?? null,
+          notification: { op: "completed-run", run_id: command.runId },
+        });
+        yield* Fiber.join(execution);
+        expect(yield* Ref.get(ctx.inputPrompts)).toBe(1);
+        expect(
+          (yield* SubscriptionRef.get(ctx.executions)).filter(
+            (c) => c.kind === "send-stdin",
+          ),
+        ).toEqual([
+          {
+            kind: "send-stdin",
+            notebookUri: ctx.notebookUri,
+            kernelSessionId: ACTIVE_SESSION_ID,
+            text: "answer",
+          },
+        ]);
+      }).pipe(Effect.provide(ctx.layer));
+    }),
+  );
+
+  it.effect(
+    "finishes a scratchpad stream while its stdin prompt is still pending",
+    Effect.fn(function* () {
+      const ctx = yield* withTestCtx();
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime;
+        const execution = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
+            .pipe(Stream.runDrain),
+        );
+        const calls = yield* settle(
+          SubscriptionRef.get(ctx.executions),
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "scratchpad dispatch",
+        );
+        const command = calls.find(
+          (c) => c.kind === "execute-session-scratchpad",
+        );
+        assert(command !== undefined);
+        yield* PubSub.publish(
+          ctx.operationsPubSub,
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            SCRATCH_CELL_ID,
+            {
+              console: [
+                { channel: "stdin", data: "Name?", mimetype: "text/plain" },
+              ],
+            },
+            command.runId,
+          ),
+        );
+        yield* ctx.inputRequested.await;
+        // An interrupt from another caller can finish the run before the user answers.
+        yield* PubSub.publish(ctx.operationsPubSub, {
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: command.runId ?? null,
+          notification: { op: "completed-run", run_id: command.runId },
+        });
+        yield* Fiber.join(execution);
+        yield* Queue.offer(ctx.inputQueue, Option.some("late answer"));
+        expect(
+          (yield* SubscriptionRef.get(ctx.executions)).filter(
+            (c) => c.kind === "send-stdin",
+          ),
+        ).toEqual([]);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );

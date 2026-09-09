@@ -599,3 +599,39 @@ describe("local discovery publisher", { timeout: 30_000 }, () => {
     });
   });
 });
+
+it.each([
+  {
+    data: { "text/plain": "<literal>", "text/html": "<b>rich</b>" },
+    mimetype: "text/html",
+    expected: { mimetype: "text/plain", data: "<literal>" },
+  },
+  {
+    data: { "text/html": "<b>rich</b>" },
+    mimetype: "application/json",
+    expected: { mimetype: "text/html", data: "<b>rich</b>" },
+  },
+] as const)(
+  "labels the selected output representation consistently ($mimetype)",
+  async ({ data, mimetype, expected }) => {
+    await withServer(
+      async (baseUrl, authorized) => {
+        const response = await fetch(
+          `${baseUrl}/sessions/${SESSION_ID}/execute`,
+          {
+            method: "POST",
+            headers: { ...authorized, "Content-Type": "application/json" },
+            body: JSON.stringify({ code: "value" }),
+          },
+        );
+        expect(await readEvents(response)).toEqual([
+          { event: "done", data: { success: true, output: expected } },
+        ]);
+      },
+      runtimeFrom({
+        ...scratchResult,
+        output: { channel: "output", mimetype, data },
+      }),
+    );
+  },
+);

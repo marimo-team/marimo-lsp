@@ -230,14 +230,20 @@ function makeDoneEvent(
   }
 
   let data: unknown = scratchOutput.data;
+  let mimetype = scratchOutput.mimetype;
   if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-    if ("text/plain" in data) data = data["text/plain"];
-    else if ("text/html" in data) data = data["text/html"];
+    if ("text/plain" in data) {
+      data = data["text/plain"];
+      mimetype = "text/plain";
+    } else if ("text/html" in data) {
+      data = data["text/html"];
+      mimetype = "text/html";
+    }
   }
   return DoneEvent.make({
     success: true,
     output: {
-      mimetype: scratchOutput.mimetype,
+      mimetype,
       data: typeof data === "string" ? data : outputDataAsString(data),
     },
   });
