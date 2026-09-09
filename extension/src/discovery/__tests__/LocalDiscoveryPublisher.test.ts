@@ -167,6 +167,7 @@ describe("local discovery publisher", { timeout: 30_000 }, () => {
     const record = await Effect.runPromise(
       Effect.gen(function* () {
         const vscode = yield* TestVsCode.make({
+          env: { uriScheme: "cursor", appName: "Cursor" },
           window: {
             registerUriHandler: () =>
               Effect.acquireRelease(
@@ -192,6 +193,10 @@ describe("local discovery publisher", { timeout: 30_000 }, () => {
           ),
         );
         expect(JSON.parse(published).url).toBe(record.url);
+        expect(JSON.parse(published)).toMatchObject({
+          kind: "cursor",
+          name: "Cursor",
+        });
         expect(handlerRegistered).toBe(true);
         return record;
       }).pipe(Effect.scoped),
