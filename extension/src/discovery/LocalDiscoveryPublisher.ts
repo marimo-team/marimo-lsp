@@ -58,6 +58,15 @@ const encodeDoneEvent = Schema.encodeSync(Schema.fromJsonString(DoneEvent));
 const EXTENSION_AUTHORITY = "marimo-team.vscode-marimo";
 const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
 const EMPTY_OUTPUT = { mimetype: "text/plain", data: "" } as const;
+const EDITOR_DISPLAY_NAMES = new Map([
+  ["vscode", "VS Code"],
+  ["vscode-insiders", "VS Code Insiders"],
+  ["code-oss", "Code - OSS"],
+  ["cursor", "Cursor"],
+  ["vscodium", "VSCodium"],
+  ["vscodium-insiders", "VSCodium Insiders"],
+  ["positron", "Positron"],
+]);
 type CellOutput = NonNullable<CellOperationNotification["output"]>;
 
 class PublisherStartupError extends Data.TaggedError("PublisherStartupError")<{
@@ -473,7 +482,7 @@ export const makeLocalDiscoveryPublisher = Effect.fn(
   const record = InstanceRecord.make({
     id: catalog.instanceId,
     kind: code.env.uriScheme,
-    name: code.env.appName,
+    name: EDITOR_DISPLAY_NAMES.get(code.env.uriScheme) ?? code.env.appName,
     pid: process.pid,
     started_at: startedAt.toISOString(),
     url: `http://127.0.0.1:${port}${DISCOVERY_API_PATH}`,

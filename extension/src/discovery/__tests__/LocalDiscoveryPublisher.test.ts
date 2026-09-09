@@ -161,53 +161,60 @@ async function readEvents(response: Response, limit = Infinity) {
 }
 
 describe("local discovery publisher", { timeout: 30_000 }, () => {
-  it("removes its record, closes HTTP, and unregisters the URI handler on shutdown", async () => {
-    const directory = await temporaryDirectory();
-    let handlerRegistered = false;
-    const record = await Effect.runPromise(
-      Effect.gen(function* () {
-        const vscode = yield* TestVsCode.make({
-          env: { uriScheme: "cursor", appName: "Cursor" },
-          window: {
-            registerUriHandler: () =>
-              Effect.acquireRelease(
-                Effect.sync(() => {
-                  handlerRegistered = true;
-                }),
-                () =>
+  it.each([
+    ["vscode", "Visual Studio Code", "VS Code"],
+    ["cursor", "Cursor", "Cursor"],
+    ["custom-editor", "My editor", "My editor"],
+  ])(
+    "publishes %s identity and releases its resources on shutdown",
+    async (uriScheme, appName, name) => {
+      const directory = await temporaryDirectory();
+      let handlerRegistered = false;
+      const record = await Effect.runPromise(
+        Effect.gen(function* () {
+          const vscode = yield* TestVsCode.make({
+            env: { uriScheme, appName },
+            window: {
+              registerUriHandler: () =>
+                Effect.acquireRelease(
                   Effect.sync(() => {
-                    handlerRegistered = false;
+                    handlerRegistered = true;
                   }),
-              ),
-          },
-        });
-        const record = yield* makeLocalDiscoveryPublisher(
-          catalog,
-          runtime,
-          directory,
-        ).pipe(Effect.provide(vscode.layer));
-        const published = yield* Effect.promise(() =>
-          NodeFs.readFile(
-            NodePath.join(directory, `${record.id}.json`),
-            "utf8",
-          ),
-        );
-        expect(JSON.parse(published).url).toBe(record.url);
-        expect(JSON.parse(published)).toMatchObject({
-          kind: "cursor",
-          name: "Cursor",
-        });
-        expect(handlerRegistered).toBe(true);
-        return record;
-      }).pipe(Effect.scoped),
-    );
+                  () =>
+                    Effect.sync(() => {
+                      handlerRegistered = false;
+                    }),
+                ),
+            },
+          });
+          const record = yield* makeLocalDiscoveryPublisher(
+            catalog,
+            runtime,
+            directory,
+          ).pipe(Effect.provide(vscode.layer));
+          const published = yield* Effect.promise(() =>
+            NodeFs.readFile(
+              NodePath.join(directory, `${record.id}.json`),
+              "utf8",
+            ),
+          );
+          expect(JSON.parse(published).url).toBe(record.url);
+          expect(JSON.parse(published)).toMatchObject({
+            kind: uriScheme,
+            name,
+          });
+          expect(handlerRegistered).toBe(true);
+          return record;
+        }).pipe(Effect.scoped),
+      );
 
-    expect({
-      handlerRegistered,
-      records: await NodeFs.readdir(directory),
-    }).toEqual({ handlerRegistered: false, records: [] });
-    await expect(fetch(`${record.url}/catalog`)).rejects.toThrow();
-  });
+      expect({
+        handlerRegistered,
+        records: await NodeFs.readdir(directory),
+      }).toEqual({ handlerRegistered: false, records: [] });
+      await expect(fetch(`${record.url}/catalog`)).rejects.toThrow();
+    },
+  );
 
   it("releases earlier resources when registration fails", async () => {
     const directory = await temporaryDirectory();
