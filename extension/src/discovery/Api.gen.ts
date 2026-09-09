@@ -65,9 +65,13 @@ export const InstanceRecord = Schema.Struct({
   id: Schema.String.annotate({ format: "uuid" }),
   kind: Schema.String.annotate({
     description:
-      "Open application identifier; never infer capabilities from it.",
+      "Open application identifier, such as marimo or vscode. Editors may use\ntheir URI scheme. Never infer capabilities or launch URLs from it.\n",
   }),
-  name: Schema.String,
+  name: Schema.String.annotate({
+    description:
+      "Publisher-chosen plain-text label, defaulting to a concise application\nname and optionally customized. Consumers display it verbatim; it is\nnot unique and must not be used as identity.\n",
+    examples: ["marimo"],
+  }),
   pid: Schema.Number.annotate({ format: "int64" })
     .check(Schema.isInt().annotate({ expected: "an integer" }))
     .check(
@@ -82,7 +86,7 @@ export const InstanceRecord = Schema.Struct({
   }),
 }).annotate({
   description:
-    "Filesystem record advertising one host lifetime. Its id must match the\nfilename. Consumers verify owner-only access to the discovery directories\nand record, reject symlinks and files over 64 KiB, and ignore invalid or\nunreachable records. A PID is only a liveness hint.\n",
+    "A running instance writes this record to discovery/v1. Its id must match the\nfilename. Consumers verify owner-only access to the discovery directories\nand record, reject symlinks and files over 64 KiB, and ignore invalid or\nunreachable records. On Windows, verify permissions allowing ownership\nand access only to the current user, SYSTEM, or the built-in\nAdministrators group.\n",
   identifier: "InstanceRecord",
 });
 export type OpenNotebookResponse = { readonly uri: string };
@@ -323,7 +327,7 @@ class DefaultGroup extends HttpApiGroup.make("default", { topLevel: true }).add(
     .annotate(OpenApi.Identifier, "watch_catalog")
     .annotate(
       OpenApi.Description,
-      "Requires catalog.watch. Sends event catalog.changed with JSON data {}\non connection and whenever the catalog changes. Refetch the catalog\nafter each invalidation. There are no deltas or replay cursors.\nIgnore unknown event names.",
+      "Instances offering catalog.watch send catalog.changed with JSON data {}\nwhen the stream opens and whenever the catalog changes. Publishers may combine\npending invalidations, and consumers may handle several with one catalog\nread. If another invalidation arrives during that read, read again.\nThere are no deltas or event replay. Consumers ignore unknown event names.",
     ),
   HttpApiEndpoint.post("openNotebook", "/notebooks/:notebook_id/open", {
     params: OpenNotebookPathParams,
@@ -362,7 +366,7 @@ class DefaultGroup extends HttpApiGroup.make("default", { topLevel: true }).add(
     .annotate(OpenApi.Identifier, "execute")
     .annotate(
       OpenApi.Description,
-      "Requires session.execute. Only a running session accepts execution;\notherwise return 409. Send zero or more ordered stdout/stderr events\nwith ConsoleEvent payloads, followed by exactly one done event with a\nDoneEvent payload. A failed execution ends with success false.\nIgnore unknown event names. A stream ending before done has an\nindeterminate outcome and must not be retried automatically.",
+      "Instances offering session.execute accept code for running sessions\nand return 409 otherwise. Send zero or more ordered stdout/stderr events\nwith ConsoleEvent payloads, followed by exactly one done event with a\nDoneEvent payload. Send done when the requested code and any cells it\ntriggers finish, with success false if either fails.\nPublishers should try to interrupt execution when the consumer disconnects.\nIf the stream ends before done, the consumer cannot know whether execution\ncompleted and must not retry automatically. Consumers ignore unknown event names.",
     ),
 ) {}
 
