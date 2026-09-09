@@ -459,6 +459,7 @@ Vitest.describe("notification streams", () => {
       const message = {
         notebookUri: notebook,
         sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        scratchpadRunId: null,
         notification: { op: "completed-run", run_id: null },
       } as const;
       yield* notifications.publishKernel(message);
@@ -503,6 +504,7 @@ Vitest.describe("notification streams", () => {
       const kernelSnapshot: KernelNotification = {
         notebookUri: notebook,
         sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        scratchpadRunId: null,
         notification: { op: "variables", variables: [] },
       };
 
