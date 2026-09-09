@@ -472,7 +472,7 @@ export const makeLocalDiscoveryPublisher = Effect.fn(
   const port = address.port;
   const record = InstanceRecord.make({
     id: catalog.instanceId,
-    kind: "vscode",
+    kind: code.env.uriScheme,
     name: code.env.appName,
     pid: process.pid,
     started_at: startedAt.toISOString(),
