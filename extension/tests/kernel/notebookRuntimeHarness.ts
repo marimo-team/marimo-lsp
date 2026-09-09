@@ -183,6 +183,21 @@ export const layerWith = (options: Options) =>
                 ) {
                   yield* releaseScratchpadDispatch.await;
                 }
+                if (request.kind === "move-session") {
+                  const id = notebookId(request.notebookUri);
+                  const current = serverSessions.get(id);
+                  if (current !== undefined) {
+                    serverSessions.delete(id);
+                    const moved = notebookId(request.newNotebookUri);
+                    serverSessions.set(moved, {
+                      ...current,
+                      notebookUri: moved,
+                    });
+                  }
+                }
+                if (request.kind === "close-session") {
+                  serverSessions.delete(notebookId(request.notebookUri));
+                }
                 if (request.kind === "restart-session") {
                   const id = notebookId(request.notebookUri);
                   const current = serverSessions.get(id);
@@ -197,6 +212,8 @@ export const layerWith = (options: Options) =>
                   "list-sessions",
                   "execute",
                   "restart-session",
+                  "move-session",
+                  "close-session",
                 ].includes(request.kind)
                   ? Effect.succeed({
                       generation: 1,

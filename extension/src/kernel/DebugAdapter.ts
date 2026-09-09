@@ -117,6 +117,7 @@ export type Error =
   | DebugSourceWriteError
   | Debug.SessionStartError
   | NotebookRuntime.ExecutableResolutionError
+  | NotebookRuntime.KernelSessionNotFoundError
   | MarimoClient.StartError
   | MarimoClient.CommandError
   | NotebookFileRootError
