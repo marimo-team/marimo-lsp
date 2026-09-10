@@ -1,168 +1,189 @@
+import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-/**
- * A cell output tagged with the stable key of the logical slot it fills.
- *
- * The key is stable across a run's cell-ops, which is what lets the projection
- * edit slots in place instead of rebuilding the list each op. There's one key
- * per console channel and per traceback, plus a `"main"` slot shared by the
- * cell's result, error, or suppressing traceback.
- */
+/** A cell output tagged with the stable key of its logical slot. */
 export interface KeyedCellOutput {
   readonly key: string;
   readonly output: vscode.NotebookCellOutput;
 }
 
-/**
- * The slice of `vscode.NotebookCellExecution` the projection drives.
- *
- * Narrowed to a port so the projection can be tested against a recording fake;
- * a real `NotebookCellExecution` satisfies it structurally.
- */
-export type OutputExecution = Pick<
+/** The output operations used by {@link CellOutputProjection}. */
+type OutputExecution = Pick<
   vscode.NotebookCellExecution,
   "clearOutput" | "appendOutput" | "replaceOutputItems"
 > & {
   readonly cell: Pick<vscode.NotebookCell, "outputs">;
 };
 
-/**
- * A slot the projection has emitted and is tracking: the `NotebookCellOutput`
- * VS Code now owns (its identity is what `replaceOutputItems` targets) and the
- * items we last gave it (to skip no-op edits that would re-measure it).
- */
-interface TrackedOutput {
-  readonly output: vscode.NotebookCellOutput;
-  items: readonly vscode.NotebookCellOutputItem[];
+/** A logical slot tracked by position; live outputs are read from the cell. */
+interface Slot {
+  readonly key: string;
+  /** `metadata.channel` of the output appended for this slot. */
+  readonly channel: unknown;
+  /** Whether VS Code has measured this slot since it was appended. */
+  measured: boolean;
 }
 
 /**
- * Drives one cell run's outputs onto a `NotebookCellExecution`.
+ * Reconciles a cell's logical output slots across executions.
  *
- * Outputs are reconciled incrementally — cleared once on the run's first output,
- * then appended and edited in place as more arrive — the way Jupyter does it,
- * rather than rebuilt from scratch on every cell-op. The stable `"main"` key
- * (see {@link KeyedCellOutput}) turns the common "error box, then traceback
- * supersedes it" transition into an in-place edit.
- *
- * One instance backs one run and holds that run's reconcile state; the next run
- * gets a fresh one.
+ * Stable slots are updated in place. If their keys or order change, `commit`
+ * rebuilds the output list because VS Code cannot remove a single output.
  */
 export class CellOutputProjection {
-  readonly #execution: OutputExecution;
-  // Tracked slots, in on-screen (insertion) order.
-  readonly #tracked = new Map<string, TrackedOutput>();
-  // Whether we've cleared the *previous* run's outputs and begun this run's
-  // fresh output list. Deferred until the first output arrives.
-  #cleared = false;
-
-  constructor(execution: OutputExecution) {
-    this.#execution = execution;
-  }
+  // Slots in on-screen (insertion) order; index i is `cell.outputs[i]`.
+  #slots: Slot[] = [];
 
   /** Apply a live, incremental update toward `keyed`. */
-  async project(keyed: ReadonlyArray<KeyedCellOutput>): Promise<void> {
-    await this.#applyIncremental(keyed);
-  }
-
-  /**
-   * Finish the run: leave the cell showing exactly `keyed`, every output
-   * measured.
-   *
-   * A bare `appendOutput` renders at zero height until something touches it
-   * again, so `commit` re-sets each slot's items to force a final measurement.
-   * It avoids a full `replaceOutput`, which re-collapses tall outputs and can
-   * leave a phantom empty slot when the output set shrank.
-   */
-  async commit(keyed: ReadonlyArray<KeyedCellOutput>): Promise<void> {
-    if (keyed.length === 0) {
-      // A run that produced no output must end with none.
-      if (this.#execution.cell.outputs.length > 0) await this.#clear();
-      return;
-    }
-    await this.#applyIncremental(keyed);
-    await this.#finalize(keyed);
-  }
-
-  async #clear(): Promise<void> {
-    await this.#execution.clearOutput();
-    this.#tracked.clear();
-    this.#cleared = true;
-  }
-
-  async #applyIncremental(
-    keyed: ReadonlyArray<KeyedCellOutput>,
-  ): Promise<void> {
-    const execution = this.#execution;
-
-    if (keyed.length === 0) {
-      // Nothing to show yet. If the previous run left outputs, clear them once;
-      // otherwise wait for the first output.
-      if (!this.#cleared && execution.cell.outputs.length > 0) {
-        await this.#clear();
+  project = Effect.fn(
+    { self: this },
+    function* (
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ): Effect.fn.Return<void> {
+      // Nothing to show yet: keep whatever is on screen (typically the previous
+      // run's output) rather than flashing empty while the run is in flight.
+      if (keyed.length === 0) {
+        return;
       }
-      return;
-    }
 
-    // First output of this run: clear the prior run's outputs so this run's are
-    // appended fresh rather than morphed onto stale ones.
-    if (!this.#cleared) {
-      await this.#clear();
-    }
-
-    // A slot we were tracking is gone — VS Code can't remove a single output,
-    // so re-clear and re-append from scratch. Uncommon within a single run.
-    const desiredKeys = new Set(keyed.map((k) => k.key));
-    if ([...this.#tracked.keys()].some((k) => !desiredKeys.has(k))) {
-      await this.#clear();
-    }
-
-    // Edit tracked slots in place, only when their items actually changed, so
-    // unchanged outputs (the traceback) are never re-measured.
-    for (const k of keyed) {
-      const slot = this.#tracked.get(k.key);
-      if (slot && !outputItemsEqual(slot.items, k.output.items)) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- ordered edits
-        await execution.replaceOutputItems(k.output.items, slot.output);
-        slot.items = k.output.items;
+      if (!this.#inSync(execution)) {
+        yield* this.#rebuild(execution, keyed);
+        return;
       }
-    }
+      yield* this.#edit(execution, keyed);
+      yield* this.#append(execution, keyed);
+    },
+  );
 
-    // Append genuinely-new slots at the end, in arrival order. Sequential by
-    // design — `appendOutput` appends at the tail, so await order is on-screen
-    // order.
-    for (const k of keyed) {
-      if (this.#tracked.has(k.key)) continue;
-      // oxlint-disable-next-line eslint/no-await-in-loop -- ordered appends
-      await execution.appendOutput(k.output);
-      this.#tracked.set(k.key, { output: k.output, items: k.output.items });
-    }
+  /** Finish the run with exactly `keyed` and measure newly appended slots. */
+  commit = Effect.fn(
+    { self: this },
+    function* (
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ): Effect.fn.Return<void> {
+      if (keyed.length === 0) {
+        // A run that produced no output must end with none.
+        if (execution.cell.outputs.length > 0) {
+          yield* this.#clear(execution);
+        }
+        return;
+      }
+      if (this.#inSync(execution) && this.#sameKeys(keyed)) {
+        yield* this.#edit(execution, keyed);
+      } else {
+        // Marimo can deliver cell-ops out of order (e.g. the error before the
+        // stdout that preceded it), or the run dropped a slot the last run had.
+        // Rebuild from a clean slate; clearing first avoids a phantom slot.
+        yield* this.#rebuild(execution, keyed);
+      }
+      yield* this.#measure(execution);
+    },
+  );
+
+  /** Whether the live outputs still match the tracked slot positions. */
+  #inSync(execution: OutputExecution): boolean {
+    const outputs = execution.cell.outputs;
+    if (outputs.length !== this.#slots.length) return false;
+    return this.#slots.every(
+      (slot, i) => channelOf(outputs[i]) === slot.channel,
+    );
   }
 
-  async #finalize(keyed: ReadonlyArray<KeyedCellOutput>): Promise<void> {
-    const execution = this.#execution;
-    const canonicalOrder =
-      [...this.#tracked.keys()].join(" ") === keyed.map((k) => k.key).join(" ");
+  #sameKeys(keyed: ReadonlyArray<KeyedCellOutput>): boolean {
+    return (
+      this.#slots.length === keyed.length &&
+      this.#slots.every((slot, i) => slot.key === keyed[i].key)
+    );
+  }
 
-    if (!canonicalOrder) {
-      // Marimo can deliver cell-ops out of order (e.g. the error before the
-      // stdout that preceded it), so the appended order may not match. Rebuild
-      // from a clean slate; clearing first avoids a phantom leftover slot.
-      await execution.clearOutput();
-      this.#tracked.clear();
+  #clear = Effect.fn(
+    { self: this },
+    function* (execution: OutputExecution): Effect.fn.Return<void> {
+      yield* Effect.promise(() => execution.clearOutput());
+      this.#slots = [];
+    },
+  );
+
+  #rebuild = Effect.fn(
+    { self: this },
+    function* (
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ): Effect.fn.Return<void> {
+      if (execution.cell.outputs.length > 0) {
+        yield* Effect.promise(() => execution.clearOutput());
+      }
+      this.#slots = [];
+      yield* this.#append(execution, keyed);
+    },
+  );
+
+  /** Edit changed slot items in place; output metadata remains unchanged. */
+  #edit = Effect.fn(
+    { self: this },
+    function* (
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ): Effect.fn.Return<void> {
       for (const k of keyed) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- ordered re-append
-        await execution.appendOutput(k.output);
-        this.#tracked.set(k.key, { output: k.output, items: k.output.items });
+        const index = this.#slots.findIndex((slot) => slot.key === k.key);
+        if (index === -1) continue;
+        const current = execution.cell.outputs[index];
+        if (outputItemsEqual(current.items, k.output.items)) {
+          continue;
+        }
+        yield* Effect.promise(() =>
+          execution.replaceOutputItems(k.output.items, current),
+        );
+        this.#slots[index].measured = true;
       }
-    }
+    },
+  );
 
-    // Re-set each slot's items in place to force the webview to (re)measure it.
-    for (const [, slot] of this.#tracked) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- ordered re-measure
-      await execution.replaceOutputItems(slot.items, slot.output);
-    }
-  }
+  /** Append new slots sequentially to preserve their display order. */
+  #append = Effect.fn(
+    { self: this },
+    function* (
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ): Effect.fn.Return<void> {
+      for (const k of keyed) {
+        if (this.#slots.some((slot) => slot.key === k.key)) continue;
+        // oxlint-disable-next-line eslint/no-await-in-loop -- ordered appends
+        yield* Effect.promise(() => execution.appendOutput(k.output));
+        this.#slots.push({
+          key: k.key,
+          channel: channelOf(k.output),
+          measured: false,
+        });
+      }
+    },
+  );
+
+  /** Re-set unmeasured slots' items in place to force the webview to measure. */
+  #measure = Effect.fn(
+    { self: this },
+    function* (execution: OutputExecution): Effect.fn.Return<void> {
+      for (const [index, slot] of this.#slots.entries()) {
+        if (slot.measured) continue;
+        const current = execution.cell.outputs[index];
+        // Not mirrored back yet: leave it; the next sync check will rebuild.
+        if (current === undefined) {
+          continue;
+        }
+        yield* Effect.promise(() =>
+          execution.replaceOutputItems(current.items, current),
+        );
+        slot.measured = true;
+      }
+    },
+  );
+}
+
+function channelOf(output: vscode.NotebookCellOutput): unknown {
+  return output.metadata?.channel;
 }
 
 /** Structural equality for two output-item lists (mime + raw bytes). */

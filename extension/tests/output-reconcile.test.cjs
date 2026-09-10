@@ -75,6 +75,11 @@ function cellOutputText(cell) {
     .join("");
 }
 
+/** @param {vscode.NotebookCell} cell */
+function outputIds(cell) {
+  return cell.outputs.map((output) => Reflect.get(output, "id"));
+}
+
 // The canonical acceptance repro from the goal: stdout followed by an
 // uncaught exception. Running it any number of times must leave exactly the
 // same well-formed output set.
@@ -87,8 +92,8 @@ suite("output reconcile on re-run", function () {
     const nb = await ctx.writeAndOpenNotebook(makeSource([ERROR_REPRO]));
     await selectKernel(nb);
 
-    /** @type {number | undefined} */
-    let baselineCount;
+    /** @type {unknown[] | undefined} */
+    let baselineIds;
 
     for (let run = 1; run <= 3; run++) {
       const cell = nb.cellAt(0);
@@ -130,18 +135,22 @@ suite("output reconcile on re-run", function () {
         )}`,
       );
 
-      // Re-running reconciles in place — the output count never grows.
-      if (baselineCount === undefined) {
-        baselineCount = cell.outputs.length;
+      // Re-running reconciles in place, preserving each output's identity.
+      const ids = outputIds(cell);
+      if (baselineIds === undefined) {
+        baselineIds = ids;
         NodeAssert.ok(
-          baselineCount >= 2,
-          `expected at least stdout + traceback outputs, got ${baselineCount}`,
+          ids.length >= 2 &&
+            ids.every((id) => typeof id === "string" && id.length > 0),
+          `expected identifiable stdout + traceback outputs, got ${JSON.stringify(
+            ids,
+          )}`,
         );
       } else {
-        NodeAssert.strictEqual(
-          cell.outputs.length,
-          baselineCount,
-          `run ${run}: output count changed across re-runs (stacking?)`,
+        NodeAssert.deepStrictEqual(
+          ids,
+          baselineIds,
+          `run ${run}: output identities changed across re-runs`,
         );
       }
     }

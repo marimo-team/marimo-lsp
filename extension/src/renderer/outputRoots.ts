@@ -6,18 +6,10 @@ interface OutputRoot {
 }
 
 /**
- * React roots for rendered output items, keyed by output item id.
+ * Owns React roots by VS Code output ID.
  *
- * VS Code calls `renderOutputItem` again on the *same* element every time an
- * output's items change, and aborts the previous call's signal first. That
- * abort means "the previous render was cancelled", not "the output is gone" —
- * treating it as disposal unmounted the whole React tree on every update, so
- * marimo UI elements lost their DOM nodes (and any in-progress pointer
- * interaction) each time a cell re-rendered (#826).
- *
- * Reusing the root per output id lets React reconcile in place. Roots are
- * released only from `disposeOutputItem`, which VS Code calls when the
- * output is actually removed.
+ * Render cancellation does not imply disposal; roots remain alive until
+ * `disposeOutputItem` is called.
  */
 export class OutputRoots {
   readonly #roots = new Map<string, OutputRoot>();
@@ -48,10 +40,5 @@ export class OutputRoots {
     if (!existing) return;
     existing.root.unmount();
     this.#roots.delete(id);
-  }
-
-  /** Number of live roots; exposed for tests. */
-  get size(): number {
-    return this.#roots.size;
   }
 }

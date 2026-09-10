@@ -115,9 +115,7 @@ export const activate: vscode.ActivationFunction = (context) => {
 
   return {
     renderOutputItem(data, element) {
-      // Reuse the root per output id so an updated item reconciles in place.
-      // VS Code aborts the previous call's `signal` before every re-render, so
-      // it must not be treated as disposal; see `OutputRoots` (#826).
+      // Render cancellation is not disposal; retain roots until explicitly released.
       const root = roots.acquire(data.id, element);
       const { cellId, state }: { cellId: CellId; state: CellRuntimeState } =
         data.json();

@@ -37,13 +37,14 @@ class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
 
 interface PresentedRun {
   readonly execution: vscode.NotebookCellExecution;
-  readonly projection: CellOutputProjection;
   readonly notebook: vscode.NotebookDocument;
   started: boolean;
 }
 
 const resourceKey = (cell: CellRef, runId: RunId): string =>
   JSON.stringify([cell.notebookId, cell.cellId, runId]);
+const cellKey = (cell: CellRef): string =>
+  JSON.stringify([cell.notebookId, cell.cellId]);
 
 /** Owns VS Code's live execution handles behind the {@link Drive} seam. */
 export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
@@ -52,6 +53,8 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
     make: Effect.gen(function* () {
       const code = yield* VsCode;
       const resources = new Map<string, PresentedRun>();
+      // Retained per cell so outputs can be updated in place across runs.
+      const projections = new Map<string, CellOutputProjection>();
       const errorDiagnostics = yield* acquireDisposable(() =>
         code.languages.createDiagnosticCollection("marimo-runtime"),
       );
@@ -66,6 +69,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             }
           }
           resources.clear();
+          projections.clear();
         }),
       );
 
@@ -81,6 +85,17 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               Effect.annotateLogs({ ...cell, runId }),
             )
           : apply(resource);
+      };
+
+      /** The projection that owns a cell's on-screen outputs. */
+      const projectionFor = (cell: CellRef): CellOutputProjection => {
+        const key = cellKey(cell);
+        let projection = projections.get(key);
+        if (projection === undefined) {
+          projection = new CellOutputProjection();
+          projections.set(key, projection);
+        }
+        return projection;
       };
 
       /** Resolves a cell within the notebook bound to this drive. */
@@ -114,7 +129,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(cell, runId, ({ notebook, projection, started }) => {
+        withResource(cell, runId, ({ execution, notebook, started }) => {
           if (!started) return Effect.void;
           const outputs = buildKeyedCellOutputs(
             cell.cellId,
@@ -122,8 +137,11 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             code,
             notebook,
           );
-          return Effect.tryPromise(() =>
-            final ? projection.commit(outputs) : projection.project(outputs),
+          const projection = projectionFor(cell);
+          return (
+            final
+              ? projection.commit(execution, outputs)
+              : projection.project(execution, outputs)
           ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to update cell output").pipe(
@@ -187,15 +205,15 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               code,
               binding.notebook.rawNotebookDocument,
             );
-            yield* Effect.tryPromise(() =>
-              new CellOutputProjection(execution).commit(outputs),
-            ).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Failed to update cell output").pipe(
-                  Effect.annotateLogs({ cause, ...cell }),
+            yield* projectionFor(cell)
+              .commit(execution, outputs)
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Failed to update cell output").pipe(
+                    Effect.annotateLogs({ cause, ...cell }),
+                  ),
                 ),
-              ),
-            );
+              );
             if (applyDiagnostic) {
               yield* setDiagnostic(cell, binding, Option.some(state));
             }
@@ -218,7 +236,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               const execution = yield* createExecution(cell, binding);
               resources.set(resourceKey(cell, runId), {
                 execution,
-                projection: new CellOutputProjection(execution),
                 notebook: binding.notebook.rawNotebookDocument,
                 started: false,
               });

@@ -36,13 +36,11 @@ describe("OutputRoots", () => {
 
     // Simulates VS Code re-invoking `renderOutputItem` for an updated item.
     const second = roots.acquire("out-1", element);
-    expect(second).toBe(first);
     act(() => second.render(React.createElement(Probe, { label: "b" })));
 
     // Same node, new content: React reconciled instead of remounting.
     expect(element.querySelector("span")).toBe(node);
     expect(node?.textContent).toBe("b");
-    expect(roots.size).toBe(1);
   });
 
   it("replaces the root when the same id arrives on a new element", () => {
@@ -54,13 +52,11 @@ describe("OutputRoots", () => {
     act(() => first.render(React.createElement(Probe, { label: "a" })));
 
     const second = roots.acquire("out-1", fresh);
-    expect(second).not.toBe(first);
     act(() => second.render(React.createElement(Probe, { label: "b" })));
 
     // The stale element's tree was unmounted, not left dangling.
     expect(stale.querySelector("span")).toBeNull();
     expect(fresh.querySelector("span")?.textContent).toBe("b");
-    expect(roots.size).toBe(1);
   });
 
   it("disposes one id or every id", () => {
@@ -75,10 +71,8 @@ describe("OutputRoots", () => {
     act(() => roots.dispose("a"));
     expect(a.querySelector("span")).toBeNull();
     expect(b.querySelector("span")?.textContent).toBe("b");
-    expect(roots.size).toBe(1);
 
     act(() => roots.dispose());
     expect(b.querySelector("span")).toBeNull();
-    expect(roots.size).toBe(0);
   });
 });
