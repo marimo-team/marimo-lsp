@@ -10,6 +10,7 @@ import {
   Effect,
   Layer,
   Option,
+  Order,
   Schema,
   Scope,
   Stream,
@@ -19,12 +20,24 @@ import type { PlatformError } from "effect/PlatformError";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import type * as vscode from "vscode";
 
-import { assert } from "../assert.ts";
 import { Config } from "../config/Config.ts";
 import { Version } from "../lib/Version.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
+import { getVenvPythonPath } from "./getVenvPythonPath.ts";
 import type { ProjectDependencyTarget } from "./ProjectDependencyTarget.ts";
+
+export const MINIMUM_UV_VERSION = Version.make("0.12.0");
+
+export interface UvPackage {
+  readonly name: string;
+  readonly version: string;
+}
+
+export interface UvSyncHandle {
+  readonly environment: string;
+  readonly executable: string;
+}
 
 export const UvBin = Data.taggedEnum<UvBin>();
 export type UvBin = Data.TaggedEnum<{
@@ -70,6 +83,28 @@ export class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
   exitCode?: ChildProcessSpawner.ExitCode;
   stderr: string;
 }> {}
+
+export class UvOutputDecodeError extends Data.TaggedError(
+  "UvOutputDecodeError",
+)<{
+  readonly command: "sync" | "tree";
+  readonly cause: unknown;
+}> {
+  override readonly message = `Unable to decode uv ${this.command} JSON output`;
+}
+
+export class UvUnsupportedVersionError extends Data.TaggedError(
+  "UvUnsupportedVersionError",
+)<{
+  readonly bin: UvBin;
+  readonly detectedVersion: string | null;
+  readonly minimumVersion: string;
+}> {
+  override readonly message =
+    this.detectedVersion === null
+      ? `Unable to determine uv version; uv ${this.minimumVersion} or newer is required`
+      : `uv ${this.detectedVersion} is unsupported; uv ${this.minimumVersion} or newer is required`;
+}
 
 class UvMissingPyProjectError extends Data.TaggedError(
   "UvMissingPyProjectError",
@@ -198,19 +233,29 @@ export class Uv extends Context.Service<Uv>()("Uv", {
 
     // Resolve uv on first use. WASM language-server startup does not need uv,
     // and the universal extension intentionally does not bundle the binary.
+    const discoveredUvBinary = yield* Effect.cached(
+      findUvBin(yield* config.uv.path).pipe(
+        Effect.provideService(VsCode, code),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(Scope.Scope, scope),
+      ),
+    );
+
+    const supportedUvBinary = Effect.flatMap(
+      discoveredUvBinary,
+      requireSupportedUvBin,
+    );
+
     const uvBinary = yield* Effect.cached(
       Effect.gen(function* () {
-        const bin = yield* findUvBin(yield* config.uv.path).pipe(
-          Effect.catchTag("UvExecutionError", (error) =>
-            handleUvNotInstalled(error, code, telemetry),
-          ),
+        const bin = yield* supportedUvBinary.pipe(
+          Effect.catchTags({
+            UvExecutionError: (error) =>
+              handleUvNotInstalled(error, code, telemetry),
+            UvUnsupportedVersionError: (error) =>
+              handleUvUnsupportedVersion(error, code, telemetry),
+          }),
         );
-
-        if (Option.isNone(bin.version)) {
-          yield* code.window.showWarningMessage(
-            "Unable to determine uv version. Some features may not work correctly.",
-          );
-        }
 
         const version = Option.match(bin.version, {
           onSome: (value) => value.version.toString(),
@@ -236,8 +281,17 @@ export class Uv extends Context.Service<Uv>()("Uv", {
 
     return {
       bin: uvBinary,
-      getCacheDir: Effect.map(uv({ args: ["cache", "dir"] }), (e) =>
-        e.stdout.trim(),
+      getCacheDirOption: supportedUvBinary.pipe(
+        Effect.flatMap((bin) =>
+          createUv(bin, spawner, channel)({ args: ["cache", "dir"] }),
+        ),
+        Effect.map(({ stdout }) => stdout.trim()),
+        Effect.tapError((cause) =>
+          Effect.logDebug("uv cache directory is unavailable").pipe(
+            Effect.annotateLogs({ cause }),
+          ),
+        ),
+        Effect.option,
       ),
       channel: {
         name: channel.name,
@@ -255,7 +309,16 @@ export class Uv extends Context.Service<Uv>()("Uv", {
       },
       currentDeps(options: { script: string }) {
         return uv({
-          args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
+          args: [
+            "tree",
+            "--script",
+            options.script,
+            "-d",
+            "0",
+            "--quiet",
+            "--format",
+            "json",
+          ],
         }).pipe(
           Effect.catchTag(
             "UvUnknownError",
@@ -265,7 +328,7 @@ export class Uv extends Context.Service<Uv>()("Uv", {
             "UvUnknownError",
             UvMissingPep723MetadataError.refine.bind(null, options.script),
           ),
-          Effect.map((e) => e.stdout),
+          Effect.flatMap(({ stdout }) => decodeUvTreeOutput(stdout)),
         );
       },
       init(path: string, options: { python?: string } = {}) {
@@ -282,10 +345,10 @@ export class Uv extends Context.Service<Uv>()("Uv", {
         );
       },
       syncScript(options: { script: string }) {
-        return Effect.map(
-          uv({ args: ["sync", "--script", options.script] }),
-          ({ stderr }) => resolveScriptEnvironmentPath(stderr),
-        ).pipe(
+        return uv({
+          args: ["sync", "--script", options.script, "--output-format", "json"],
+        }).pipe(
+          Effect.flatMap(({ stdout }) => decodeUvSyncOutput(stdout)),
           Effect.catchTag(
             "UvUnknownError",
             UvMissingPep723MetadataError.refine.bind(null, options.script),
@@ -504,18 +567,85 @@ function createUv(
   });
 }
 
-export function resolveScriptEnvironmentPath(stderr: string): string {
-  const match =
-    stderr.match(/Using script environment at: (.+)/m) ??
-    stderr.match(/Updating script environment at: (.+)/m) ??
-    stderr.match(/Creating script environment at: (.+)/m);
-  const path = match?.[1];
-  assert(path, `Expected path from uv, got: stderr=${stderr}`);
+const UvOutputSchemaVersion = Schema.Struct({ version: Schema.String });
 
-  // uv's user_display() can make cache paths relative to its working directory.
-  // Consumers use this path from other directories, so keep it absolute.
-  return NodePath.resolve(path);
-}
+const UvSyncOutput = Schema.Struct({
+  schema: UvOutputSchemaVersion,
+  sync: Schema.Struct({
+    environment: Schema.Struct({
+      path: Schema.String,
+      python: Schema.Struct({ path: Schema.String }),
+    }),
+  }),
+});
+
+const UvTreeNode = Schema.Struct({
+  kind: Schema.String,
+  name: Schema.optional(Schema.String),
+  version: Schema.optional(Schema.String),
+  dependencies: Schema.Array(Schema.Struct({ id: Schema.String })),
+});
+
+const UvTreeOutput = Schema.Struct({
+  schema: UvOutputSchemaVersion,
+  script: Schema.Struct({ id: Schema.String }),
+  resolution: Schema.Record(Schema.String, UvTreeNode),
+});
+
+export const decodeUvSyncOutput = Effect.fn("decodeUvSyncOutput")(function* (
+  stdout: string,
+): Effect.fn.Return<UvSyncHandle, UvOutputDecodeError> {
+  const output = yield* Schema.decodeUnknownEffect(
+    Schema.fromJsonString(UvSyncOutput),
+  )(stdout).pipe(
+    Effect.mapError(
+      (cause) => new UvOutputDecodeError({ command: "sync", cause }),
+    ),
+  );
+  const environment = NodePath.resolve(output.sync.environment.path);
+  const canonicalExecutable = getVenvPythonPath(environment);
+  const executable = NodeFs.existsSync(canonicalExecutable)
+    ? canonicalExecutable
+    : NodePath.resolve(output.sync.environment.python.path);
+  return { environment, executable };
+});
+
+export const decodeUvTreeOutput = Effect.fn("decodeUvTreeOutput")(function* (
+  stdout: string,
+): Effect.fn.Return<ReadonlyArray<UvPackage>, UvOutputDecodeError> {
+  const output = yield* Schema.decodeUnknownEffect(
+    Schema.fromJsonString(UvTreeOutput),
+  )(stdout).pipe(
+    Effect.mapError(
+      (cause) => new UvOutputDecodeError({ command: "tree", cause }),
+    ),
+  );
+  const scriptNode = output.resolution[output.script.id];
+  if (scriptNode?.kind !== "script") {
+    return yield* new UvOutputDecodeError({
+      command: "tree",
+      cause: new Error("The script resolution node is missing"),
+    });
+  }
+
+  return yield* Effect.forEach(scriptNode.dependencies, ({ id }) => {
+    const dependency = output.resolution[id];
+    if (
+      dependency?.kind !== "package" ||
+      dependency.name === undefined ||
+      dependency.version === undefined
+    ) {
+      return new UvOutputDecodeError({
+        command: "tree",
+        cause: new Error(`Package resolution node ${id} is missing`),
+      });
+    }
+    return Effect.succeed({
+      name: dependency.name,
+      version: dependency.version,
+    });
+  });
+});
 
 /** Helper to collect stream output as a string */
 function runString<E, R>(
@@ -599,9 +729,7 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   const version = yield* getUvVersion(bin);
 
   if (Option.isNone(version)) {
-    yield* Effect.logWarning(
-      "Unable to parse uv version, proceeding with unknown",
-    );
+    yield* Effect.logWarning("Unable to parse uv version");
   }
 
   const versionStr = Option.match(version, {
@@ -644,6 +772,26 @@ class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
   }
 }
 
+const requireSupportedUvBin = Effect.fn("requireSupportedUvBin")(function* (
+  bin: UvBin,
+) {
+  const detectedVersion = Option.match(bin.version, {
+    onSome: ({ version }) => version.toString(),
+    onNone: () => null,
+  });
+  const supported = Option.exists(bin.version, ({ version }) =>
+    Order.isGreaterThanOrEqualTo(Version.Order)(version, MINIMUM_UV_VERSION),
+  );
+  if (!supported) {
+    return yield* new UvUnsupportedVersionError({
+      bin,
+      detectedVersion,
+      minimumVersion: MINIMUM_UV_VERSION.toString(),
+    });
+  }
+  return bin;
+});
+
 const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
   const args = ["self", "version", "--output-format", "json"];
   const command = ChildProcess.make(bin.executable, args);
@@ -678,55 +826,104 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
       `The marimo extension requires uv.\n\nFound "${bin.executable}" but it failed to execute.`,
   });
 
-  const choice = yield* code.window.showErrorMessage(errorMessage, {
-    modal: true,
-    items: UvBin.$is("Configured")(error.bin)
-      ? (["Open Settings"] as const)
-      : UvBin.$is("Bundled")(error.bin)
-        ? (["Open Settings"] as const)
-        : (["Install uv", "Open Settings"] as const),
+  yield* promptForUvSetup({
+    errorMessage,
+    installAction:
+      UvBin.$is("Configured")(error.bin) || UvBin.$is("Bundled")(error.bin)
+        ? null
+        : "Install uv",
+    reloadMessage:
+      "After installing uv, reload the window to activate the marimo extension.",
+    code,
+    telemetry,
   });
 
-  if (Option.isSome(choice) && choice.value === "Install uv") {
-    yield* telemetry.uvInstallClicked;
+  // Die to prevent extension from continuing without UV
+  return yield* Effect.die(error);
+});
 
-    // Create hidden terminal so Python extension doesn't auto-activate environments
-    const terminal = yield* code.window.createTerminal({
-      name: "Install uv",
-      hideFromUser: true,
+const handleUvUnsupportedVersion = Effect.fn("handleUvUnsupportedVersion")(
+  function* (
+    error: UvUnsupportedVersionError,
+    code: Context.Service.Shape<typeof VsCode>,
+    telemetry: Context.Service.Shape<typeof Telemetry>,
+  ) {
+    const detected =
+      error.detectedVersion === null
+        ? "Its version could not be determined."
+        : `Found version ${error.detectedVersion}.`;
+    const errorMessage = `marimo's uv-backed features require uv ${error.minimumVersion} or newer.\n\n${detected}\n\nExecutable: "${error.bin.executable}"`;
+    yield* promptForUvSetup({
+      errorMessage,
+      installAction:
+        UvBin.$is("Default")(error.bin) || UvBin.$is("Discovered")(error.bin)
+          ? "Update uv"
+          : null,
+      reloadMessage:
+        "After updating uv, reload the window to activate uv-backed features.",
+      code,
+      telemetry,
     });
 
-    /// Send install command from uv docs https://docs.astral.sh/uv/getting-started/installation/
+    return yield* Effect.die(error);
+  },
+);
+
+const promptForUvSetup = Effect.fn("promptForUvSetup")(function* (options: {
+  readonly errorMessage: string;
+  readonly installAction: "Install uv" | "Update uv" | null;
+  readonly reloadMessage: string;
+  readonly code: Context.Service.Shape<typeof VsCode>;
+  readonly telemetry: Context.Service.Shape<typeof Telemetry>;
+}) {
+  const choice = yield* options.code.window.showErrorMessage(
+    options.errorMessage,
+    {
+      modal: true,
+      items:
+        options.installAction === null
+          ? (["Open Settings"] as const)
+          : ([options.installAction, "Open Settings"] as const),
+    },
+  );
+
+  if (
+    Option.isSome(choice) &&
+    options.installAction !== null &&
+    choice.value === options.installAction
+  ) {
+    yield* options.telemetry.uvInstallClicked;
+    // Keep the terminal hidden from Python environment auto-discovery until
+    // the user accepts the command.
+    const terminal = yield* options.code.window.createTerminal({
+      name: options.installAction,
+      hideFromUser: true,
+    });
     terminal.sendText(
       NodeProcess.platform === "win32"
         ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
         : "curl -LsSf https://astral.sh/uv/install.sh | sh",
-      /* Should execute */ false,
+      false,
     );
-
-    // Show to user to accept
     terminal.show();
 
-    // Prompt user to reload after installation
-    const reload = yield* code.window.showInformationMessage(
-      "After installing uv, reload the window to activate the marimo extension.",
+    const reload = yield* options.code.window.showInformationMessage(
+      options.reloadMessage,
       { items: ["Reload Window"] },
     );
-
     if (Option.isSome(reload) && reload.value === "Reload Window") {
-      yield* code.commands.executeVSCode("workbench.action.reloadWindow");
+      yield* options.code.commands.executeVSCode(
+        "workbench.action.reloadWindow",
+      );
     }
   }
 
   if (Option.isSome(choice) && choice.value === "Open Settings") {
-    yield* code.commands.executeVSCode(
+    yield* options.code.commands.executeVSCode(
       "workbench.action.openSettings",
       "marimo.uv.path",
     );
   }
-
-  // Die to prevent extension from continuing without UV
-  return yield* Effect.die(error);
 });
 
 export function resolvePlatformBinaryName(name: "uv" | "ruff" | "ty") {
