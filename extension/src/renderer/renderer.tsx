@@ -2,7 +2,6 @@
 
 import "./styles.css";
 import { flushSync } from "react-dom";
-import * as ReactDOM from "react-dom/client";
 import styleText from "virtual:stylesheet";
 import type * as vscode from "vscode-notebook-renderer";
 
@@ -22,6 +21,7 @@ import {
   handleSendUiElementMessage,
   initialize,
 } from "./marimo-frontend.ts";
+import { OutputRoots } from "./outputRoots.ts";
 import { createRequestClient, isTypedRequestContext } from "./utils.ts";
 
 const TABLE_EXPORT_LIMIT_MB = 50;
@@ -111,11 +111,12 @@ export const activate: vscode.ActivationFunction = (context) => {
     document.head.appendChild(style);
   }
 
-  const registry = new Map<HTMLElement, ReactDOM.Root>();
+  const roots = new OutputRoots();
 
   return {
-    renderOutputItem(data, element, signal) {
-      const root = registry.get(element) ?? ReactDOM.createRoot(element);
+    renderOutputItem(data, element) {
+      // Render cancellation is not disposal; retain roots until explicitly released.
+      const root = roots.acquire(data.id, element);
       const { cellId, state }: { cellId: CellId; state: CellRuntimeState } =
         data.json();
       // Render synchronously so the output's real height is in the DOM before
@@ -126,11 +127,9 @@ export const activate: vscode.ActivationFunction = (context) => {
       flushSync(() => {
         root.render(<CellOutput cellId={cellId} state={state} />);
       });
-      registry.set(element, root);
-      signal.addEventListener("abort", () => {
-        root.unmount();
-        registry.delete(element);
-      });
+    },
+    disposeOutputItem(id) {
+      roots.dispose(id);
     },
   };
 };

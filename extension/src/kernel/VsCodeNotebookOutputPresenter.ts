@@ -9,8 +9,10 @@ import {
   NotebookCellId,
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../schemas/Models.gen.ts";
+import { tryCellOutputOperation } from "./CellOutputOperation.ts";
+import { CellOutputProjections } from "./CellOutputProjections.ts";
 import { transitionCell } from "./CellRunReducer.ts";
-import { buildCellOutputs } from "./VsCodeCellOutputs.ts";
+import { buildKeyedCellOutputs } from "./VsCodeCellOutputs.ts";
 
 interface CellController {
   readonly createNotebookCellExecution: (
@@ -24,6 +26,7 @@ export class VsCodeNotebookOutputPresenter extends Context.Service<VsCodeNoteboo
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
+      const projections = yield* CellOutputProjections;
 
       const present = Effect.fn("VsCodeNotebookOutputPresenter.present")(
         function* (
@@ -38,19 +41,30 @@ export class VsCodeNotebookOutputPresenter extends Context.Service<VsCodeNoteboo
                 const { notification } = replay;
                 const cellId = NotebookCellId(notification.cell_id);
                 const cell = yield* findNotebookCell(notebook, cellId);
-                if (cell.outputs.length > 0) return;
 
                 const state = transitionCell(
                   createCellRuntimeState(),
                   notification,
                 );
-                const outputs = buildCellOutputs(
+                const keyed = buildKeyedCellOutputs(
                   cellId,
                   state,
                   code,
                   notebook.rawNotebookDocument,
                 );
-                if (outputs.length === 0) return;
+                if (keyed.length === 0) return;
+
+                if (cell.outputs.length > 0) {
+                  yield* projections.restore(
+                    notebook.rawNotebookDocument,
+                    cellId,
+                    cell.outputs,
+                    keyed,
+                  );
+                  return;
+                }
+
+                const outputs = keyed.map(({ output }) => output);
 
                 const execution = yield* Effect.try(() =>
                   controller.createNotebookCellExecution(cell.rawNotebookCell),
@@ -60,7 +74,17 @@ export class VsCodeNotebookOutputPresenter extends Context.Service<VsCodeNoteboo
                   (current) =>
                     Effect.sync(() => current.start(Date.now())).pipe(
                       Effect.andThen(
-                        Effect.tryPromise(() => current.replaceOutput(outputs)),
+                        tryCellOutputOperation("replaceOutput", () =>
+                          current.replaceOutput(outputs),
+                        ),
+                      ),
+                      Effect.andThen(
+                        projections.restore(
+                          notebook.rawNotebookDocument,
+                          cellId,
+                          outputs,
+                          keyed,
+                        ),
                       ),
                     ),
                   (current) => Effect.sync(() => current.end(undefined)),

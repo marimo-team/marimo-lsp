@@ -9,6 +9,7 @@ import {
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../../types.ts";
+import { CellOutputProjections } from "../CellOutputProjections.ts";
 import { CellCommand, runIdFromWire } from "../CellRunReducer.ts";
 import { VsCodeCellDrive } from "../VsCodeCellDrive.ts";
 
@@ -33,16 +34,6 @@ describe("VsCodeCellDrive", () => {
               kind: 1,
               value: "x = 1",
               languageId: "python",
-              outputs: [
-                {
-                  items: [
-                    {
-                      mime: "text/plain",
-                      data: new TextEncoder().encode("saved"),
-                    },
-                  ],
-                },
-              ],
               metadata: MarimoNotebookCell.createMetadata({
                 marimoRuntime: { stableId: "cell-1" },
               }),
@@ -53,12 +44,20 @@ describe("VsCodeCellDrive", () => {
       const code = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
+      const projections = yield* CellOutputProjections.make.pipe(
+        Effect.provide(code.layer),
+      );
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cellId = Option.getOrThrow(notebook.cellAt(0).id);
       const runId = Option.getOrThrow(runIdFromWire("run-1"));
       const events: string[] = [];
+      const outputs: vscode.NotebookCellOutput[] = [
+        ...editor.notebook.cellAt(0).outputs,
+      ];
       const execution: vscode.NotebookCellExecution = {
-        cell: editor.notebook.cellAt(0),
+        cell: Object.create(editor.notebook.cellAt(0), {
+          outputs: { get: () => outputs },
+        }),
         executionOrder: undefined,
         token: {
           isCancellationRequested: false,
@@ -68,9 +67,11 @@ describe("VsCodeCellDrive", () => {
         end: () => {},
         clearOutput: async () => {
           events.push("clear");
+          outputs.length = 0;
         },
-        appendOutput: async () => {
+        appendOutput: async (out) => {
           events.push("append");
+          outputs.push(...(Array.isArray(out) ? out : [out]));
         },
         replaceOutput: async () => {},
         appendOutputItems: async () => {},
@@ -78,6 +79,7 @@ describe("VsCodeCellDrive", () => {
       };
       const drive = (yield* VsCodeCellDrive.make.pipe(
         Effect.provide(code.layer),
+        Effect.provideService(CellOutputProjections, projections),
       )).bind({
         notebook,
         controller: { createNotebookCellExecution: () => execution },
@@ -104,7 +106,7 @@ describe("VsCodeCellDrive", () => {
           final: false,
         }),
       );
-      expect(events).toEqual(["start", "clear", "append"]);
+      expect(events).toEqual(["start", "append"]);
     }),
   );
 
@@ -128,11 +130,19 @@ describe("VsCodeCellDrive", () => {
       const code = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
+      const projections = yield* CellOutputProjections.make.pipe(
+        Effect.provide(code.layer),
+      );
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cellId = Option.getOrThrow(notebook.cellAt(0).id);
       const events: string[] = [];
+      const outputs: vscode.NotebookCellOutput[] = [
+        ...editor.notebook.cellAt(0).outputs,
+      ];
       const execution: vscode.NotebookCellExecution = {
-        cell: editor.notebook.cellAt(0),
+        cell: Object.create(editor.notebook.cellAt(0), {
+          outputs: { get: () => outputs },
+        }),
         executionOrder: undefined,
         token: {
           isCancellationRequested: false,
@@ -142,18 +152,26 @@ describe("VsCodeCellDrive", () => {
         end: (success) => events.push(`end:${success}`),
         clearOutput: async () => {
           events.push("clear");
+          outputs.length = 0;
         },
-        appendOutput: async () => {
+        appendOutput: async (out) => {
           events.push("append");
+          outputs.push(...(Array.isArray(out) ? out : [out]));
         },
         replaceOutput: async () => {},
         appendOutputItems: async () => {},
-        replaceOutputItems: async () => {
+        replaceOutputItems: async (items, out) => {
           events.push("finalize");
+          const index = outputs.indexOf(out);
+          outputs[index] = {
+            items: Array.isArray(items) ? [...items] : [items],
+            metadata: out.metadata,
+          };
         },
       };
       const cellDrive = yield* VsCodeCellDrive.make.pipe(
         Effect.provide(code.layer),
+        Effect.provideService(CellOutputProjections, projections),
       );
 
       yield* cellDrive.bind({
@@ -167,13 +185,8 @@ describe("VsCodeCellDrive", () => {
         }),
       );
 
-      expect(events).toEqual([
-        "start",
-        "clear",
-        "append",
-        "finalize",
-        "end:false",
-      ]);
+      // The cell had no outputs, so there is nothing to clear first.
+      expect(events).toEqual(["start", "append", "finalize", "end:false"]);
     }),
   );
 });

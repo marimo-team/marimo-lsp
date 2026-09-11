@@ -75,10 +75,18 @@ function cellOutputText(cell) {
     .join("");
 }
 
-// The canonical acceptance repro from the goal: stdout followed by an
-// uncaught exception. Running it any number of times must leave exactly the
-// same well-formed output set.
-const ERROR_REPRO = "print(10)\nraise ValueError()";
+/** @param {vscode.NotebookCell} cell */
+function outputIds(cell) {
+  return cell.outputs.map((output) => Reflect.get(output, "id"));
+}
+
+// Multiple output slots must remain well-formed across repeated runs.
+const ERROR_REPRO = `
+import time
+_run_marker = time.time_ns()
+print(f"stdout-marker:{_run_marker}")
+raise ValueError(f"error-marker:{_run_marker}")
+`.trim();
 
 suite("output reconcile on re-run", function () {
   test("repeated runs keep stdout + traceback without stacking", async function () {
@@ -87,8 +95,10 @@ suite("output reconcile on re-run", function () {
     const nb = await ctx.writeAndOpenNotebook(makeSource([ERROR_REPRO]));
     await selectKernel(nb);
 
-    /** @type {number | undefined} */
-    let baselineCount;
+    /** @type {unknown[] | undefined} */
+    let baselineIds;
+    /** @type {string | undefined} */
+    let previousMarker;
 
     for (let run = 1; run <= 3; run++) {
       const cell = nb.cellAt(0);
@@ -118,8 +128,25 @@ suite("output reconcile on re-run", function () {
         )}`,
       );
 
-      // ...and the printed value is still visible.
-      NodeAssert.match(cellOutputText(cell), /10/);
+      // ...and every identity now carries this run's content.
+      const text = cellOutputText(cell);
+      const stdoutMarker = /stdout-marker:(\d+)/.exec(text)?.[1];
+      const errorMarker = /error-marker:(\d+)/.exec(text)?.[1];
+      NodeAssert.ok(
+        stdoutMarker,
+        `run ${run}: missing stdout marker in ${text}`,
+      );
+      NodeAssert.strictEqual(
+        errorMarker,
+        stdoutMarker,
+        `run ${run}: stdout and error came from different runs`,
+      );
+      NodeAssert.notStrictEqual(
+        stdoutMarker,
+        previousMarker,
+        `run ${run}: output items did not update`,
+      );
+      previousMarker = stdoutMarker;
 
       // ...in arrival order: stdout precedes the traceback (Jupyter-like),
       // not result-first.
@@ -130,18 +157,22 @@ suite("output reconcile on re-run", function () {
         )}`,
       );
 
-      // Re-running reconciles in place — the output count never grows.
-      if (baselineCount === undefined) {
-        baselineCount = cell.outputs.length;
+      // Re-running reconciles in place, preserving each output's identity.
+      const ids = outputIds(cell);
+      if (baselineIds === undefined) {
+        baselineIds = ids;
         NodeAssert.ok(
-          baselineCount >= 2,
-          `expected at least stdout + traceback outputs, got ${baselineCount}`,
+          ids.length >= 2 &&
+            ids.every((id) => typeof id === "string" && id.length > 0),
+          `expected identifiable stdout + traceback outputs, got ${JSON.stringify(
+            ids,
+          )}`,
         );
       } else {
-        NodeAssert.strictEqual(
-          cell.outputs.length,
-          baselineCount,
-          `run ${run}: output count changed across re-runs (stacking?)`,
+        NodeAssert.deepStrictEqual(
+          ids,
+          baselineIds,
+          `run ${run}: output identities changed across re-runs`,
         );
       }
     }

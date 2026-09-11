@@ -26,6 +26,7 @@ import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
+import { CellOutputProjections } from "./CellOutputProjections.ts";
 import {
   type NotebookController as RuntimeNotebookController,
   NotebookRuntime,
@@ -49,6 +50,11 @@ export interface NotebookController extends RuntimeNotebookController {
     affinity: vscode.NotebookControllerAffinity,
   ) => Effect.Effect<void>;
 }
+
+const outputPresentationLive = Layer.merge(
+  VsCodeCellDrive.layer,
+  VsCodeNotebookOutputPresenter.layer,
+).pipe(Layer.provide(CellOutputProjections.layer));
 
 interface NotebookControllerHandle {
   readonly controller: PythonController;
@@ -158,8 +164,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
     );
   }),
 ).pipe(
-  Layer.provide(VsCodeCellDrive.layer),
-  Layer.provide(VsCodeNotebookOutputPresenter.layer),
+  Layer.provide(outputPresentationLive),
   Layer.provide(Uv.layer),
   Layer.provide(OutputChannel.layer),
   Layer.provide(Config.layer),

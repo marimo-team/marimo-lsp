@@ -11,7 +11,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../types.ts";
 import type { CellRef, Drive } from "./CellExecutions.ts";
-import { CellOutputProjection } from "./CellOutputProjection.ts";
+import { CellOutputProjections } from "./CellOutputProjections.ts";
 import { CellCommand, type RunId } from "./CellRunReducer.ts";
 import {
   buildKeyedCellOutputs,
@@ -37,7 +37,6 @@ class InvalidCellError extends Data.TaggedError("InvalidCellError")<{
 
 interface PresentedRun {
   readonly execution: vscode.NotebookCellExecution;
-  readonly projection: CellOutputProjection;
   readonly notebook: vscode.NotebookDocument;
   started: boolean;
 }
@@ -51,6 +50,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
+      const projections = yield* CellOutputProjections;
       const resources = new Map<string, PresentedRun>();
       const errorDiagnostics = yield* acquireDisposable(() =>
         code.languages.createDiagnosticCollection("marimo-runtime"),
@@ -114,7 +114,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
         state: CellRuntimeState,
         final: boolean,
       ) =>
-        withResource(cell, runId, ({ notebook, projection, started }) => {
+        withResource(cell, runId, ({ execution, notebook, started }) => {
           if (!started) return Effect.void;
           const outputs = buildKeyedCellOutputs(
             cell.cellId,
@@ -122,8 +122,11 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             code,
             notebook,
           );
-          return Effect.tryPromise(() =>
-            final ? projection.commit(outputs) : projection.project(outputs),
+          const projection = projections.forCell(notebook, cell.cellId);
+          return (
+            final
+              ? projection.commit(execution, outputs)
+              : projection.project(execution, outputs)
           ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Failed to update cell output").pipe(
@@ -187,15 +190,16 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               code,
               binding.notebook.rawNotebookDocument,
             );
-            yield* Effect.tryPromise(() =>
-              new CellOutputProjection(execution).commit(outputs),
-            ).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Failed to update cell output").pipe(
-                  Effect.annotateLogs({ cause, ...cell }),
+            yield* projections
+              .forCell(binding.notebook.rawNotebookDocument, cell.cellId)
+              .commit(execution, outputs)
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("Failed to update cell output").pipe(
+                    Effect.annotateLogs({ cause, ...cell }),
+                  ),
                 ),
-              ),
-            );
+              );
             if (applyDiagnostic) {
               yield* setDiagnostic(cell, binding, Option.some(state));
             }
@@ -218,7 +222,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               const execution = yield* createExecution(cell, binding);
               resources.set(resourceKey(cell, runId), {
                 execution,
-                projection: new CellOutputProjection(execution),
                 notebook: binding.notebook.rawNotebookDocument,
                 started: false,
               });
