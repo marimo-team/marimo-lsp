@@ -36,6 +36,7 @@
     "@marimo-team/openapi": "link:../../marimo/packages/openapi",
     "@marimo-team/smart-cells": "link:../../marimo/packages/smart-cells",
     "@oxlint/plugins": "^1.77.0",
+    "@posit-dev/positron": "0.2.4",
     "@sentry/node": "^9.47.1",
     "@std/semver": "jsr:^1.0.8",
     "@std/toml": "jsr:^1.0.11",
