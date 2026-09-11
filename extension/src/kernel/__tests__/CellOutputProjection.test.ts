@@ -4,6 +4,7 @@ import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../platform/VsCode.ts";
+import { CellOutputOperationError } from "../CellOutputOperation.ts";
 import {
   CellOutputProjection,
   type KeyedCellOutput,
@@ -83,13 +84,13 @@ const builders = (code: Context.Service.Shape<typeof VsCode>) => ({
   }),
 });
 
-const withBuilders = (
-  body: (b: ReturnType<typeof builders>) => Effect.Effect<void>,
+const withBuilders = <A, E>(
+  body: (b: ReturnType<typeof builders>) => Effect.Effect<A, E>,
 ) =>
   Effect.gen(function* () {
     const vscode = yield* TestVsCode.make({});
-    yield* Effect.gen(function* () {
-      yield* body(builders(yield* VsCode));
+    return yield* Effect.gen(function* () {
+      return yield* body(builders(yield* VsCode));
     }).pipe(Effect.provide(vscode.layer));
   });
 
@@ -139,6 +140,66 @@ describe("CellOutputProjection", () => {
           expect(cell.take()).toEqual(["append(10)", "replace(10\n20)"]);
         }),
       );
+    }),
+  );
+
+  it.effect(
+    "recovers when the live output list changes during an edit",
+    Effect.fn(function* () {
+      yield* withBuilders(({ stdout, main }) =>
+        Effect.gen(function* () {
+          const cell = new FakeCell();
+          const p = new CellOutputProjection();
+          yield* p.commit(new FakeExecution(cell), [stdout("10"), main("v1")]);
+          cell.take();
+
+          class DriftingExecution extends FakeExecution {
+            #first = true;
+            override replaceOutputItems(
+              items: readonly vscode.NotebookCellOutputItem[],
+              output: vscode.NotebookCellOutput,
+            ): Thenable<void> {
+              const result = super.replaceOutputItems(items, output);
+              if (this.#first) {
+                this.#first = false;
+                cell.outputs.pop();
+              }
+              return result;
+            }
+          }
+
+          yield* p.project(new DriftingExecution(cell), [
+            stdout("20"),
+            main("v2"),
+          ]);
+
+          expect(cell.take()).toEqual([
+            "replace(20)",
+            "clear",
+            "append(20)",
+            "append(v2)",
+          ]);
+          expect(cell.shown).toEqual(["20", "v2"]);
+        }),
+      );
+    }),
+  );
+
+  it.effect(
+    "reports rejected VS Code output operations",
+    Effect.fn(function* () {
+      const failure = yield* withBuilders(({ stdout }) => {
+        const cause = new Error("append rejected");
+        const execution = new FakeExecution(new FakeCell());
+        execution.appendOutput = () => Promise.reject(cause);
+        return new CellOutputProjection()
+          .project(execution, [stdout("10")])
+          .pipe(Effect.flip);
+      });
+
+      expect(failure).toBeInstanceOf(CellOutputOperationError);
+      expect(failure.operation).toBe("appendOutput");
+      expect(failure.cause).toEqual(new Error("append rejected"));
     }),
   );
 

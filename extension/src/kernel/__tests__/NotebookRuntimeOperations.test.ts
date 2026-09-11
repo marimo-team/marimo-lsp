@@ -27,6 +27,7 @@ import {
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
+import { CellOutputProjections } from "../../kernel/CellOutputProjections.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
 import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
@@ -145,8 +146,12 @@ const withTestCtx = Effect.fn(function* (
         ),
     },
   });
+  const projections = yield* CellOutputProjections.make.pipe(
+    Effect.provide(vscode.layer),
+  );
   const cellDrive = yield* VsCodeCellDrive.make.pipe(
     Effect.provide(vscode.layer),
+    Effect.provideService(CellOutputProjections, projections),
   );
 
   const mockController = yield* Effect.gen(function* () {

@@ -1,5 +1,10 @@
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 import type * as vscode from "vscode";
+
+import {
+  CellOutputOperationError,
+  tryCellOutputOperation,
+} from "./CellOutputOperation.ts";
 
 /** A cell output tagged with the stable key of its logical slot. */
 export interface KeyedCellOutput {
@@ -33,54 +38,112 @@ interface Slot {
 export class CellOutputProjection {
   // Slots in on-screen (insertion) order; index i is `cell.outputs[i]`.
   #slots: Slot[] = [];
+  readonly #ordering = Semaphore.makeUnsafe(1);
 
   /** Apply a live, incremental update toward `keyed`. */
-  project = Effect.fn(
+  project = Effect.fn("CellOutputProjection.project")(
     { self: this },
     function* (
+      this: CellOutputProjection,
       execution: OutputExecution,
       keyed: ReadonlyArray<KeyedCellOutput>,
-    ): Effect.fn.Return<void> {
+    ) {
+      yield* this.#ordering.withPermit(this.#project(execution, keyed));
+    },
+  );
+
+  /** Finish the run with exactly `keyed` and measure newly appended slots. */
+  commit = Effect.fn("CellOutputProjection.commit")(
+    { self: this },
+    function* (
+      this: CellOutputProjection,
+      execution: OutputExecution,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ) {
+      yield* this.#ordering.withPermit(this.#commit(execution, keyed));
+    },
+  );
+
+  /** Adopt outputs installed by replay without replacing them. */
+  restore = Effect.fn("CellOutputProjection.restore")(
+    { self: this },
+    function* (
+      this: CellOutputProjection,
+      displayed: ReadonlyArray<vscode.NotebookCellOutput>,
+      keyed: ReadonlyArray<KeyedCellOutput>,
+    ) {
+      return yield* this.#ordering.withPermit(
+        Effect.sync(() => {
+          if (
+            displayed.length !== keyed.length ||
+            !displayed.every(
+              (output, index) =>
+                channelOf(output) === channelOf(keyed[index].output),
+            )
+          ) {
+            return false;
+          }
+          this.#slots = keyed.map(({ key }, index) => ({
+            key,
+            channel: channelOf(displayed[index]),
+            measured: true,
+          }));
+          return true;
+        }),
+      );
+    },
+  );
+
+  #project(execution: OutputExecution, keyed: ReadonlyArray<KeyedCellOutput>) {
+    return Effect.gen({ self: this }, function* () {
       // Nothing to show yet: keep whatever is on screen (typically the previous
       // run's output) rather than flashing empty while the run is in flight.
-      if (keyed.length === 0) {
-        return;
-      }
+      if (keyed.length === 0) return;
 
       if (!this.#inSync(execution)) {
         yield* this.#rebuild(execution, keyed);
         return;
       }
-      yield* this.#edit(execution, keyed);
-      yield* this.#append(execution, keyed);
-    },
-  );
+      if (!(yield* this.#edit(execution, keyed))) {
+        yield* this.#rebuild(execution, keyed);
+        return;
+      }
+      if (!(yield* this.#append(execution, keyed))) {
+        yield* this.#rebuild(execution, keyed);
+      }
+    });
+  }
 
-  /** Finish the run with exactly `keyed` and measure newly appended slots. */
-  commit = Effect.fn(
-    { self: this },
-    function* (
-      execution: OutputExecution,
-      keyed: ReadonlyArray<KeyedCellOutput>,
-    ): Effect.fn.Return<void> {
+  #commit(execution: OutputExecution, keyed: ReadonlyArray<KeyedCellOutput>) {
+    return Effect.gen({ self: this }, function* () {
       if (keyed.length === 0) {
         // A run that produced no output must end with none.
         if (execution.cell.outputs.length > 0) {
           yield* this.#clear(execution);
+        } else {
+          this.#slots = [];
         }
-        return;
+        return undefined;
       }
       if (this.#inSync(execution) && this.#sameKeys(keyed)) {
-        yield* this.#edit(execution, keyed);
+        if (!(yield* this.#edit(execution, keyed))) {
+          yield* this.#rebuild(execution, keyed);
+        }
       } else {
         // Marimo can deliver cell-ops out of order (e.g. the error before the
         // stdout that preceded it), or the run dropped a slot the last run had.
         // Rebuild from a clean slate; clearing first avoids a phantom slot.
         yield* this.#rebuild(execution, keyed);
       }
-      yield* this.#measure(execution);
-    },
-  );
+      if (!(yield* this.#measure(execution))) {
+        yield* this.#rebuild(execution, keyed);
+        if (!(yield* this.#measure(execution))) {
+          return yield* synchronizationFailed();
+        }
+      }
+      return undefined;
+    });
+  }
 
   /** Whether the live outputs still match the tracked slot positions. */
   #inSync(execution: OutputExecution): boolean {
@@ -98,87 +161,98 @@ export class CellOutputProjection {
     );
   }
 
-  #clear = Effect.fn(
-    { self: this },
-    function* (execution: OutputExecution): Effect.fn.Return<void> {
-      yield* Effect.promise(() => execution.clearOutput());
+  #clear(execution: OutputExecution) {
+    return Effect.gen({ self: this }, function* () {
+      yield* tryCellOutputOperation("clearOutput", () =>
+        execution.clearOutput(),
+      );
       this.#slots = [];
-    },
-  );
+    });
+  }
 
-  #rebuild = Effect.fn(
-    { self: this },
-    function* (
-      execution: OutputExecution,
-      keyed: ReadonlyArray<KeyedCellOutput>,
-    ): Effect.fn.Return<void> {
-      if (execution.cell.outputs.length > 0) {
-        yield* Effect.promise(() => execution.clearOutput());
+  #rebuild(execution: OutputExecution, keyed: ReadonlyArray<KeyedCellOutput>) {
+    return Effect.gen({ self: this }, function* () {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (execution.cell.outputs.length > 0) {
+          yield* tryCellOutputOperation("clearOutput", () =>
+            execution.clearOutput(),
+          );
+        }
+        this.#slots = [];
+        if (yield* this.#append(execution, keyed)) return undefined;
       }
-      this.#slots = [];
-      yield* this.#append(execution, keyed);
-    },
-  );
+      return yield* synchronizationFailed();
+    });
+  }
 
   /** Edit changed slot items in place; output metadata remains unchanged. */
-  #edit = Effect.fn(
-    { self: this },
-    function* (
-      execution: OutputExecution,
-      keyed: ReadonlyArray<KeyedCellOutput>,
-    ): Effect.fn.Return<void> {
+  #edit(execution: OutputExecution, keyed: ReadonlyArray<KeyedCellOutput>) {
+    return Effect.gen({ self: this }, function* () {
       for (const k of keyed) {
         const index = this.#slots.findIndex((slot) => slot.key === k.key);
         if (index === -1) continue;
+        if (!this.#inSync(execution)) return false;
         const current = execution.cell.outputs[index];
+        if (current === undefined) return false;
         if (outputItemsEqual(current.items, k.output.items)) {
           continue;
         }
-        yield* Effect.promise(() =>
+        yield* tryCellOutputOperation("replaceOutputItems", () =>
           execution.replaceOutputItems(k.output.items, current),
         );
+        if (!this.#inSync(execution)) return false;
         this.#slots[index].measured = true;
       }
-    },
-  );
+      return true;
+    });
+  }
 
   /** Append new slots sequentially to preserve their display order. */
-  #append = Effect.fn(
-    { self: this },
-    function* (
-      execution: OutputExecution,
-      keyed: ReadonlyArray<KeyedCellOutput>,
-    ): Effect.fn.Return<void> {
+  #append(execution: OutputExecution, keyed: ReadonlyArray<KeyedCellOutput>) {
+    return Effect.gen({ self: this }, function* () {
       for (const k of keyed) {
         if (this.#slots.some((slot) => slot.key === k.key)) continue;
+        if (!this.#inSync(execution)) return false;
         // oxlint-disable-next-line eslint/no-await-in-loop -- ordered appends
-        yield* Effect.promise(() => execution.appendOutput(k.output));
+        yield* tryCellOutputOperation("appendOutput", () =>
+          execution.appendOutput(k.output),
+        );
         this.#slots.push({
           key: k.key,
           channel: channelOf(k.output),
           measured: false,
         });
+        if (!this.#inSync(execution)) return false;
       }
-    },
-  );
+      return true;
+    });
+  }
 
   /** Re-set unmeasured slots' items in place to force the webview to measure. */
-  #measure = Effect.fn(
-    { self: this },
-    function* (execution: OutputExecution): Effect.fn.Return<void> {
+  #measure(execution: OutputExecution) {
+    return Effect.gen({ self: this }, function* () {
       for (const [index, slot] of this.#slots.entries()) {
         if (slot.measured) continue;
+        if (!this.#inSync(execution)) return false;
         const current = execution.cell.outputs[index];
-        // Not mirrored back yet: leave it; the next sync check will rebuild.
-        if (current === undefined) {
-          continue;
-        }
-        yield* Effect.promise(() =>
+        if (current === undefined) return false;
+        yield* tryCellOutputOperation("replaceOutputItems", () =>
           execution.replaceOutputItems(current.items, current),
         );
+        if (!this.#inSync(execution)) return false;
         slot.measured = true;
       }
-    },
+      return true;
+    });
+  }
+}
+
+function synchronizationFailed() {
+  return Effect.fail(
+    new CellOutputOperationError({
+      operation: "synchronize",
+      cause: new Error("Cell outputs changed during reconciliation"),
+    }),
   );
 }
 

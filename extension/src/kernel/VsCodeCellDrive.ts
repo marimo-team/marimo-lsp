@@ -11,7 +11,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../types.ts";
 import type { CellRef, Drive } from "./CellExecutions.ts";
-import { CellOutputProjection } from "./CellOutputProjection.ts";
+import { CellOutputProjections } from "./CellOutputProjections.ts";
 import { CellCommand, type RunId } from "./CellRunReducer.ts";
 import {
   buildKeyedCellOutputs,
@@ -43,8 +43,6 @@ interface PresentedRun {
 
 const resourceKey = (cell: CellRef, runId: RunId): string =>
   JSON.stringify([cell.notebookId, cell.cellId, runId]);
-const cellKey = (cell: CellRef): string =>
-  JSON.stringify([cell.notebookId, cell.cellId]);
 
 /** Owns VS Code's live execution handles behind the {@link Drive} seam. */
 export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
@@ -52,9 +50,8 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
+      const projections = yield* CellOutputProjections;
       const resources = new Map<string, PresentedRun>();
-      // Retained per cell so outputs can be updated in place across runs.
-      const projections = new Map<string, CellOutputProjection>();
       const errorDiagnostics = yield* acquireDisposable(() =>
         code.languages.createDiagnosticCollection("marimo-runtime"),
       );
@@ -69,7 +66,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             }
           }
           resources.clear();
-          projections.clear();
         }),
       );
 
@@ -85,17 +81,6 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               Effect.annotateLogs({ ...cell, runId }),
             )
           : apply(resource);
-      };
-
-      /** The projection that owns a cell's on-screen outputs. */
-      const projectionFor = (cell: CellRef): CellOutputProjection => {
-        const key = cellKey(cell);
-        let projection = projections.get(key);
-        if (projection === undefined) {
-          projection = new CellOutputProjection();
-          projections.set(key, projection);
-        }
-        return projection;
       };
 
       /** Resolves a cell within the notebook bound to this drive. */
@@ -137,7 +122,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
             code,
             notebook,
           );
-          const projection = projectionFor(cell);
+          const projection = projections.forCell(notebook, cell.cellId);
           return (
             final
               ? projection.commit(execution, outputs)
@@ -205,7 +190,8 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
               code,
               binding.notebook.rawNotebookDocument,
             );
-            yield* projectionFor(cell)
+            yield* projections
+              .forCell(binding.notebook.rawNotebookDocument, cell.cellId)
               .commit(execution, outputs)
               .pipe(
                 Effect.catchCause((cause) =>

@@ -3,12 +3,14 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
   NotebookCellId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
+import { CellOutputProjections } from "../CellOutputProjections.ts";
 import { VsCodeNotebookOutputPresenter } from "../VsCodeNotebookOutputPresenter.ts";
 
 const savedReplay: CellOutputReplay = {
@@ -50,6 +52,9 @@ it.effect(
     const code = yield* TestVsCode.make({
       initialDocuments: [notebookEditor.notebook],
     });
+    const projections = yield* CellOutputProjections.make.pipe(
+      Effect.provide(code.layer),
+    );
     const events: string[] = [];
     const rendered: vscode.NotebookCellOutput[][] = [];
     const execution: vscode.NotebookCellExecution = {
@@ -72,6 +77,7 @@ it.effect(
     };
     const presenter = yield* VsCodeNotebookOutputPresenter.make.pipe(
       Effect.provide(code.layer),
+      Effect.provideService(CellOutputProjections, projections),
     );
 
     yield* presenter.present(
@@ -93,9 +99,9 @@ it.effect(
 );
 
 it.effect(
-  "does not overwrite output already owned by the notebook",
+  "adopts output already owned by the notebook",
   Effect.fn(function* () {
-    const notebookEditor = editor([
+    const displayed: vscode.NotebookCellOutput[] = [
       {
         items: [
           {
@@ -104,12 +110,17 @@ it.effect(
           },
         ],
       },
-    ]);
+    ];
+    const notebookEditor = editor(displayed);
     const code = yield* TestVsCode.make({
       initialDocuments: [notebookEditor.notebook],
     });
+    const projections = yield* CellOutputProjections.make.pipe(
+      Effect.provide(code.layer),
+    );
     const presenter = yield* VsCodeNotebookOutputPresenter.make.pipe(
       Effect.provide(code.layer),
+      Effect.provideService(CellOutputProjections, projections),
     );
     let executions = 0;
 
@@ -125,5 +136,51 @@ it.effect(
     );
 
     expect(executions).toBe(0);
+
+    const api = yield* VsCode.pipe(Effect.provide(code.layer));
+    const events: string[] = [];
+    const execution: vscode.NotebookCellExecution = {
+      cell: notebookEditor.notebook.cellAt(0),
+      executionOrder: undefined,
+      token: {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose() {} }),
+      },
+      start: () => {},
+      end: () => {},
+      clearOutput: async () => {
+        events.push("clear");
+        displayed.length = 0;
+      },
+      appendOutput: async (output) => {
+        events.push("append");
+        displayed.push(...(Array.isArray(output) ? output : [output]));
+      },
+      replaceOutput: async () => {},
+      appendOutputItems: async () => {},
+      replaceOutputItems: async (items, output) => {
+        events.push("replace");
+        const index = displayed.indexOf(output);
+        displayed[index] = new api.NotebookCellOutput(
+          Array.isArray(items) ? [...items] : [items],
+          output.metadata,
+        );
+      },
+    };
+    const updated = {
+      key: "main",
+      output: new api.NotebookCellOutput([
+        api.NotebookCellOutputItem.text("updated"),
+      ]),
+    };
+
+    yield* projections
+      .forCell(notebookEditor.notebook, NotebookCellId("cell-1"))
+      .project(execution, [updated]);
+
+    expect(events).toEqual(["replace"]);
+    expect(new TextDecoder().decode(displayed[0].items[0].data)).toBe(
+      "updated",
+    );
   }),
 );
