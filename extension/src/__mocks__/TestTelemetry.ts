@@ -13,6 +13,7 @@ export const TestTelemetryLive = Layer.succeed(Telemetry, {
   uvMissing: () => Effect.void,
   uvInstallClicked: Effect.void,
   binaryResolved: () => Effect.void,
+  binaryUnresolved: () => Effect.void,
   lspModeSelected: () => Effect.void,
   lspStarted: () => Effect.void,
   errorLogger: Logger.make(() => undefined),

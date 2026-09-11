@@ -13,7 +13,7 @@ import { Version } from "./Version.ts";
  * Expected output format: `<name> <version>`, e.g. `ruff 0.15.0` or `ty 0.0.15`.
  * Returns Option.none() if the version cannot be parsed.
  */
-export function getBinaryVersion(
+function getBinaryVersion(
   binaryPath: string,
 ): Effect.Effect<Option.Option<Version>> {
   return Effect.try(() =>
@@ -48,7 +48,7 @@ export function parseVersionOutput(output: string): string | null {
  *
  * Returns the binary path if valid, Option.none() otherwise.
  */
-export function validateBinary(
+function validateBinary(
   binaryPath: string,
   minimumVersion: string,
 ): Effect.Effect<Option.Option<string>> {
@@ -101,7 +101,6 @@ export function validateBinary(
  * - `UserConfigured` — explicit path from `marimo.ruff.path` / `marimo.ty.path`
  * - `CompanionExtension` — discovered via a companion VS Code extension
  *   (either its configured `path` setting or its bundled binary)
- * - `UvInstalled` — installed on-demand via `uv pip install`
  */
 export const BinarySource = Data.taggedEnum<BinarySource>();
 export type BinarySource = Data.TaggedEnum<{
@@ -111,7 +110,6 @@ export type BinarySource = Data.TaggedEnum<{
     readonly path: string;
     readonly kind: "configured" | "bundled";
   };
-  UvInstalled: { readonly path: string };
 }>;
 
 // ---------------------------------------------------------------------------
@@ -128,15 +126,17 @@ export interface ResolutionSource<E = never, R = never> {
 }
 
 /**
- * Try each source in order. Returns the first successful resolution,
- * or falls through to the fallback. All attempts are logged with
- * structured annotations for the server name.
+ * Try each source in order. Returns the first successful resolution, or
+ * `Option.none()` when every source comes up empty. All attempts are logged
+ * with structured annotations for the server name.
+ *
+ * There is deliberately no install-on-demand fallback: resolution never
+ * reaches the network, so it cannot hang or fail on a blocked package index.
  */
-export function resolveBinary<E, R>(
+export function resolveBinary<R>(
   serverName: string,
   sources: ReadonlyArray<ResolutionSource<never, R>>,
-  fallback: ResolutionSource<E, R>,
-): Effect.Effect<BinarySource, E, R> {
+): Effect.Effect<Option.Option<BinarySource>, never, R> {
   return Effect.gen(function* () {
     for (const source of sources) {
       yield* Effect.logDebug(`Trying resolution source: ${source.label}`).pipe(
@@ -153,7 +153,7 @@ export function resolveBinary<E, R>(
             path: result.value.path,
           }),
         );
-        return result.value;
+        return result;
       }
 
       yield* Effect.logDebug(
@@ -161,27 +161,13 @@ export function resolveBinary<E, R>(
       ).pipe(Effect.annotateLogs({ server: serverName, source: source.label }));
     }
 
-    yield* Effect.logInfo(
-      `No source resolved a binary, using fallback: ${fallback.label}`,
-    ).pipe(Effect.annotateLogs({ server: serverName, source: fallback.label }));
-
-    const result = yield* fallback.resolve;
-    if (Option.isNone(result)) {
-      return yield* Effect.die(
-        new Error(
-          `Fallback source "${fallback.label}" failed to resolve a ${serverName} binary`,
-        ),
-      );
-    }
-
-    yield* Effect.logInfo("Resolved binary").pipe(
+    yield* Effect.logInfo("No source resolved a binary").pipe(
       Effect.annotateLogs({
         server: serverName,
-        source: result.value._tag,
-        path: result.value.path,
+        sources: sources.map((source) => source.label),
       }),
     );
-    return result.value;
+    return Option.none();
   });
 }
 

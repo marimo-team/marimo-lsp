@@ -69,14 +69,6 @@ function companionSource(
   };
 }
 
-/** Source that resolves to a UvInstalled variant. */
-function uvSource(path: string): ResolutionSource {
-  return {
-    label: "uv",
-    resolve: Effect.succeed(Option.some(BinarySource.UvInstalled({ path }))),
-  };
-}
-
 /** Source that resolves to none. */
 function emptySource(label: string): ResolutionSource {
   return { label, resolve: Effect.succeed(Option.none()) };
@@ -86,109 +78,76 @@ describe("resolveBinary", () => {
   it.effect(
     "returns the first source that resolves",
     Effect.fn(function* () {
-      const result = yield* resolveBinary(
-        "test",
-        [userSource("/first"), companionSource("/second")],
-        uvSource("/fallback"),
+      const result = yield* resolveBinary("test", [
+        userSource("/first"),
+        companionSource("/second"),
+      ]);
+      expect(result).toStrictEqual(
+        Option.some(BinarySource.UserConfigured({ path: "/first" })),
       );
-      expect(result._tag).toBe("UserConfigured");
-      expect(result.path).toBe("/first");
     }),
   );
 
   it.effect(
     "skips empty sources and returns the next match",
     Effect.fn(function* () {
-      const result = yield* resolveBinary(
-        "test",
-        [emptySource("skip"), companionSource("/good", "configured")],
-        uvSource("/fallback"),
+      const result = yield* resolveBinary("test", [
+        emptySource("skip"),
+        companionSource("/good", "configured"),
+      ]);
+      expect(result).toStrictEqual(
+        Option.some(
+          BinarySource.CompanionExtension({
+            extensionId: "test.ext",
+            path: "/good",
+            kind: "configured",
+          }),
+        ),
       );
-      expect(result._tag).toBe("CompanionExtension");
-      expect(result.path).toBe("/good");
-      if (BinarySource.$is("CompanionExtension")(result)) {
-        expect(result.kind).toBe("configured");
-        expect(result.extensionId).toBe("test.ext");
-      }
     }),
   );
 
   it.effect(
-    "falls through to fallback when all sources are empty",
+    "returns none when every source is empty",
     Effect.fn(function* () {
-      const result = yield* resolveBinary(
-        "test",
-        [emptySource("a"), emptySource("b")],
-        uvSource("/fallback/binary"),
-      );
-      expect(result._tag).toBe("UvInstalled");
-      expect(result.path).toBe("/fallback/binary");
+      const result = yield* resolveBinary("test", [
+        emptySource("a"),
+        emptySource("b"),
+      ]);
+      expect(result).toStrictEqual(Option.none());
     }),
   );
 
   it.effect(
-    "uses fallback when sources array is empty",
+    "returns none when there are no sources at all",
     Effect.fn(function* () {
-      const result = yield* resolveBinary("test", [], uvSource("/only/option"));
-      expect(result._tag).toBe("UvInstalled");
-      expect(result.path).toBe("/only/option");
-    }),
-  );
-
-  it.effect(
-    "dies when fallback also returns none",
-    Effect.fn(function* () {
-      const exit = yield* Effect.exit(
-        resolveBinary("test", [emptySource("a")], emptySource("fallback")),
+      const sources: ReadonlyArray<ResolutionSource> = [];
+      expect(yield* resolveBinary("test", sources)).toStrictEqual(
+        Option.none(),
       );
-      expect(exit._tag).toBe("Failure");
     }),
   );
 
   it.effect(
     "preserves CompanionExtension kind=bundled",
     Effect.fn(function* () {
-      const result = yield* resolveBinary(
-        "ruff",
-        [
-          emptySource("user"),
-          companionSource("/ext/bundled/libs/bin/ruff", "bundled"),
-        ],
-        uvSource("/uv/bin/ruff"),
-      );
-      expect(result._tag).toBe("CompanionExtension");
-      if (BinarySource.$is("CompanionExtension")(result)) {
-        expect(result.kind).toBe("bundled");
-      }
+      const result = yield* resolveBinary("ruff", [
+        emptySource("user"),
+        companionSource("/ext/bundled/libs/bin/ruff", "bundled"),
+      ]);
+      expect(
+        Option.map(result, (source) =>
+          BinarySource.$is("CompanionExtension")(source) ? source.kind : null,
+        ),
+      ).toStrictEqual(Option.some("bundled"));
     }),
   );
 
   it.effect(
     "emits structured logs with server and source annotations",
     Effect.fn(function* () {
-      const logs: Array<{
-        message: string;
-        annotations: Record<string, unknown>;
-      }> = [];
-
-      yield* resolveBinary(
-        "ty",
-        [emptySource("tier-1"), userSource("/bin/ty")],
-        uvSource("/fallback"),
-      ).pipe(
-        Effect.provideService(References.MinimumLogLevel, "Debug"),
-        Effect.provide(
-          Logger.layer([
-            Logger.make(({ message, fiber }) => {
-              logs.push({
-                message: String(message),
-                annotations: {
-                  ...fiber.getRef(References.CurrentLogAnnotations),
-                },
-              });
-            }),
-          ]),
-        ),
+      const logs = yield* collectLogs(
+        resolveBinary("ty", [emptySource("tier-1"), userSource("/bin/ty")]),
       );
 
       const serverAnnotated = logs.filter((l) => l.annotations.server === "ty");
@@ -200,4 +159,44 @@ describe("resolveBinary", () => {
       });
     }),
   );
+
+  it.effect(
+    "logs every source it tried when nothing resolves",
+    Effect.fn(function* () {
+      const logs = yield* collectLogs(
+        resolveBinary("ty", [emptySource("tier-1"), emptySource("tier-2")]),
+      );
+
+      const unresolved = logs.find((l) =>
+        l.message.includes("No source resolved a binary"),
+      );
+      expect(unresolved).toMatchObject({
+        annotations: { server: "ty", sources: ["tier-1", "tier-2"] },
+      });
+    }),
+  );
 });
+
+/** Runs `effect` at debug level, capturing every log line it emits. */
+function collectLogs(effect: Effect.Effect<unknown>) {
+  const logs: Array<{
+    message: string;
+    annotations: Record<string, unknown>;
+  }> = [];
+  return effect.pipe(
+    Effect.provideService(References.MinimumLogLevel, "Debug"),
+    Effect.provide(
+      Logger.layer([
+        Logger.make(({ message, fiber }) => {
+          logs.push({
+            message: String(message),
+            annotations: {
+              ...fiber.getRef(References.CurrentLogAnnotations),
+            },
+          });
+        }),
+      ]),
+    ),
+    Effect.as(logs),
+  );
+}

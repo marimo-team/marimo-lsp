@@ -48,8 +48,8 @@ icon in the editor title bar to open it as a notebook (see image above).
 | `marimo.lsp.server`                     | `string`  | `wasm`           | Language-server runtime: bundled `wasm`, uv-managed `python`, or `custom`. This does not change the interpreter used by notebook kernels.                                                           |
 | `marimo.lsp.path`                       | `array`   | `[]`             | Command and arguments used when `marimo.lsp.server` is `custom`, e.g., `["/path/to/marimo-lsp"]`.                                                                                                   |
 | `marimo.uv.path`                        | `string`  |                  | Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.                                                                                             |
-| `marimo.ruff.path`                      | `string`  |                  | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                       |
-| `marimo.ty.path`                        | `string`  |                  | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.                                                           |
+| `marimo.ruff.path`                      | `string`  |                  | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Leave empty to discover one from the Ruff extension (charliermarsh.ruff).                                                              |
+| `marimo.ty.path`                        | `string`  |                  | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Leave empty to discover one from the ty extension (astral-sh.ty).                                                                          |
 | `marimo.disableUvIntegration`           | `boolean` | `false`          | Disable uv integration features such as automatic package installation prompts.                                                                                                                     |
 | `marimo.disableManagedLanguageFeatures` | `boolean` | `false`          | Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers. |
 | `marimo.telemetry`                      | `boolean` | `true`           | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
@@ -70,6 +70,16 @@ locally.
 By default, marimo provides managed Python language features (completions, diagnostics, formatting) for notebook cells using a dedicated language server. This prevents conflicts with external Python language servers and ensures a consistent editing experience.
 
 **Why managed mode?** Notebook cells use a custom language ID (`mo-python`) to isolate them from external language servers like Pylance or Jedi. This prevents duplicate completions, conflicting diagnostics, and other interference while editing marimo notebooks.
+
+**Where the binaries come from:** marimo never downloads language-server
+binaries. Type checking and completions come from
+[`ty`](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty), and
+linting from
+[Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff);
+install those extensions, or point `marimo.ty.path` / `marimo.ruff.path` at
+binaries you already have. Without a `ty` binary, cells still run and edit
+normally — completions and type diagnostics are simply unavailable, and
+`marimo: Show diagnostics` reports it.
 
 **When to disable managed mode:** If you prefer to use your own Python language server configuration (e.g., Pylance, pyright, or another LSP), enable `marimo.notebook.disableManagedLanguageFeatures`. This switches cells to use the standard `python` language ID, allowing external language servers to provide completions and diagnostics. Note that this may result in some language features not working as expected in the notebook context.
 

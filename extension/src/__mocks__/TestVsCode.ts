@@ -1653,6 +1653,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       commands?: Partial<Context.Service.Shape<typeof Commands>>;
       workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
       env?: Partial<Context.Service.Shape<typeof Env>>;
+      installedExtensions?: ReadonlyArray<string>;
     } = {},
   ) {
     const activeTextEditor = yield* SubscriptionRef.make(
@@ -2315,7 +2316,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       },
       version: options.version ?? "1.86.0",
       extensions: {
-        getExtension: () => Option.none(),
+        getExtension: <T = unknown>(extensionId: string) =>
+          options.installedExtensions?.includes(extensionId)
+            ? // Only identity matters to callers here; the rest of the
+              // Extension surface is not exercised by tests.
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+              Option.some({ id: extensionId } as vscode.Extension<T>)
+            : Option.none<vscode.Extension<T>>(),
       },
       lm: {
         registerTool: () => Effect.succeed({ dispose: () => {} }),

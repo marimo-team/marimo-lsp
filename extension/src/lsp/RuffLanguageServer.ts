@@ -1,5 +1,3 @@
-import * as NodePath from "node:path";
-
 import {
   type Cause,
   Context,
@@ -23,9 +21,7 @@ import {
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
-import { ExtensionContext } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { Uv } from "../python/Uv.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
@@ -40,6 +36,7 @@ export const RuffLanguageServerStatus =
 type RuffLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
+  NotFound: { readonly message: string };
   Running: {
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
@@ -91,7 +88,30 @@ export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
             }),
           );
 
-          const resolved = yield* resolveRuffBinary();
+          const resolvedOption = yield* resolveRuffBinary();
+          if (Option.isNone(resolvedOption)) {
+            // Ruff is opt-in: linting isn't a baseline expectation, so a
+            // missing binary is recorded for diagnostics and left silent.
+            const message = [
+              `No ruff ${RUFF_SERVER.version} or newer binary was found.`,
+              "Install the official Ruff extension (charliermarsh.ruff) or set marimo.ruff.path, then reload VS Code.",
+            ].join("\n");
+            yield* Ref.set(
+              statusRef,
+              RuffLanguageServerStatus.NotFound({ message }),
+            );
+            yield* Effect.logInfo(message).pipe(
+              Effect.annotateLogs({
+                server: RUFF_SERVER.name,
+                version: RUFF_SERVER.version,
+              }),
+            );
+            if (Option.isSome(telemetry)) {
+              yield* telemetry.value.binaryUnresolved("ruff");
+            }
+            return;
+          }
+          const resolved = resolvedOption.value;
 
           // Build initializationOptions from ruff.* settings
           const ruffConfig = yield* code.workspace.getConfiguration("ruff");
@@ -169,26 +189,22 @@ export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
   },
 ) {
   static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([
-      Uv.layer,
-      Config.layer,
-      OutputChannel.layer,
-      NotebookVariables.layer,
-    ]),
+    Layer.provide([Config.layer, OutputChannel.layer, NotebookVariables.layer]),
   );
 }
 
 /**
- * Resolves the ruff binary path using a 3-tier strategy:
+ * Resolves the ruff binary using a 2-tier strategy:
  * 1. User-configured path (`marimo.ruff.path`)
  * 2. Companion extension discovery — first `ruff.path` setting, then bundled binary
- * 3. Fallback to `uv pip install`
+ *
+ * Returns `Option.none()` when no tier matches. Nothing here touches the
+ * network, so a blocked package index or an offline machine can't stall
+ * startup.
  */
 const resolveRuffBinary = Effect.fn(function* () {
   const code = yield* VsCode;
   const config = yield* Config;
-  const uv = yield* Uv;
-  const context = yield* ExtensionContext;
 
   const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
 
@@ -199,38 +215,21 @@ const resolveRuffBinary = Effect.fn(function* () {
     );
   });
 
-  return yield* resolveBinary(
-    RUFF_SERVER.name,
-    [
-      userConfiguredPath("ruff", RUFF_SERVER.version, config.ruff.path),
-      companionExtensionConfiguredPath(
-        "ruff",
-        RUFF_SERVER.version,
-        RUFF_EXTENSION_ID,
-        ruffExtConfiguredPath,
-      ),
-      companionExtensionBundledBinary(
-        "ruff",
-        RUFF_SERVER.version,
-        RUFF_EXTENSION_ID,
-        ruffExtension,
-      ),
-    ],
-    {
-      label: "uv install",
-      resolve: Effect.gen(function* () {
-        const targetPath = NodePath.resolve(
-          context.globalStorageUri.fsPath,
-          "libs",
-        );
-        const binaryPath = yield* uv.ensureLanguageServerBinaryInstalled(
-          RUFF_SERVER,
-          { targetPath },
-        );
-        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
-      }),
-    },
-  );
+  return yield* resolveBinary(RUFF_SERVER.name, [
+    userConfiguredPath("ruff", RUFF_SERVER.version, config.ruff.path),
+    companionExtensionConfiguredPath(
+      "ruff",
+      RUFF_SERVER.version,
+      RUFF_EXTENSION_ID,
+      ruffExtConfiguredPath,
+    ),
+    companionExtensionBundledBinary(
+      "ruff",
+      RUFF_SERVER.version,
+      RUFF_EXTENSION_ID,
+      ruffExtension,
+    ),
+  ]);
 });
 
 /**

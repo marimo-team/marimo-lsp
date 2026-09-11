@@ -197,6 +197,10 @@ type NotebookCellCommandTarget = {
  * not returned by `commands.getCommands()`.
  */
 export interface VscodeCommandMap {
+  readonly "extension.open": {
+    readonly args: [extensionId: string];
+    readonly result: void;
+  };
   readonly "notebook.cell.collapseCellInput": {
     readonly args: [target: NotebookCellCommandTarget];
     readonly result: void;

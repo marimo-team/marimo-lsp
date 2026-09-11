@@ -122,6 +122,12 @@ export class HealthService extends Context.Service<HealthService>()(
                   lines.push(`\tPython: ${pyPath}${pyVersion}`);
                 }
               },
+              NotFound: ({ message }) => {
+                lines.push("\tStatus: not found");
+                for (const line of message.split("\n")) {
+                  lines.push(`\t${line}`);
+                }
+              },
               Failed: ({ message }) => {
                 lines.push("\tStatus: failed ✗");
                 lines.push(`\tError: ${message}`);
@@ -144,6 +150,12 @@ export class HealthService extends Context.Service<HealthService>()(
                 lines.push("\tStatus: running ✓");
                 lines.push(`\tVersion: ${serverVersion}`);
                 lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
+              },
+              NotFound: ({ message }) => {
+                lines.push("\tStatus: not found");
+                for (const line of message.split("\n")) {
+                  lines.push(`\t${line}`);
+                }
               },
               Failed: ({ message }) => {
                 lines.push("\tStatus: failed ✗");
@@ -254,7 +266,6 @@ function formatBinarySource(source: BinarySource): string {
     UserConfigured: ({ path }) => `UserConfigured (${path})`,
     CompanionExtension: ({ extensionId, path, kind }) =>
       `CompanionExtension/${kind} (${extensionId}, ${path})`,
-    UvInstalled: ({ path }) => `UvInstalled (${path})`,
   });
 }
 

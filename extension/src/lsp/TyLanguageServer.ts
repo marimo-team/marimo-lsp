@@ -1,5 +1,3 @@
-import * as NodePath from "node:path";
-
 import {
   Cause,
   Context,
@@ -9,6 +7,7 @@ import {
   Layer,
   Option,
   Ref,
+  Schema,
   Stream,
 } from "effect";
 
@@ -19,46 +18,45 @@ import {
   companionExtensionConfiguredPath,
   resolveBinary,
   userConfiguredPath,
-  validateBinary,
 } from "../lib/binaryResolution.ts";
-import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { OutputChannel } from "../platform/OutputChannel.ts";
-import { ExtensionContext, Storage } from "../platform/Storage.ts";
+import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
-import { resolvePlatformBinaryName, Uv } from "../python/Uv.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
-import {
-  clearManagedInstallFailure,
-  getManagedInstallFailure,
-  matchesManagedInstallFailure,
-  setManagedInstallFailure,
-} from "./managedInstallFailure.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.63" } as const;
 const TY_EXTENSION_ID = "astral-sh.ty";
 const INSTALL_TY_EXTENSION = "Install ty Extension";
-const OPEN_UV_LOGS = "Open uv Logs";
+const SHOW_TY_EXTENSION = "Show ty Extension";
+const DONT_SHOW_AGAIN = "Don't Show Again";
 const RELOAD_WINDOW = "Reload Window";
 
-export class ManagedTyInstallPreviouslyFailed extends Data.TaggedError(
-  "ManagedTyInstallPreviouslyFailed",
-)<{
-  readonly extensionVersion: string;
+/**
+ * Remembers that the user dismissed the "install ty" prompt, so we never ask
+ * again on this machine. Installing the extension sets it too.
+ */
+const tyPromptDismissedKey = createStorageKey(
+  "languageServer.ty.installPromptDismissed",
+  Schema.Boolean,
+);
+
+/**
+ * No ty binary is available. We never install one ourselves — the user
+ * supplies it via the official ty extension or `marimo.ty.path`.
+ */
+export class TyBinaryNotFound extends Data.TaggedError("TyBinaryNotFound")<{
   readonly serverVersion: string;
-  readonly details: string;
 }> {
   format(): string {
     return [
-      this.details,
-      "Managed installation will be retried after the marimo extension is updated.",
-      "To recover now, install the official ty extension (astral-sh.ty) or configure marimo.ty.path, then reload VS Code.",
-      "For full installation output, open the marimo (uv) output channel.",
+      `No ty ${this.serverVersion} or newer binary was found.`,
+      "Install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n");
   }
 }
@@ -68,6 +66,7 @@ export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
 type TyLanguageServerStatus = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
+  NotFound: { readonly message: string };
   Running: {
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
@@ -97,10 +96,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
       const envInvalidation = yield* PythonEnvInvalidation;
       const telemetry = yield* Effect.serviceOption(Telemetry);
       const code = yield* VsCode;
-      const uv = yield* Uv;
-      const notifyInstallFailure = yield* makeTyInstallFailureNotifier(
-        uv.channel,
-      );
+      const notifyMissingTy = yield* makeTyMissingNotifier();
 
       const statusRef = yield* Ref.make<TyLanguageServerStatus>(
         TyLanguageServerStatus.Starting(),
@@ -136,7 +132,11 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
               }),
             );
 
-            const resolved = yield* resolveTyBinary();
+            const resolved = yield* Option.match(yield* resolveTyBinary(), {
+              onNone: () =>
+                new TyBinaryNotFound({ serverVersion: TY_SERVER.version }),
+              onSome: Effect.succeed,
+            });
 
             const client = yield* connectMarimoNotebookLspClient({
               name: TY_SERVER.name,
@@ -239,44 +239,28 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
           }).pipe(Effect.scoped);
 
           // Run the server in a loop: start → invalidation → restart.
-          // Installation failures get a dedicated recovery path; other
-          // failures propagate to catchCause and stop the loop.
+          // A missing binary gets a dedicated recovery path; other failures
+          // propagate to catchCause and stop the loop.
           yield* Effect.forever(serverCycle).pipe(
-            Effect.catchTag("ManagedTyInstallPreviouslyFailed", (error) =>
+            // A missing binary is a user-resolvable configuration state, not
+            // a crash: record it, nudge once, and stop the restart loop.
+            Effect.catchTag("TyBinaryNotFound", (error) =>
               Effect.gen(function* () {
                 const message = error.format();
                 yield* Ref.set(
                   statusRef,
-                  TyLanguageServerStatus.Failed({
-                    message,
-                    cause: Cause.fail(error),
-                  }),
+                  TyLanguageServerStatus.NotFound({ message }),
                 );
-                yield* Effect.logWarning(message).pipe(
+                yield* Effect.logInfo(message).pipe(
                   Effect.annotateLogs({
                     server: TY_SERVER.name,
                     version: TY_SERVER.version,
                   }),
                 );
-              }),
-            ),
-            Effect.catchTag("LanguageServerInstallError", (error) =>
-              Effect.gen(function* () {
-                const message = error.message;
-                yield* Ref.set(
-                  statusRef,
-                  TyLanguageServerStatus.Failed({
-                    message,
-                    cause: Cause.fail(error),
-                  }),
-                );
-                yield* Effect.logError(message).pipe(
-                  Effect.annotateLogs({
-                    server: TY_SERVER.name,
-                    version: TY_SERVER.version,
-                  }),
-                );
-                yield* notifyInstallFailure;
+                if (Option.isSome(telemetry)) {
+                  yield* telemetry.value.binaryUnresolved("ty");
+                }
+                yield* notifyMissingTy;
               }),
             ),
             Effect.catchCause((cause) =>
@@ -309,7 +293,6 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
 ) {
   static readonly layer = Layer.effect(this, this.make).pipe(
     Layer.provide([
-      Uv.layer,
       Config.layer,
       OutputChannel.layer,
       NotebookVariables.layer,
@@ -320,25 +303,19 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
 }
 
 /**
- * Resolves the ty binary path using a 3-tier strategy:
+ * Resolves the ty binary using a 2-tier strategy:
  * 1. User-configured path (`marimo.ty.path`)
  * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
- * 3. Fallback to `uv pip install`
+ *
+ * Returns `Option.none()` when no tier matches. Nothing here touches the
+ * network, so a blocked package index or an offline machine can't stall
+ * startup.
  */
 const resolveTyBinary = Effect.fn(function* () {
   const code = yield* VsCode;
   const config = yield* Config;
-  const uv = yield* Uv;
-  const context = yield* ExtensionContext;
-  const extensionVersion = yield* getExtensionVersion();
 
   const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
-  const targetPath = NodePath.resolve(context.globalStorageUri.fsPath, "libs");
-  const managedBinaryPath = NodePath.resolve(
-    targetPath,
-    "bin",
-    resolvePlatformBinaryName(TY_SERVER.name),
-  );
 
   const tyExtConfiguredPath = Effect.gen(function* () {
     const tyExtConfig = yield* code.workspace.getConfiguration("ty");
@@ -348,102 +325,76 @@ const resolveTyBinary = Effect.fn(function* () {
     );
   });
 
-  const resolved = yield* resolveBinary(
-    TY_SERVER.name,
-    [
-      userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
-      companionExtensionConfiguredPath(
-        "ty",
-        TY_SERVER.version,
-        TY_EXTENSION_ID,
-        tyExtConfiguredPath,
-      ),
-      companionExtensionBundledBinary(
-        "ty",
-        TY_SERVER.version,
-        TY_EXTENSION_ID,
-        tyExtension,
-      ),
-      {
-        label: "existing managed installation",
-        resolve: validateBinary(managedBinaryPath, TY_SERVER.version).pipe(
-          Effect.map(Option.map((path) => BinarySource.UvInstalled({ path }))),
-        ),
-      },
-    ],
-    {
-      label: "uv install",
-      resolve: Effect.gen(function* () {
-        const previousFailure =
-          yield* getPreviousInstallFailure(extensionVersion);
-        if (Option.isSome(previousFailure)) {
-          return yield* new ManagedTyInstallPreviouslyFailed({
-            extensionVersion: previousFailure.value.extensionVersion,
-            serverVersion: previousFailure.value.serverVersion,
-            details: previousFailure.value.details,
-          });
-        }
+  const resolved = yield* resolveBinary(TY_SERVER.name, [
+    userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
+    companionExtensionConfiguredPath(
+      "ty",
+      TY_SERVER.version,
+      TY_EXTENSION_ID,
+      tyExtConfiguredPath,
+    ),
+    companionExtensionBundledBinary(
+      "ty",
+      TY_SERVER.version,
+      TY_EXTENSION_ID,
+      tyExtension,
+    ),
+  ]);
 
-        const binaryPath = yield* uv
-          .ensureLanguageServerBinaryInstalled(TY_SERVER, { targetPath })
-          .pipe(
-            Effect.tapError((error) =>
-              rememberInstallFailure(extensionVersion, error.message),
-            ),
-          );
-        return Option.some(BinarySource.UvInstalled({ path: binaryPath }));
-      }),
-    },
-  );
-
-  yield* clearManagedInstallFailure(TY_SERVER.name).pipe(Effect.ignore);
   return resolved;
 });
 
-const getPreviousInstallFailure = Effect.fn(function* (
-  extensionVersion: Option.Option<string>,
-) {
-  if (Option.isNone(extensionVersion)) return Option.none();
-
-  const failure = yield* getManagedInstallFailure(TY_SERVER.name).pipe(
-    Effect.orElseSucceed(() => Option.none()),
-  );
-  return matchesManagedInstallFailure(failure, {
-    extensionVersion: extensionVersion.value,
-    serverVersion: TY_SERVER.version,
-  })
-    ? failure
-    : Option.none();
-});
-
-const rememberInstallFailure = Effect.fn(function* (
-  extensionVersion: Option.Option<string>,
-  details: string,
-) {
-  if (Option.isNone(extensionVersion)) return;
-
-  yield* setManagedInstallFailure(TY_SERVER.name, {
-    extensionVersion: extensionVersion.value,
-    serverVersion: TY_SERVER.version,
-    details,
-  }).pipe(Effect.ignore);
-});
-
-export const makeTyInstallFailureNotifier = Effect.fn(
-  "TyLanguageServer.makeTyInstallFailureNotifier",
-)(function* (channel: { readonly name: string; show(): void }) {
+/**
+ * Builds the one-shot prompt shown when no ty binary is available.
+ *
+ * Fires at most once per session (`Effect.cached`) and never again on this
+ * machine once the user installs the extension or dismisses it.
+ */
+export const makeTyMissingNotifier = Effect.fn(
+  "TyLanguageServer.makeTyMissingNotifier",
+)(function* () {
   const code = yield* VsCode;
+  const storage = yield* Storage;
 
   return yield* Effect.cached(
     Effect.gen(function* () {
+      const dismissed = yield* storage.global
+        .get(tyPromptDismissedKey)
+        .pipe(Effect.orElseSucceed(() => Option.none<boolean>()));
+      if (Option.getOrElse(dismissed, () => false)) return;
+
+      // An installed-but-too-old ty extension needs an update, not an
+      // install, so the prompt has to know which situation it is in.
+      const alreadyInstalled = Option.isSome(
+        code.extensions.getExtension(TY_EXTENSION_ID),
+      );
+      const action = alreadyInstalled
+        ? SHOW_TY_EXTENSION
+        : INSTALL_TY_EXTENSION;
+
       const selection = yield* code.window.showWarningMessage(
-        "marimo couldn't install ty. Install the official ty extension to enable Python completions and diagnostics in marimo notebooks.",
-        { items: [INSTALL_TY_EXTENSION, OPEN_UV_LOGS] },
+        alreadyInstalled
+          ? "The installed ty extension is too old for marimo notebooks. Update it to restore Python completions and diagnostics."
+          : "Install the ty extension to enable Python completions and diagnostics in marimo notebooks.",
+        { items: [action, DONT_SHOW_AGAIN] },
       );
       if (Option.isNone(selection)) return;
 
-      if (selection.value === OPEN_UV_LOGS) {
-        channel.show();
+      const remember = storage.global
+        .set(tyPromptDismissedKey, true)
+        .pipe(Effect.ignore);
+
+      if (selection.value === DONT_SHOW_AGAIN) {
+        yield* remember;
+        return;
+      }
+
+      if (alreadyInstalled) {
+        // The extension view is where the update button lives; leave the
+        // prompt un-dismissed so a user who ignores it is reminded later.
+        yield* code.commands
+          .executeVSCode("extension.open", TY_EXTENSION_ID)
+          .pipe(Effect.ignore);
         return;
       }
 
@@ -462,6 +413,8 @@ export const makeTyInstallFailureNotifier = Effect.fn(
         );
         return;
       }
+
+      yield* remember;
 
       const reload = yield* code.window.showInformationMessage(
         "Reload VS Code to finish enabling the ty extension in marimo notebooks.",

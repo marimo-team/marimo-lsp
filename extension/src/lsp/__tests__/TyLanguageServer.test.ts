@@ -1,11 +1,13 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Option, Ref } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { Memento } from "../../__mocks__/TestExtensionContext.ts";
+import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
+import { ExtensionContext, Storage } from "../../platform/Storage.ts";
 import {
-  makeTyInstallFailureNotifier,
-  ManagedTyInstallPreviouslyFailed,
+  makeTyMissingNotifier,
+  TyBinaryNotFound,
 } from "../TyLanguageServer.ts";
 
 const selectedItem = <T extends string>(
@@ -13,28 +15,59 @@ const selectedItem = <T extends string>(
   item: string,
 ) => Option.fromNullishOr(options.items?.find((value) => value === item));
 
-it("keeps recovery instructions in persisted failure diagnostics", () => {
-  const error = new ManagedTyInstallPreviouslyFailed({
-    extensionVersion: "0.16.2",
-    serverVersion: "0.0.63",
-    details: "Failed to install ty@0.0.63",
-  });
+/**
+ * A storage layer backed by its own mementos, so a dismissal recorded by one
+ * test can't leak into the next.
+ */
+const freshStorage = () =>
+  Storage.layer.pipe(
+    Layer.provide(
+      Layer.succeed(ExtensionContext, {
+        globalState: new Memento(),
+        workspaceState: new Memento(),
+        extensionUri: Uri.parse("file:///test/extension/path", true),
+        globalStorageUri: Uri.parse("file://test/extension/libs", true),
+      }),
+    ),
+  );
+
+it("points at the ty extension and the path setting when no binary is found", () => {
+  const error = new TyBinaryNotFound({ serverVersion: "0.0.63" });
 
   expect(error.format()).toBe(
     [
-      "Failed to install ty@0.0.63",
-      "Managed installation will be retried after the marimo extension is updated.",
-      "To recover now, install the official ty extension (astral-sh.ty) or configure marimo.ty.path, then reload VS Code.",
-      "For full installation output, open the marimo (uv) output channel.",
+      "No ty 0.0.63 or newer binary was found.",
+      "Install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n"),
   );
 });
 
 it.effect(
-  "shows the managed installation warning once and can open uv logs",
+  "shows the missing-ty warning at most once per session",
   Effect.fn(function* () {
     const prompts = yield* Ref.make(0);
-    let channelShows = 0;
+    const vscode = yield* TestVsCode.make({
+      window: {
+        showWarningMessage: () =>
+          Ref.update(prompts, (count) => count + 1).pipe(
+            Effect.as(Option.none()),
+          ),
+      },
+    });
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([vscode.layer, freshStorage()]),
+    );
+
+    yield* Effect.all([notify, notify], { concurrency: "unbounded" });
+
+    expect(yield* Ref.get(prompts)).toBe(1);
+  }),
+);
+
+it.effect(
+  "never prompts again once the user dismisses it",
+  Effect.fn(function* () {
+    const prompts = yield* Ref.make(0);
     const vscode = yield* TestVsCode.make({
       window: {
         showWarningMessage: <T extends string>(
@@ -42,21 +75,18 @@ it.effect(
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
         ) =>
           Ref.update(prompts, (count) => count + 1).pipe(
-            Effect.as(selectedItem(options, "Open uv Logs")),
+            Effect.as(selectedItem(options, "Don't Show Again")),
           ),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show: () => {
-        channelShows += 1;
-      },
-    }).pipe(Effect.provide(vscode.layer));
+    const layers = Layer.mergeAll(vscode.layer, freshStorage());
 
-    yield* Effect.all([notify, notify], { concurrency: "unbounded" });
+    // A fresh notifier stands in for a fresh session; the dismissal has to
+    // outlive both of them.
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
 
     expect(yield* Ref.get(prompts)).toBe(1);
-    expect(channelShows).toBe(1);
   }),
 );
 
@@ -75,10 +105,9 @@ it.effect(
         ) => Effect.succeed(selectedItem(options, "Reload Window")),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show() {},
-    }).pipe(Effect.provide(vscode.layer));
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([vscode.layer, freshStorage()]),
+    );
 
     yield* notify;
 
@@ -89,6 +118,41 @@ it.effect(
       },
       { command: "workbench.action.reloadWindow", args: [] },
     ]);
+  }),
+);
+
+it.effect(
+  "asks an existing ty extension to be updated instead of installed",
+  Effect.fn(function* () {
+    const warnings = yield* Ref.make<ReadonlyArray<string>>([]);
+    const vscode = yield* TestVsCode.make({
+      installedExtensions: ["astral-sh.ty"],
+      window: {
+        showWarningMessage: <T extends string>(
+          message: string,
+          options: vscode.MessageOptions & { items?: readonly T[] } = {},
+        ) =>
+          Ref.update(warnings, (all) => [...all, message]).pipe(
+            Effect.as(selectedItem(options, "Show ty Extension")),
+          ),
+      },
+    });
+    const storage = freshStorage();
+    const layers = Layer.mergeAll(vscode.layer, storage);
+
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+
+    expect(yield* Ref.get(warnings)).toEqual([
+      "The installed ty extension is too old for marimo notebooks. Update it to restore Python completions and diagnostics.",
+    ]);
+    expect(yield* Ref.get(vscode.executions)).toEqual([
+      { command: "extension.open", args: ["astral-sh.ty"] },
+    ]);
+
+    // Opening the extension page isn't a dismissal — a user who ignores the
+    // update should be reminded in a later session.
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    expect(yield* Ref.get(warnings)).toHaveLength(2);
   }),
 );
 
@@ -120,10 +184,9 @@ it.effect(
           ),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show() {},
-    }).pipe(Effect.provide(vscode.layer));
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([vscode.layer, freshStorage()]),
+    );
 
     yield* notify;
 
