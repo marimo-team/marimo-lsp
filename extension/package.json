@@ -129,13 +129,13 @@
         "marimo.ruff.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Useful for offline environments. Leave empty to auto-discover or install via uv.",
+          "markdownDescription": "Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Leave empty to discover one from the Ruff extension (charliermarsh.ruff).",
           "scope": "resource"
         },
         "marimo.ty.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Useful for offline environments. Leave empty to auto-discover or install via uv.",
+          "markdownDescription": "Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Leave empty to discover one from the ty extension (astral-sh.ty).",
           "scope": "resource"
         },
         "marimo.disableManagedLanguageFeatures": {
