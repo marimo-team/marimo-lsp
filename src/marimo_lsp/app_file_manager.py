@@ -176,16 +176,46 @@ def _snapshot_notebook_cells(
     )
 
 
+def _with_session_outputs(
+    session: Session, cells: tuple[NotebookCell, ...]
+) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
+    cell_ids = [cell.id for cell in cells]
+    return cells, CellOutputs(
+        output=session.session_view.get_cell_outputs(cell_ids),
+        console_outputs=session.session_view.get_cell_console_outputs(cell_ids),
+    )
+
+
 def snapshot_for_scratchpad(
     workspace: Workspace,
     session: Session,
     notebook: NotebookDocument,
 ) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
-    """Snapshot the LSP notebook document's cells for code mode."""
-    cells = _snapshot_notebook_cells(workspace, notebook)
-    ids = [cell.id for cell in cells]
-    cell_outputs = CellOutputs(
-        output=session.session_view.get_cell_outputs(ids),
-        console_outputs=session.session_view.get_cell_console_outputs(ids),
+    """Snapshot an open notebook for scratchpad execution.
+
+    The LSP document is authoritative; a session's app may lag unsaved edits.
+    Outputs still come from the matching live session.
+    """
+    return _with_session_outputs(session, _snapshot_notebook_cells(workspace, notebook))
+
+
+def snapshot_retained_scratchpad(
+    session: Session,
+) -> tuple[tuple[NotebookCell, ...], CellOutputs]:
+    """Snapshot the session's synchronized source cells and outputs.
+
+    LSP open/change/save events refresh the cell manager. A detached session
+    retains the source from its last synchronization.
+    """
+    manager = session.app.cell_manager
+    cells = tuple(
+        NotebookCell(id=cell_id, code=code, name=name, config=config)
+        for cell_id, code, name, config in zip(
+            manager.cell_ids(),
+            manager.codes(),
+            manager.names(),
+            manager.configs(),
+            strict=True,
+        )
     )
-    return cells, cell_outputs
+    return _with_session_outputs(session, cells)

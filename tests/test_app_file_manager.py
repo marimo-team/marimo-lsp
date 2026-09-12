@@ -11,7 +11,10 @@ import lsprotocol.types as lsp
 import msgspec
 import pytest
 
-from marimo_lsp.app_file_manager import find_notebook_document, sync_app_with_workspace
+from marimo_lsp.app_file_manager import (
+    find_notebook_document,
+    sync_app_with_workspace,
+)
 
 
 def _lsp_object(d: dict[str, object] | None) -> lsp.LSPObject | None:
