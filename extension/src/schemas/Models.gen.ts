@@ -932,7 +932,7 @@ export type PrintNotebookResult = typeof PrintNotebookResult.Type;
  *
  * **Keys.**
  *
- * - `api_key`: the Anthropic API key
+ * - `api_key`: the Anthropic API key or an `env:` reference
  */
 export const AnthropicConfig = Schema.Struct({
   api_key: Schema.optional(Schema.String),
@@ -944,7 +944,7 @@ export type AnthropicConfig = typeof AnthropicConfig.Type;
  *
  * **Keys.**
  *
- * - `api_key`: the OpenAI API key
+ * - `api_key`: the OpenAI API key or an `env:` reference
  * - `base_url`: the base URL for the API
  * - `project`: the project ID for the OpenAI API
  * - `ssl_verify` : Boolean argument for httpx passed to open ai client. httpx defaults to true, but some use cases to let users override to False in some testing scenarios
@@ -983,12 +983,12 @@ export const BedrockConfig = Schema.Struct({
 export type BedrockConfig = typeof BedrockConfig.Type;
 
 /**
- * Configuration options for GitHub.
+ * Configuration options for GitHub Copilot.
  *
  * **Keys.**
  *
- * - `api_key`: the GitHub API token
- * - `base_url`: the base URL for the API
+ * - `api_key`: a GitHub Copilot token or an `env:` reference
+ * - `base_url`: the base URL for the GitHub Copilot API
  * - `copilot_settings`: configuration settings for GitHub Copilot LSP.
  *     Supports settings like `http` (proxy configuration), `telemetry`,
  *     and `github-enterprise` (enterprise URI).
@@ -1007,7 +1007,7 @@ export type GitHubConfig = typeof GitHubConfig.Type;
  *
  * **Keys.**
  *
- * - `api_key`: the Google AI API key
+ * - `api_key`: the Google AI API key or an `env:` reference
  */
 export const GoogleAiConfig = Schema.Struct({
   api_key: Schema.optional(Schema.String),
@@ -1044,6 +1044,7 @@ export type AiModelConfig = typeof AiModelConfig.Type;
  * - `max_tokens`: the maximum number of tokens to use in AI completions
  * - `mode`: the mode to use for AI completions. Can be one of: `"ask"` or `"manual"`
  * - `inline_tooltip`: if `True`, enable inline AI tooltip suggestions
+ * - `allow_provider_config`: if `False`, lock provider setup in the settings UI, making them read-only. Users cannot bring their own credentials or add custom providers. Default `True`.
  * - `models`: the models to use for AI completions
  * - `open_ai`: the OpenAI config
  * - `anthropic`: the Anthropic config
@@ -1051,7 +1052,7 @@ export type AiModelConfig = typeof AiModelConfig.Type;
  * - `bedrock`: the Bedrock config
  * - `azure`: the Azure config
  * - `ollama`: the Ollama config
- * - `github`: the GitHub config
+ * - `github`: the GitHub Copilot config
  * - `openrouter`: the OpenRouter config
  * - `wandb`: the Weights & Biases config
  * - `opencode_go`: the OpenCode Go config
@@ -1059,6 +1060,7 @@ export type AiModelConfig = typeof AiModelConfig.Type;
  * - `open_ai_compatible`: the OpenAI-compatible config (deprecated, use custom_providers)
  */
 export const AiConfig = Schema.Struct({
+  allow_provider_config: Schema.optional(Schema.Boolean),
   anthropic: Schema.optional(AnthropicConfig),
   azure: Schema.optional(OpenAiConfig),
   bedrock: Schema.optional(BedrockConfig),
@@ -1081,6 +1083,29 @@ export const AiConfig = Schema.Struct({
   wandb: Schema.optional(OpenAiConfig),
 }).annotate({ identifier: "AiConfig" });
 export type AiConfig = typeof AiConfig.Type;
+
+/**
+ * Configuration for a single cache store.
+ */
+export const StoreConfig = Schema.Struct({
+  args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  type: Schema.optional(Schema.Literals(["file", "redis", "rest", "tiered"])),
+}).annotate({ identifier: "StoreConfig" });
+export type StoreConfig = typeof StoreConfig.Type;
+
+/**
+ * Configuration for caching.
+ *
+ * `verification` is the signature-checking posture; `store` is the backing
+ * store, or a list of stores composed into a `TieredStore`.
+ */
+export const CacheConfig = Schema.Struct({
+  store: Schema.optional(
+    Schema.Union([Schema.Array(StoreConfig), StoreConfig]),
+  ),
+  verification: Schema.optional(Schema.Literals(["off", "on", "strict"])),
+}).annotate({ identifier: "CacheConfig" });
+export type CacheConfig = typeof CacheConfig.Type;
 
 /**
  * Configuration for code completion.
@@ -1186,6 +1211,32 @@ export const DisplayConfig = Schema.Struct({
   theme: Schema.Literals(["dark", "light", "system"]),
 }).annotate({ identifier: "DisplayConfig" });
 export type DisplayConfig = typeof DisplayConfig.Type;
+
+/**
+ * Configuration for an additional file browser root.
+ *
+ * **Keys.**
+ *
+ * - `path`: the absolute path to the folder
+ * - `name`: an optional display name for the folder
+ */
+export const FolderConfig = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  path: Schema.String,
+}).annotate({ identifier: "FolderConfig" });
+export type FolderConfig = typeof FolderConfig.Type;
+
+/**
+ * Configuration for the file browser panel.
+ *
+ * **Keys.**
+ *
+ * - `folders`: additional absolute folders to show in the file browser
+ */
+export const FileBrowserConfig = Schema.Struct({
+  folders: Schema.optional(Schema.Array(FolderConfig)),
+}).annotate({ identifier: "FileBrowserConfig" });
+export type FileBrowserConfig = typeof FileBrowserConfig.Type;
 
 /**
  * Configuration for code formatting.
@@ -1467,6 +1518,21 @@ export const SharingConfig = Schema.Struct({
 export type SharingConfig = typeof SharingConfig.Type;
 
 /**
+ * Cache-signing trust and identity.
+ *
+ * `trusted_signers` maps a key fingerprint (`"SHA256:<base64>"`) to an
+ * advisory label. Trusting a key allows arbitrary code execution from its
+ * holder on this machine — a cache restore is `pickle.loads` — so there is no
+ * lesser cache-only grant. `private_key_path` is this machine's signing
+ * identity; it is never serialized to the frontend.
+ */
+export const SigningConfig = Schema.Struct({
+  private_key_path: Schema.optional(Schema.String),
+  trusted_signers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+}).annotate({ identifier: "SigningConfig" });
+export type SigningConfig = typeof SigningConfig.Type;
+
+/**
  * Configuration for snippets.
  *
  * **Keys.**
@@ -1503,11 +1569,13 @@ export type VenvConfig = typeof VenvConfig.Type;
  */
 export const MarimoConfig = Schema.Struct({
   ai: Schema.optional(AiConfig),
+  cache: Schema.optional(CacheConfig),
   completion: CompletionConfig,
   datasources: Schema.optional(DatasourcesConfig),
   diagnostics: Schema.optional(DiagnosticsConfig),
   display: DisplayConfig,
   experimental: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  file_browser: Schema.optional(FileBrowserConfig),
   formatting: FormattingConfig,
   keymap: KeymapConfig,
   language_servers: Schema.optional(LanguageServersConfig),
@@ -1518,6 +1586,7 @@ export const MarimoConfig = Schema.Struct({
   save: SaveConfig,
   server: ServerConfig,
   sharing: Schema.optional(SharingConfig),
+  signing: Schema.optional(SigningConfig),
   snippets: Schema.optional(SnippetsConfig),
   venv: Schema.optional(VenvConfig),
 }).annotate({ identifier: "MarimoConfig" });
