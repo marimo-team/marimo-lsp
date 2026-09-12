@@ -177,6 +177,8 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
       ) => usage("uv_missing", { binType }),
       uvInstallClicked: usage("uv_install_clicked"),
       binaryResolved,
+      binaryUnresolved: (server: "ruff" | "ty") =>
+        usage("lsp_binary_unresolved", { server }),
       lspModeSelected,
       lspStarted,
       errorLogger,
@@ -199,6 +201,7 @@ function disabledTelemetry() {
     ) => Effect.void,
     uvInstallClicked: Effect.void,
     binaryResolved: (_binary: ResolvedBinary) => Effect.void,
+    binaryUnresolved: (_server: "ruff" | "ty") => Effect.void,
     lspModeSelected: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     lspStarted: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     errorLogger: Logger.make<unknown, void>(() => undefined),
