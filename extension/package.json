@@ -112,7 +112,7 @@
         "marimo.uv.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.",
+          "markdownDescription": "Path to a `uv` 0.12.0 or newer binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.",
           "scope": "resource"
         },
         "marimo.disableUvIntegration": {
