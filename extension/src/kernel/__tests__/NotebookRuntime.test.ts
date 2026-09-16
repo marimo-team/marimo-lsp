@@ -158,6 +158,60 @@ it.effect(
 );
 
 it.effect(
+  "continues handling renderer messages after a pre-kernel interaction",
+  Effect.fn(function* () {
+    const updateSent =
+      yield* Deferred.make<
+        Extract<TestCommand, { readonly kind: "update-ui-element" }>
+      >();
+    const { layer, vscode } = yield* makeTestLayer({
+      send: (request) =>
+        request.kind === "update-ui-element"
+          ? Deferred.succeed(updateSent, request).pipe(Effect.as(null))
+          : Effect.succeed(null),
+    });
+
+    yield* Effect.gen(function* () {
+      const runtime = yield* NotebookRuntime;
+      const editor = TestVsCode.makeNotebookEditor(
+        NodePath.join(process.cwd(), "notebook.py"),
+      );
+      yield* vscode.openNotebook(editor.notebook);
+      yield* vscode.rendererMessaging.ready;
+
+      yield* vscode.rendererMessaging.send(editor, {
+        command: "update-ui-element",
+        params: { objectIds: ["slider"], values: [1] },
+      });
+      yield* vscode.rendererMessaging.send(editor, {
+        command: "copy-image",
+        params: {
+          src: "data:image/png;base64,",
+          requestId: "renderer-still-alive",
+        },
+      });
+      expect(yield* vscode.rendererMessaging.receive).toMatchObject({
+        op: "image-data-result",
+        requestId: "renderer-still-alive",
+      });
+
+      const document = yield* runtime.forDocument(editor.notebook);
+      yield* document.execute({ cells: [] }, "/usr/bin/python");
+
+      yield* vscode.rendererMessaging.send(editor, {
+        command: "update-ui-element",
+        params: { objectIds: ["slider"], values: [2] },
+      });
+      expect(yield* Deferred.await(updateSent)).toMatchObject({
+        kind: "update-ui-element",
+        objectIds: ["slider"],
+        values: [2],
+      });
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
   "keeps captured kernel identity authoritative over request fields",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);

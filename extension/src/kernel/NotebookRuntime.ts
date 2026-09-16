@@ -882,7 +882,24 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 default:
                   unreachable(message, "Unknown message from frontend");
               }
-            }),
+            }).pipe(
+              // Restored outputs can publish before their kernel starts.
+              // Recover per message so one interaction cannot end this stream.
+              Effect.catchTag("NoActiveKernelError", () =>
+                Effect.logDebug(
+                  "Ignored renderer message without an active kernel",
+                ),
+              ),
+              Effect.catchCause((cause) =>
+                Effect.logError("Failed to process renderer message").pipe(
+                  Effect.annotateLogs({ cause }),
+                ),
+              ),
+              Effect.annotateLogs({
+                notebookUri: editor.notebook.uri.toString(),
+                "renderer.command": message.command,
+              }),
+            ),
           ),
         ),
       );

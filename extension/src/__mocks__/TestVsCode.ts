@@ -4,11 +4,13 @@ import * as NodePath from "node:path";
 import {
   Context,
   Data,
+  Deferred,
   Effect,
   HashSet,
   Layer,
   Option,
   PubSub,
+  Queue,
   Ref,
   Result,
   Stream,
@@ -29,6 +31,7 @@ import {
   Window,
   Workspace,
 } from "../platform/VsCode.ts";
+import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;
@@ -1547,6 +1550,14 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     notebook: vscode.NotebookDocument,
     selected: boolean,
   ) => Effect.Effect<void>;
+  readonly rendererMessaging: {
+    readonly ready: Effect.Effect<void>;
+    readonly send: (
+      editor: vscode.NotebookEditor,
+      message: RendererCommand,
+    ) => Effect.Effect<void>;
+    readonly receive: Effect.Effect<RendererReceiveMessage>;
+  };
   readonly setActiveTextEditor: (
     editor: Option.Option<vscode.TextEditor>,
   ) => Effect.Effect<void>;
@@ -1695,6 +1706,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         selected: boolean;
       }>
     >();
+    const rendererMessages = new EventEmitter<{
+      editor: vscode.NotebookEditor;
+      message: RendererCommand;
+    }>();
+    const rendererMessagingReady = yield* Deferred.make<void>();
+    const rendererReplies = yield* Queue.unbounded<RendererReceiveMessage>();
     const serializers = yield* Ref.make(
       HashSet.empty<{
         notebookType: string;
@@ -2167,13 +2184,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           );
         },
         createRendererMessaging() {
-          const emitter = new EventEmitter<{
-            editor: vscode.NotebookEditor;
-            message: unknown;
-          }>();
           return Effect.succeed({
-            postMessage: () => Promise.resolve(true),
-            onDidReceiveMessage: emitter.event,
+            postMessage(message: RendererReceiveMessage) {
+              Effect.runSyncWith(context)(
+                Queue.offer(rendererReplies, message),
+              );
+              return Promise.resolve(true);
+            },
+            onDidReceiveMessage(listener) {
+              const disposable = rendererMessages.event(listener);
+              Effect.runSyncWith(context)(
+                Deferred.succeed(rendererMessagingReady, undefined),
+              );
+              return disposable;
+            },
           });
         },
         registerNotebookCellStatusBarItemProvider(
@@ -2402,6 +2426,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           }
           emitter.fire({ notebook, selected });
         }),
+      rendererMessaging: {
+        ready: Deferred.await(rendererMessagingReady),
+        send: (editor, message) =>
+          Effect.sync(() => rendererMessages.fire({ editor, message })),
+        receive: Queue.take(rendererReplies),
+      },
       setActiveTextEditor: (editor) =>
         Effect.gen(function* () {
           yield* SubscriptionRef.set(activeTextEditor, editor);
