@@ -1797,6 +1797,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             };
           });
         },
+        registerUriHandler() {
+          return Effect.acquireRelease(Effect.void, () => Effect.void);
+        },
         getVisibleNotebookEditors: SubscriptionRef.get(visibleNotebookEditors),
         getVisibleTextEditors: SubscriptionRef.get(visibleTextEditors),
         getActiveNotebookEditor: SubscriptionRef.get(activeNotebookEditor),
@@ -1960,6 +1963,22 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           writeFile() {
             return Effect.succeed(true);
           },
+          stat(uri: vscode.Uri) {
+            const entry = options.fileSystem?.get(uri.toString());
+            if (entry === undefined || entry instanceof Error) {
+              return Effect.fail(
+                new FileSystemError({
+                  cause: entry ?? new Error(`ENOENT: ${uri.toString()}`),
+                }),
+              );
+            }
+            return Effect.succeed({
+              type: 1,
+              ctime: 0,
+              mtime: 0,
+              size: entry.byteLength,
+            });
+          },
         },
         getNotebookDocuments: Effect.map(Ref.get(notebookDocuments), (docs) =>
           Array.from(docs),
@@ -1996,6 +2015,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           );
         },
         notebookDocumentOpened: Stream.fromPubSub(documentOpened),
+        notebookDocumentSaved: Stream.never,
         notebookDocumentChanges: Stream.fromPubSub(documentChanges),
         notebookDocumentClosed: Stream.fromPubSub(documentClosed),
         // Mirrors the real implementation's guarantee: the subscription is
@@ -2017,6 +2037,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         fileRenames: Stream.never,
         fileDeletes: Stream.never,
         textDocumentChanges: Stream.never,
+        workspaceFoldersChanges: Stream.never,
         createFileSystemWatcher() {
           return Stream.never;
         },
@@ -2059,6 +2080,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         appRoot: "/mocks",
         appHost: "desktop",
         machineId: "mock-machine-id",
+        remoteName: undefined,
+        uriScheme: "vscode",
         createTelemetryLogger(sender, loggerOptions) {
           const withCommon = (data: Record<string, unknown> = {}) => ({
             ...data,
@@ -2080,6 +2103,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             },
             dispose() {},
           }));
+        },
+        asExternalUri(target) {
+          return Effect.succeed(target);
         },
         openExternal() {
           return Effect.succeed(true);

@@ -415,6 +415,7 @@ it.effect(
     const message = {
       notebookUri: notebook,
       sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+      scratchpadRunId: null,
       notification: { op: "completed-run", run_id: null },
     } as const;
     const [first, second] = yield* Effect.all(
@@ -494,6 +495,7 @@ it.effect(
     const kernelSnapshot: KernelNotification = {
       notebookUri: notebook,
       sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+      scratchpadRunId: null,
       notification: { op: "variables", variables: [] },
     };
 

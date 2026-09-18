@@ -423,6 +423,21 @@ class ExecuteScratchpad(
     run_id: str | None = None
 
 
+class ExecuteSessionScratchpad(
+    msgspec.Struct,
+    tag="execute-session-scratchpad",
+    tag_field="kind",
+    rename="camel",
+    forbid_unknown_fields=True,
+):
+    """Execute transient code in one exact retained kernel session."""
+
+    notebook_uri: typing.Annotated[NotebookUri, _brand("NotebookUri")]
+    kernel_session_id: typing.Annotated[KernelSessionId, _brand("KernelSessionId")]
+    code: str
+    run_id: str | None = None
+
+
 class ListPackages(
     msgspec.Struct,
     tag="list-packages",
@@ -579,6 +594,7 @@ type Command = (
     | ListSessions
     | ShutdownAllSessions
     | ExecuteScratchpad
+    | ExecuteSessionScratchpad
     | ListPackages
     | GetDependencyTree
     | PrintNotebook

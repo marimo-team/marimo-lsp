@@ -6,12 +6,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import lsprotocol.types as lsp
 import msgspec
 import pytest
 from inline_snapshot import snapshot
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
-from marimo._types.ids import RequestId, SessionId
+from marimo._messaging.cell_output import CellChannel, CellOutput
+from marimo._messaging.notification import CellNotification
+from marimo._types.ids import CellId_t, RequestId, SessionId
 
 from marimo_lsp import protocol
 from marimo_lsp.api import (
@@ -21,6 +24,7 @@ from marimo_lsp.api import (
     KernelSessionRequiredError,
     delete_cell,
     execute_scratch,
+    execute_session_scratch,
     export_as_markdown,
     function_call_request,
     get_configuration,
@@ -35,12 +39,14 @@ from marimo_lsp.api import (
     set_ui_element_value,
     update_configuration,
 )
+from marimo_lsp.app_file_manager import LspAppFileManager
 from marimo_lsp.app_options import app_options_from_source, merge_app_options
 from marimo_lsp.models import (
     ListSQLSchemasRequest,
     ListSQLTablesRequest,
 )
 from marimo_lsp.notebook_source import _restore_unknown_app_options
+from marimo_lsp.sessions import Session
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -123,6 +129,128 @@ async def test_execute_scratch_claims_idle_session_before_dispatch() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("caller", ["notebook", "session", "detached-session"])
+async def test_scratchpad_dispatch_captures_unsaved_edits_and_outputs(
+    caller: str,
+) -> None:
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    cell_uri = f"{NOTEBOOK_URI}#cell-1"
+    cell = lsp.NotebookCell(
+        kind=lsp.NotebookCellKind.Code,
+        document=cell_uri,
+        metadata=cast("lsp.LSPObject", {"marimoRuntime": {"stableId": "cell-1"}}),
+    )
+    server = MagicMock()
+    server.workspace.notebook_documents = {
+        NOTEBOOK_URI: lsp.NotebookDocument(
+            uri=NOTEBOOK_URI, notebook_type="marimo-notebook", version=1, cells=[cell]
+        )
+    }
+    source = MagicMock(source="answer = 0", language_id="python")
+    server.workspace.text_documents = {cell_uri: source}
+    kernel = MagicMock()
+    config_manager = MagicMock()
+    config_manager.get_config.return_value = DEFAULT_CONFIG
+    session = Session(
+        session_id=session_id,
+        notebook_uri=NOTEBOOK_URI,
+        server=server,
+        kernel=kernel,
+        app_file_manager=LspAppFileManager(server=server, notebook_uri=NOTEBOOK_URI),
+        config_manager=config_manager,
+    )
+    # An unsaved source and metadata edit reaches the session through the
+    # same sync method used by notebookDocument/didChange.
+    source.source = "answer = 42"
+    cell.metadata = cast(
+        "lsp.LSPObject",
+        {
+            "marimoRuntime": {"stableId": "cell-1"},
+            "marimo": {"name": "answer", "options": {"disabled": True}},
+        },
+    )
+    session.sync(server.workspace)
+    session.session_view.add_notification(
+        CellNotification(
+            cell_id=CellId_t("cell-1"),
+            status="idle",
+            output=CellOutput(
+                channel=CellChannel.OUTPUT,
+                mimetype="text/plain",
+                data="previous output",
+                timestamp=0,
+            ),
+        )
+    )
+    if caller == "detached-session":
+        session.detach()
+        server.workspace.notebook_documents.clear()
+        server.workspace.text_documents.clear()
+    sessions = MagicMock()
+    sessions.start = AsyncMock(return_value=session)
+    sessions.get.return_value = session
+    sessions.take_scratchpad_cancellation.return_value = False
+
+    context = ApiContext(ls=server, sessions=sessions)
+    if caller == "notebook":
+        await execute_scratch(
+            context,
+            protocol.ExecuteScratchpad(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                executable="/usr/bin/python",
+                working_directory="/workspace",
+                code="print('retained')",
+                run_id="run-1",
+            ),
+        )
+    else:
+        await execute_session_scratch(
+            context,
+            protocol.ExecuteSessionScratchpad(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(session_id)),
+                code="print('retained')",
+                run_id="run-1",
+            ),
+        )
+
+    command = kernel.send.call_args.args[0]
+    assert sessions.start.called is (caller == "notebook")
+    assert msgspec.to_builtins(command) == snapshot(
+        {
+            "type": "execute-scratchpad",
+            "code": "print('retained')",
+            "request": None,
+            "notebookCells": (
+                {
+                    "id": "cell-1",
+                    "code": "answer = 42",
+                    "name": "answer",
+                    "config": {
+                        "column": None,
+                        "disabled": True,
+                        "hide_code": False,
+                    },
+                    "version": 0,
+                },
+            ),
+            "cellOutputs": {
+                "output": {
+                    "cell-1": {
+                        "channel": "output",
+                        "mimetype": "text/plain",
+                        "data": "previous output",
+                        "timestamp": 0,
+                    },
+                },
+                "console_outputs": {},
+            },
+            "runId": "run-1",
+        }
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> None:
     sessions = MagicMock()
 
@@ -186,6 +314,15 @@ LIVE_SESSION_ID = SessionId("00000000-0000-4000-8000-000000000002")
 @pytest.mark.parametrize(
     ("handler", "command"),
     [
+        (
+            execute_session_scratch,
+            protocol.ExecuteSessionScratchpad(
+                notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+                kernel_session_id=protocol.KernelSessionId(str(STALE_SESSION_ID)),
+                code="print('stale')",
+                run_id="run-1",
+            ),
+        ),
         (
             set_ui_element_value,
             protocol.UpdateUiElement(
@@ -254,6 +391,7 @@ async def test_kernel_commands_reject_a_replaced_kernel_session(
     session = MagicMock(session_id=LIVE_SESSION_ID)
     sessions = MagicMock()
     sessions.get.return_value = session
+    sessions.take_scratchpad_cancellation.return_value = False
 
     with pytest.raises(KernelSessionMismatchError):
         await handler(

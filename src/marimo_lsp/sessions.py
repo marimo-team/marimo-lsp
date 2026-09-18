@@ -105,7 +105,7 @@ class _OperationSink:
         self._session_id = session_id
         self._attached = True
         self._activated = activated
-        self._pending: list[NotificationMessage] = []
+        self._pending: list[tuple[NotificationMessage, str | None]] = []
 
     @property
     def attached(self) -> bool:
@@ -130,11 +130,11 @@ class _OperationSink:
             return
         pending = self._pending
         self._pending = []
-        for operation in pending:
+        for operation, scratchpad_run_id in pending:
             # Match notify(): one undeliverable notification must not fail
             # the start or restart that is releasing the backlog.
             try:
-                self._forward(operation)
+                self._forward(operation, scratchpad_run_id)
             except Exception:
                 logger.exception(
                     "Dropped pending kernel notification (op=%s)", operation.name
@@ -144,16 +144,22 @@ class _OperationSink:
         """Route future operations to a renamed notebook."""
         self._notebook_uri = notebook_uri
 
-    def notify(self, message: KernelMessage) -> None:
-        if not self._attached:
+    def notify(
+        self,
+        message: KernelMessage,
+        *,
+        force: bool = False,
+        scratchpad_run_id: str | None = None,
+    ) -> None:
+        if not self._attached and not force:
             return
 
         try:
             notification = deserialize_kernel_message(message)
             if not self._activated:
-                self._pending.append(notification)
+                self._pending.append((notification, scratchpad_run_id))
                 return
-            self._forward(notification)
+            self._forward(notification, scratchpad_run_id)
         except Exception:
             # A dropped message is invisible to the client; name the op so a
             # kernel emitting notifications this build cannot decode (e.g. a
@@ -163,7 +169,9 @@ class _OperationSink:
                 _notification_name(message),
             )
 
-    def _forward(self, notification: NotificationMessage) -> None:
+    def _forward(
+        self, notification: NotificationMessage, scratchpad_run_id: str | None
+    ) -> None:
         self._server.protocol.notify(
             "marimo/kernelNotification",
             asdict(
@@ -171,6 +179,7 @@ class _OperationSink:
                     notebook_uri=self._notebook_uri,
                     session_id=self._session_id,
                     notification=notification,
+                    scratchpad_run_id=scratchpad_run_id,
                 )
             ),
         )
@@ -215,6 +224,7 @@ class Session:
         self._idle.set()
         self._scratchpad_running = False
         self._scratchpad_run_id: str | None = None
+        self._scratchpad_forward_operations = False
         self._on_change = on_change or (lambda: None)
         self._on_kernel_failure: typing.Callable[[Session, str], None] = (
             lambda _session, _error: None
@@ -345,9 +355,16 @@ class Session:
         """Record and forward an operation received from the kernel."""
         if self._closed:
             return
+        with self._state_lock:
+            # Capture before completion clears the claim so detached clients
+            # receive the terminal notification too.
+            force_forward = self._scratchpad_forward_operations
+            scratchpad_run_id = self._scratchpad_run_id
         self.session_view.add_raw_notification(message)
         kernel_error = self._update_status(message)
-        self._operation_sink.notify(message)
+        self._operation_sink.notify(
+            message, force=force_forward, scratchpad_run_id=scratchpad_run_id
+        )
         if kernel_error is not None:
             self._on_kernel_failure(self, kernel_error)
 
@@ -386,6 +403,7 @@ class Session:
                     return
                 self._scratchpad_running = False
                 self._scratchpad_run_id = None
+                self._scratchpad_forward_operations = False
             if self._status == "idle":
                 return
             self._status = "idle"
@@ -402,13 +420,19 @@ class Session:
         with self._state_lock:
             return not self._closed
 
-    def try_start_scratchpad(self, run_id: str | None) -> bool:
+    def try_start_scratchpad(
+        self,
+        run_id: str | None,
+        *,
+        forward_operations: bool = False,
+    ) -> bool:
         """Claim an idle session for one scratchpad run without yielding."""
         with self._state_lock:
             if self._closed or self._status != "idle":
                 return False
             self._scratchpad_running = True
             self._scratchpad_run_id = run_id
+            self._scratchpad_forward_operations = forward_operations
             self._status = "running"
             self._idle.clear()
         self._on_change()
@@ -433,6 +457,7 @@ class Session:
                 executable=self.executable,
                 working_directory=self.working_directory,
                 started_at=self.started_at,
+                marimo_version=self._kernel.marimo_version,
                 status=self._status,
                 attached=self.attached,
             )

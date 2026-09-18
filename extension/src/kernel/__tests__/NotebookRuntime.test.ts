@@ -50,6 +50,7 @@ const makeTestLayer = Effect.fn(function* (
       executable: string;
       workingDirectory: string;
       startedAt: number;
+      marimoVersion: string | null;
       status: "idle";
       attached: boolean;
     }
@@ -74,6 +75,7 @@ const makeTestLayer = Effect.fn(function* (
               executable: request.executable,
               workingDirectory: request.workingDirectory,
               startedAt: 1,
+              marimoVersion: "0.24.0",
               status: "idle",
               attached: true,
             });
@@ -669,6 +671,7 @@ it.effect(
         executable: string;
         workingDirectory: string;
         startedAt: number;
+        marimoVersion: string | null;
         status: "idle";
         attached: boolean;
       }>;
@@ -692,6 +695,7 @@ it.effect(
             executable: "/usr/bin/python",
             workingDirectory: "/test",
             startedAt: 1,
+            marimoVersion: "0.24.0",
             status: "idle",
             attached: true,
           },

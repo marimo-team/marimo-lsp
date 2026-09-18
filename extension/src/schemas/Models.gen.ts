@@ -338,6 +338,23 @@ export const ExecuteScratchpad = Schema.Struct({
 export type ExecuteScratchpad = typeof ExecuteScratchpad.Type;
 
 /**
+ * Execute transient code in one exact retained kernel session.
+ */
+export const ExecuteSessionScratchpad = Schema.Struct({
+  kind: Schema.Literal("execute-session-scratchpad"),
+  notebookUri: NotebookUriFromString,
+  kernelSessionId: KernelSessionIdFromString,
+  code: Schema.String,
+  runId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
+}).annotate({
+  identifier: "ExecuteSessionScratchpad",
+  parseOptions: { onExcessProperty: "error" },
+});
+export type ExecuteSessionScratchpad = typeof ExecuteSessionScratchpad.Type;
+
+/**
  * A concrete environment identified by its Python executable.
  */
 export const VenvSource = Schema.Struct({
@@ -598,6 +615,7 @@ export const Command = Schema.Union([
   ListSessions,
   ShutdownAllSessions,
   ExecuteScratchpad,
+  ExecuteSessionScratchpad,
   ListPackages,
   GetDependencyTree,
   PrintNotebook,
@@ -619,6 +637,9 @@ export const KernelNotification = Schema.Struct({
   notebookUri: NotebookIdFromString,
   sessionId: KernelSessionIdFromString,
   notification: MarimoNotification,
+  scratchpadRunId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => null)),
+  ),
 }).annotate({ identifier: "KernelNotification" });
 export type KernelNotification = typeof KernelNotification.Type;
 
@@ -858,6 +879,7 @@ export const SessionInfo = Schema.Struct({
   executable: Schema.String,
   workingDirectory: Schema.String,
   startedAt: Schema.Number,
+  marimoVersion: Schema.NullOr(Schema.String),
   status: Schema.Literals(["idle", "running"]),
   attached: Schema.Boolean,
 }).annotate({ identifier: "SessionInfo" });
@@ -1751,6 +1773,15 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
       kind: "execute-scratchpad",
       ...params,
     } satisfies typeof ExecuteScratchpad.Encoded;
+    return dispatch(send, command, Schema.Null);
+  },
+  executeSessionScratchpad: (
+    params: Omit<typeof ExecuteSessionScratchpad.Encoded, "kind">,
+  ) => {
+    const command = {
+      kind: "execute-session-scratchpad",
+      ...params,
+    } satisfies typeof ExecuteSessionScratchpad.Encoded;
     return dispatch(send, command, Schema.Null);
   },
   listPackages: (params: Omit<typeof ListPackages.Encoded, "kind">) => {

@@ -103,6 +103,7 @@ const withTestCtx = Effect.fn(function* (
             next.set(uri.toString(), new TextDecoder().decode(contents));
             return next;
           }),
+        stat: () => Effect.succeed({ type: 1, ctime: 0, mtime: 0, size: 0 }),
       },
     },
   });
@@ -225,6 +226,7 @@ describe("AutoExport", () => {
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
           sessionId: SESSION_ID,
+          scratchpadRunId: null,
           notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
@@ -279,6 +281,7 @@ describe("AutoExport", () => {
         yield* PubSub.publish(ctx.operations, {
           notebookUri: ctx.notebook.id,
           sessionId: SESSION_ID,
+          scratchpadRunId: null,
           notification: { op: "completed-run", run_id: null },
         });
         yield* TestClock.adjust(AUTO_EXPORT_INTERVAL);
