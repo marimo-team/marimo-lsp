@@ -1,4 +1,5 @@
 {
+  "extension.open": { "discoverable": true },
   "notebook.cell.collapseCellInput": { "discoverable": true },
   "notebook.cell.execute": { "discoverable": true },
   "notebook.cell.expandCellInput": { "discoverable": true },

@@ -17,7 +17,8 @@ export class ExtensionContext extends Context.Service<
   Pick<
     vscode.ExtensionContext,
     "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
-  >
+  > &
+    Partial<Pick<vscode.ExtensionContext, "extensionMode">>
 >()("ExtensionContext") {}
 
 /**

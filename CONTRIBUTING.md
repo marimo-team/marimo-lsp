@@ -6,7 +6,7 @@
 
 ## Development
 
-This project requires [uv](https://docs.astral.sh/uv/),
+Repository development requires [uv](https://docs.astral.sh/uv/),
 [pnpm](https://pnpm.io/), and [just](https://just.systems/).
 
 **Quickstart**
@@ -33,12 +33,20 @@ code .
 > ```sh
 > cd ../marimo
 > git checkout $(cd ../marimo-lsp && uv run --no-project python -m scripts.marimo_version show)
+> pnpm install --frozen-lockfile
+> pnpm exec turbo run build --filter='./packages/*'
 > ```
+>
+> Repeat the install and package build after switching marimo versions.
 >
 > CI derives the same source tag from the exact dependency. To update the Bundled
 > marimo, run `uv run --no-project python -m scripts.marimo_version update`, or pass
 > an exact release as the final argument. You may check out a different sibling ref
 > temporarily when developing against unreleased marimo changes.
+
+F5 sets `MARIMO_REPLAY_TY_PROMPT=1` to replay the missing-ty warning without
+saving dismissals. Reload to repeat; remove the variable from
+`.vscode/launch.json` to test normal persistence. ty must be unavailable.
 
 ### Pre-commit Hooks
 

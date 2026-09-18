@@ -22,7 +22,7 @@ export const TestTyLanguageServerLive = Layer.effect(
       getHealthStatus: Effect.succeed(
         TyLanguageServerStatus.Running({
           serverVersion: "0.0.0-test",
-          binarySource: BinarySource.UvInstalled({ path: "/test/ty" }),
+          binarySource: BinarySource.UserConfigured({ path: "/test/ty" }),
           pythonEnvironment: Option.none(),
         }),
       ),

@@ -1,11 +1,9 @@
-import * as NodeChildProcess from "node:child_process";
 import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
-import * as NodeProcess from "node:process";
 
 import { assert, describe, expect, it } from "@effect/vitest";
-import { Context, Effect, Layer, Option, Result } from "effect";
+import { Context, Effect, Layer, Result } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -14,7 +12,6 @@ import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
 const timeout = 30_000;
-const isWindows = NodeProcess.platform === "win32";
 
 class TmpDir extends Context.Service<TmpDir>()("TmpDir", {
   make: Effect.gen(function* () {
@@ -231,165 +228,5 @@ print("This script has no PEP 723 metadata")
     );
 
     expect(envPath).toBe(NodePath.resolve(".cache/uv/environments-v2/test"));
-  });
-
-  describe("ensureLanguageServerBinaryInstalled", () => {
-    const server = { name: "ruff", version: "0.11.4" } as const;
-
-    const singleStrategy = <T extends string>(initial: T) => ({
-      initial,
-      next: () => Option.none(),
-    });
-
-    it.layer(Layer.fresh(UvLive))((it) => {
-      it.effect(
-        "installs with default strategy",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-          const targetPath = NodePath.join(tmpdir.path, "default");
-
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            server,
-            { targetPath, policy: singleStrategy("default") },
-          );
-
-          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
-        }),
-        { timeout },
-      );
-
-      it.effect(
-        "installs with native-tls strategy",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-          const targetPath = NodePath.join(tmpdir.path, "native-tls");
-
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            server,
-            { targetPath, policy: singleStrategy("native-tls") },
-          );
-
-          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
-        }),
-        { timeout },
-      );
-
-      it.effect(
-        "installs with offline strategy",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-          const targetPath = NodePath.join(tmpdir.path, "offline");
-
-          // First install to cache, then test offline
-          yield* uv.ensureLanguageServerBinaryInstalled(server, {
-            targetPath: NodePath.join(tmpdir.path, "cache-warmup"),
-            policy: singleStrategy("default"),
-          });
-
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            server,
-            { targetPath, policy: singleStrategy("offline") },
-          );
-
-          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
-        }),
-        { timeout },
-      );
-
-      // Simulate a broken .venv in the parent directory (the scenario
-      // from VSCODE-MARIMO-2KT where a wrong-arch python.exe causes
-      // uv to fail with OS error 193 on Windows).
-      it.effect.skipIf(isWindows)(
-        "installs even when a broken .venv exists in a parent directory (unix)",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-
-          const brokenVenv = NodePath.join(tmpdir.path, ".venv");
-          NodeFs.mkdirSync(NodePath.join(brokenVenv, "bin"), {
-            recursive: true,
-          });
-          NodeFs.writeFileSync(
-            NodePath.join(brokenVenv, "bin", "python3"),
-            "not a real python",
-            { mode: 0o755 },
-          );
-          NodeFs.writeFileSync(
-            NodePath.join(brokenVenv, "pyvenv.cfg"),
-            "home = /nonexistent\n",
-          );
-
-          const targetPath = NodePath.join(tmpdir.path, "libs");
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            server,
-            { targetPath, policy: singleStrategy("default") },
-          );
-          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
-        }),
-        { timeout },
-      );
-
-      it.effect.skipIf(!isWindows)(
-        "installs even when a broken .venv exists in a parent directory (windows)",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-
-          const brokenVenv = NodePath.join(tmpdir.path, ".venv");
-          NodeFs.mkdirSync(NodePath.join(brokenVenv, "Scripts"), {
-            recursive: true,
-          });
-          NodeFs.writeFileSync(
-            NodePath.join(brokenVenv, "Scripts", "python.exe"),
-            "not a real python",
-          );
-          NodeFs.writeFileSync(
-            NodePath.join(brokenVenv, "pyvenv.cfg"),
-            "home = /nonexistent\n",
-          );
-
-          const targetPath = NodePath.join(tmpdir.path, "libs");
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            server,
-            { targetPath, policy: singleStrategy("default") },
-          );
-          assert(NodeFs.existsSync(binPath), `Expected binary at ${binPath}`);
-        }),
-        { timeout },
-      );
-
-      it.effect(
-        "reinstalling with a new version replaces the binary",
-        Effect.fn(function* () {
-          const uv = yield* Uv;
-          const tmpdir = yield* TmpDir;
-          const targetPath = NodePath.join(tmpdir.path, "upgrade");
-
-          // Install old version first
-          const oldServer = { name: "ruff", version: "0.11.4" } as const;
-          yield* uv.ensureLanguageServerBinaryInstalled(oldServer, {
-            targetPath,
-            policy: singleStrategy("default"),
-          });
-
-          // Install new version over it
-          const newServer = { name: "ruff", version: "0.11.5" } as const;
-          const binPath = yield* uv.ensureLanguageServerBinaryInstalled(
-            newServer,
-            { targetPath, policy: singleStrategy("default") },
-          );
-
-          const output = NodeChildProcess.execSync(`${binPath} --version`, {
-            encoding: "utf8",
-          });
-
-          expect(output.trim()).toMatchInlineSnapshot(`"ruff 0.11.5"`);
-        }),
-        { timeout },
-      );
-    });
   });
 });

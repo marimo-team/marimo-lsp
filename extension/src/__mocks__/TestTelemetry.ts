@@ -6,6 +6,7 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
  * Test implementation of Telemetry that does nothing
  */
 export const TestTelemetryLive = Layer.succeed(Telemetry, {
+  tySetup: () => Effect.void,
   commandExecuted: () => Effect.void,
   notebookCreated: Effect.void,
   notebookOpened: () => Effect.void,
@@ -13,6 +14,7 @@ export const TestTelemetryLive = Layer.succeed(Telemetry, {
   uvMissing: () => Effect.void,
   uvInstallClicked: Effect.void,
   binaryResolved: () => Effect.void,
+  binaryUnresolved: () => Effect.void,
   lspModeSelected: () => Effect.void,
   lspStarted: () => Effect.void,
   errorLogger: Logger.make(() => undefined),

@@ -22,7 +22,7 @@ export const TestRuffLanguageServerLive = Layer.effect(
       getHealthStatus: Effect.succeed(
         RuffLanguageServerStatus.Running({
           serverVersion: "0.0.0-test",
-          binarySource: BinarySource.UvInstalled({ path: "/test/ruff" }),
+          binarySource: BinarySource.UserConfigured({ path: "/test/ruff" }),
         }),
       ),
     };

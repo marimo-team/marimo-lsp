@@ -1,11 +1,16 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Option, Ref } from "effect";
+import { Effect, Layer, Option, Ref } from "effect";
+import { afterEach, vi } from "vite-plus/test";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import { Memento } from "../../__mocks__/TestExtensionContext.ts";
+import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
+import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
+import { ExtensionContext, Storage } from "../../platform/Storage.ts";
+import { Telemetry } from "../../telemetry/Telemetry.ts";
 import {
-  makeTyInstallFailureNotifier,
-  ManagedTyInstallPreviouslyFailed,
+  makeTyMissingNotifier,
+  TyBinaryNotFound,
 } from "../TyLanguageServer.ts";
 
 const selectedItem = <T extends string>(
@@ -13,28 +18,81 @@ const selectedItem = <T extends string>(
   item: string,
 ) => Option.fromNullishOr(options.items?.find((value) => value === item));
 
-it("keeps recovery instructions in persisted failure diagnostics", () => {
-  const error = new ManagedTyInstallPreviouslyFailed({
-    extensionVersion: "0.16.2",
-    serverVersion: "0.0.63",
-    details: "Failed to install ty@0.0.63",
-  });
+/**
+ * A storage layer backed by its own mementos, so a dismissal recorded by one
+ * test can't leak into the next.
+ */
+const freshStorage = (globalState = new Memento()) =>
+  Storage.layer.pipe(
+    Layer.provide(
+      Layer.succeed(ExtensionContext, {
+        globalState,
+        workspaceState: new Memento(),
+        extensionUri: Uri.parse("file:///test/extension/path", true),
+        globalStorageUri: Uri.parse("file://test/extension/libs", true),
+      }),
+    ),
+  );
+
+afterEach(() => vi.unstubAllEnvs());
+
+const recordTelemetry = Effect.gen(function* () {
+  const base = yield* Telemetry.pipe(Effect.provide(TestTelemetryLive));
+  const events: string[] = [];
+  const record = (event: string) =>
+    Effect.sync(() => {
+      events.push(event);
+    });
+  return {
+    events,
+    layer: Layer.succeed(Telemetry, {
+      ...base,
+      tySetup: record,
+    }),
+  };
+});
+
+it("points at the ty extension and the path setting when no binary is found", () => {
+  const error = new TyBinaryNotFound({ serverVersion: "0.0.63" });
 
   expect(error.format()).toBe(
     [
-      "Failed to install ty@0.0.63",
-      "Managed installation will be retried after the marimo extension is updated.",
-      "To recover now, install the official ty extension (astral-sh.ty) or configure marimo.ty.path, then reload VS Code.",
-      "For full installation output, open the marimo (uv) output channel.",
+      "No ty 0.0.63 or newer binary was found.",
+      "Python completions and type diagnostics are unavailable. You can still edit and run notebooks.",
+      "To enable these features, install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n"),
   );
 });
 
 it.effect(
-  "shows the managed installation warning once and can open uv logs",
+  "warns about unavailable Python language features at most once per session",
   Effect.fn(function* () {
+    const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
+    const vscode = yield* TestVsCode.make({
+      window: {
+        showWarningMessage: (message) =>
+          Ref.update(prompts, (all) => [...all, message]).pipe(
+            Effect.as(Option.none()),
+          ),
+      },
+    });
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([vscode.layer, freshStorage()]),
+    );
+
+    yield* Effect.all([notify, notify], { concurrency: "unbounded" });
+
+    expect(yield* Ref.get(prompts)).toEqual([
+      "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Install the recommended ty extension to enable them. You can still edit and run notebooks.",
+    ]);
+  }),
+);
+
+it.effect(
+  "never prompts again once the user dismisses it",
+  Effect.fn(function* () {
+    const telemetry = yield* recordTelemetry;
     const prompts = yield* Ref.make(0);
-    let channelShows = 0;
     const vscode = yield* TestVsCode.make({
       window: {
         showWarningMessage: <T extends string>(
@@ -42,27 +100,74 @@ it.effect(
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
         ) =>
           Ref.update(prompts, (count) => count + 1).pipe(
-            Effect.as(selectedItem(options, "Open uv Logs")),
+            Effect.as(selectedItem(options, "Don't Show Again")),
           ),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show: () => {
-        channelShows += 1;
-      },
-    }).pipe(Effect.provide(vscode.layer));
+    const layers = Layer.mergeAll(
+      vscode.layer,
+      freshStorage(),
+      telemetry.layer,
+    );
 
-    yield* Effect.all([notify, notify], { concurrency: "unbounded" });
+    // A fresh notifier stands in for a fresh session; the dismissal has to
+    // outlive both of them.
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
 
     expect(yield* Ref.get(prompts)).toBe(1);
-    expect(channelShows).toBe(1);
+    expect(telemetry.events).toEqual([
+      "prompt_shown",
+      "dont_show_again",
+      "prompt_suppressed",
+    ]);
+  }),
+);
+
+it.effect(
+  "replays saved dismissals without writing state during local development",
+  Effect.fn(function* () {
+    vi.stubEnv("MARIMO_REPLAY_TY_PROMPT", "1");
+    const globalState = new Memento();
+    yield* Effect.promise(() =>
+      globalState.update("languageServer.ty.installPromptDismissed", true),
+    );
+    const writes = vi.spyOn(globalState, "update");
+    const prompts = yield* Ref.make(0);
+    const vscode = yield* TestVsCode.make({
+      window: {
+        showWarningMessage: <T extends string>(
+          _message: string,
+          options: vscode.MessageOptions & { items?: readonly T[] } = {},
+        ) =>
+          Ref.update(prompts, (count) => count + 1).pipe(
+            Effect.as(selectedItem(options, "Don't Show Again")),
+          ),
+      },
+    });
+    const layers = Layer.mergeAll(vscode.layer, freshStorage(globalState));
+
+    for (let session = 0; session < 2; session++) {
+      const notify = yield* makeTyMissingNotifier().pipe(
+        Effect.provide(layers),
+      );
+      yield* notify;
+      yield* notify;
+    }
+
+    expect(yield* Ref.get(prompts)).toBe(2);
+    expect(writes).not.toHaveBeenCalled();
+    expect(globalState.toJSON()).toEqual({
+      "languageServer.ty.installPromptDismissed": true,
+    });
   }),
 );
 
 it.effect(
   "installs the companion extension and reloads when selected",
   Effect.fn(function* () {
+    const telemetry = yield* recordTelemetry;
+    const globalState = new Memento();
     const vscode = yield* TestVsCode.make({
       window: {
         showWarningMessage: <T extends string>(
@@ -75,12 +180,24 @@ it.effect(
         ) => Effect.succeed(selectedItem(options, "Reload Window")),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show() {},
-    }).pipe(Effect.provide(vscode.layer));
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([
+        vscode.layer,
+        freshStorage(globalState),
+        telemetry.layer,
+      ]),
+    );
 
     yield* notify;
+
+    expect(
+      globalState.get("languageServer.ty.installPromptDismissed"),
+    ).toBeUndefined();
+    expect(telemetry.events).toEqual([
+      "prompt_shown",
+      "install",
+      "install_succeeded",
+    ]);
 
     expect(yield* Ref.get(vscode.executions)).toEqual([
       {
@@ -93,8 +210,44 @@ it.effect(
 );
 
 it.effect(
+  "asks an existing ty extension to be updated instead of installed",
+  Effect.fn(function* () {
+    const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
+    const vscode = yield* TestVsCode.make({
+      installedExtensions: ["astral-sh.ty"],
+      window: {
+        showWarningMessage: <T extends string>(
+          message: string,
+          options: vscode.MessageOptions & { items?: readonly T[] } = {},
+        ) =>
+          Ref.update(prompts, (all) => [...all, message]).pipe(
+            Effect.as(selectedItem(options, "Show ty Extension")),
+          ),
+      },
+    });
+    const storage = freshStorage();
+    const layers = Layer.mergeAll(vscode.layer, storage);
+
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+
+    expect(yield* Ref.get(prompts)).toEqual([
+      "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Update the ty extension to enable them. You can still edit and run notebooks.",
+    ]);
+    expect(yield* Ref.get(vscode.executions)).toEqual([
+      { command: "extension.open", args: ["astral-sh.ty"] },
+    ]);
+
+    // Opening the extension page isn't a dismissal — a user who ignores the
+    // update should be reminded in a later session.
+    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    expect(yield* Ref.get(prompts)).toHaveLength(2);
+  }),
+);
+
+it.effect(
   "reports a companion extension installation failure without prompting to reload",
   Effect.fn(function* () {
+    const telemetry = yield* recordTelemetry;
     const installAttempts = yield* Ref.make(0);
     const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
     const reloadPrompts = yield* Ref.make(0);
@@ -120,14 +273,18 @@ it.effect(
           ),
       },
     });
-    const notify = yield* makeTyInstallFailureNotifier({
-      name: "marimo (uv)",
-      show() {},
-    }).pipe(Effect.provide(vscode.layer));
+    const notify = yield* makeTyMissingNotifier().pipe(
+      Effect.provide([vscode.layer, freshStorage(), telemetry.layer]),
+    );
 
     yield* notify;
 
     expect(yield* Ref.get(installAttempts)).toBe(1);
+    expect(telemetry.events).toEqual([
+      "prompt_shown",
+      "install",
+      "install_failed",
+    ]);
     expect(yield* Ref.get(reloadPrompts)).toBe(0);
     expect(yield* Ref.get(errorMessages)).toEqual([
       "VS Code couldn't install the ty extension. Search for @id:astral-sh.ty in the Extensions view.",

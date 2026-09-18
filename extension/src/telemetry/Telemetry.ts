@@ -14,7 +14,11 @@ import type * as vscode from "vscode";
 
 import { type BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import { createStorageKey, Storage } from "../platform/Storage.ts";
+import {
+  createStorageKey,
+  ExtensionContext,
+  Storage,
+} from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { acquirePostHogAdapter, type PostHogAdapter } from "./posthogSink.ts";
 import { acquireSentryAdapter, type SentryAdapter } from "./sentrySink.ts";
@@ -23,6 +27,25 @@ const ANONYMOUS_ID_KEY = createStorageKey(
   "telemetry.anonymousId",
   Schema.String,
 );
+
+// Keep vscode a type-only import outside the platform boundary.
+const ExtensionMode: typeof vscode.ExtensionMode = {
+  Production: 1,
+  Development: 2,
+  Test: 3,
+};
+
+export type TySetupAction =
+  | "disabled"
+  | "startup_failed"
+  | "prompt_shown"
+  | "prompt_suppressed"
+  | "install"
+  | "update"
+  | "dismiss"
+  | "dont_show_again"
+  | "install_succeeded"
+  | "install_failed";
 
 type ResolvedBinary =
   | {
@@ -62,6 +85,12 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
     if (!enabled) return disabledTelemetry();
 
     const storage = yield* Storage;
+    const activationId = crypto.randomUUID();
+    const { extensionMode } = yield* ExtensionContext;
+    const development =
+      process.env.MARIMO_REPLAY_TY_PROMPT === "1" ||
+      extensionMode === ExtensionMode.Development ||
+      extensionMode === ExtensionMode.Test;
     const extensionVersion = Option.getOrElse(
       yield* getExtensionVersion(),
       () => "unknown",
@@ -84,6 +113,8 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
           extension_version: extensionVersion,
           app_name: code.env.appName,
           app_host: code.env.appHost,
+          activation_id: activationId,
+          development,
         },
       })
       .pipe(
@@ -165,6 +196,8 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
 
     yield* usage("extension_activated");
     return {
+      tySetup: (action: TySetupAction) =>
+        development ? Effect.void : usage("ty_setup", { action }),
       commandExecuted: (command: string, success: boolean) =>
         usage("executed_command", { command, success }),
       notebookCreated: usage("new_notebook_created"),
@@ -177,6 +210,8 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
       ) => usage("uv_missing", { binType }),
       uvInstallClicked: usage("uv_install_clicked"),
       binaryResolved,
+      binaryUnresolved: (server: "ruff" | "ty") =>
+        usage("lsp_binary_unresolved", { server }),
       lspModeSelected,
       lspStarted,
       errorLogger,
@@ -190,6 +225,7 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
 
 function disabledTelemetry() {
   return {
+    tySetup: (_action: TySetupAction) => Effect.void,
     commandExecuted: (_command: string, _success: boolean) => Effect.void,
     notebookCreated: Effect.void,
     notebookOpened: (_cellCount: number) => Effect.void,
@@ -199,6 +235,7 @@ function disabledTelemetry() {
     ) => Effect.void,
     uvInstallClicked: Effect.void,
     binaryResolved: (_binary: ResolvedBinary) => Effect.void,
+    binaryUnresolved: (_server: "ruff" | "ty") => Effect.void,
     lspModeSelected: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     lspStarted: (_mode: "wasm" | "uv" | "configured") => Effect.void,
     errorLogger: Logger.make<unknown, void>(() => undefined),

@@ -43,5 +43,6 @@ it.effect(
 
     yield* telemetry.notebookCreated;
     yield* telemetry.lspStarted("wasm");
+    yield* telemetry.tySetup("install");
   }),
 );

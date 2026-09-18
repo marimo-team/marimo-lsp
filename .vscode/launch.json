@@ -6,6 +6,9 @@
       "type": "extensionHost",
       "request": "launch",
       "args": ["--extensionDevelopmentPath=${workspaceFolder}/extension"],
+      "env": {
+        "MARIMO_REPLAY_TY_PROMPT": "1"
+      },
       "preLaunchTask": "Build"
     }
   ]

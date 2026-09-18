@@ -1,5 +1,4 @@
 import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
-import type * as vscode from "vscode";
 
 import { Config } from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
@@ -120,10 +119,7 @@ export function makeExtension(
   minimumLogLevel: LogLevel.LogLevel,
 ): {
   readonly activate: (
-    context: Pick<
-      vscode.ExtensionContext,
-      "workspaceState" | "globalState" | "extensionUri" | "globalStorageUri"
-    >,
+    context: typeof ExtensionContext.Service,
   ) => Promise<MarimoApi>;
   readonly deactivate: () => Promise<void>;
 } {
