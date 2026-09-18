@@ -37,19 +37,20 @@ it("points at the ty extension and the path setting when no binary is found", ()
   expect(error.format()).toBe(
     [
       "No ty 0.0.63 or newer binary was found.",
-      "Install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
+      "ty is optional and recommended for Python completions and type diagnostics. You can edit and run notebooks without it.",
+      "To enable these features, install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n"),
   );
 });
 
 it.effect(
-  "shows the missing-ty warning at most once per session",
+  "recommends optional ty features at most once per session",
   Effect.fn(function* () {
-    const prompts = yield* Ref.make(0);
+    const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
     const vscode = yield* TestVsCode.make({
       window: {
-        showWarningMessage: () =>
-          Ref.update(prompts, (count) => count + 1).pipe(
+        showInformationMessage: (message) =>
+          Ref.update(prompts, (all) => [...all, message]).pipe(
             Effect.as(Option.none()),
           ),
       },
@@ -60,7 +61,9 @@ it.effect(
 
     yield* Effect.all([notify, notify], { concurrency: "unbounded" });
 
-    expect(yield* Ref.get(prompts)).toBe(1);
+    expect(yield* Ref.get(prompts)).toEqual([
+      "We recommend installing the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it.",
+    ]);
   }),
 );
 
@@ -70,7 +73,7 @@ it.effect(
     const prompts = yield* Ref.make(0);
     const vscode = yield* TestVsCode.make({
       window: {
-        showWarningMessage: <T extends string>(
+        showInformationMessage: <T extends string>(
           _message: string,
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
         ) =>
@@ -95,14 +98,15 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.make({
       window: {
-        showWarningMessage: <T extends string>(
-          _message: string,
-          options: vscode.MessageOptions & { items?: readonly T[] } = {},
-        ) => Effect.succeed(selectedItem(options, "Install ty Extension")),
         showInformationMessage: <T extends string>(
           _message: string,
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
-        ) => Effect.succeed(selectedItem(options, "Reload Window")),
+        ) =>
+          Effect.succeed(
+            Option.orElse(selectedItem(options, "Install ty Extension"), () =>
+              selectedItem(options, "Reload Window"),
+            ),
+          ),
       },
     });
     const notify = yield* makeTyMissingNotifier().pipe(
@@ -124,15 +128,15 @@ it.effect(
 it.effect(
   "asks an existing ty extension to be updated instead of installed",
   Effect.fn(function* () {
-    const warnings = yield* Ref.make<ReadonlyArray<string>>([]);
+    const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
     const vscode = yield* TestVsCode.make({
       installedExtensions: ["astral-sh.ty"],
       window: {
-        showWarningMessage: <T extends string>(
+        showInformationMessage: <T extends string>(
           message: string,
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
         ) =>
-          Ref.update(warnings, (all) => [...all, message]).pipe(
+          Ref.update(prompts, (all) => [...all, message]).pipe(
             Effect.as(selectedItem(options, "Show ty Extension")),
           ),
       },
@@ -142,8 +146,8 @@ it.effect(
 
     yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
 
-    expect(yield* Ref.get(warnings)).toEqual([
-      "The installed ty extension is too old for marimo notebooks. Update it to restore Python completions and diagnostics.",
+    expect(yield* Ref.get(prompts)).toEqual([
+      "We recommend updating the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it.",
     ]);
     expect(yield* Ref.get(vscode.executions)).toEqual([
       { command: "extension.open", args: ["astral-sh.ty"] },
@@ -152,7 +156,7 @@ it.effect(
     // Opening the extension page isn't a dismissal — a user who ignores the
     // update should be reminded in a later session.
     yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
-    expect(yield* Ref.get(warnings)).toHaveLength(2);
+    expect(yield* Ref.get(prompts)).toHaveLength(2);
   }),
 );
 
@@ -164,14 +168,15 @@ it.effect(
     const reloadPrompts = yield* Ref.make(0);
     const vscode = yield* TestVsCode.make({
       window: {
-        showWarningMessage: <T extends string>(
+        showInformationMessage: <T extends string>(
           _message: string,
           options: vscode.MessageOptions & { items?: readonly T[] } = {},
-        ) => Effect.succeed(selectedItem(options, "Install ty Extension")),
-        showInformationMessage: () =>
-          Ref.update(reloadPrompts, (count) => count + 1).pipe(
-            Effect.as(Option.none()),
-          ),
+        ) =>
+          Option.isSome(selectedItem(options, "Reload Window"))
+            ? Ref.update(reloadPrompts, (count) => count + 1).pipe(
+                Effect.as(Option.none()),
+              )
+            : Effect.succeed(selectedItem(options, "Install ty Extension")),
         showErrorMessage: (message) =>
           Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
             Effect.as(Option.none()),

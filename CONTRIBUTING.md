@@ -6,8 +6,10 @@
 
 ## Development
 
-This project requires [uv](https://docs.astral.sh/uv/),
+Repository development requires [uv](https://docs.astral.sh/uv/),
 [pnpm](https://pnpm.io/), and [just](https://just.systems/).
+These are development tools, not prerequisites for installing the published
+VS Code extension.
 
 **Quickstart**
 

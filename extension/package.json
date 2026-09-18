@@ -112,7 +112,7 @@
         "marimo.uv.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to the `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use `uv` from the system PATH.",
+          "markdownDescription": "Path to a custom `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use the bundled binary, then common installation locations or the system PATH if no binary is bundled.",
           "scope": "resource"
         },
         "marimo.disableUvIntegration": {
@@ -233,8 +233,8 @@
         "steps": [
           {
             "id": "check-prerequisites",
-            "title": "Check Prerequisites",
-            "description": "Ensure you have `uv` installed on your system. marimo uses `uvx` to run the language server and manage packages.\n\n[Install uv](https://docs.astral.sh/uv/getting-started/installation/)",
+            "title": "Choose a Notebook Environment",
+            "description": "The default marimo language server is included with the extension. To run cells, select a Python environment with marimo installed, or choose the marimo sandbox to manage notebook dependencies with `uv`. Platform-specific extension builds include `uv`, so no separate installation is needed.\n\nWe recommend the optional [ty extension](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty) for Python completions and type diagnostics.",
             "media": {
               "image": "images/getting-started.png",
               "altText": "marimo notebook interface"

@@ -489,7 +489,7 @@ const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
 
 /**
  * Handles UvNotInstalledError by showing a modal dialog with options.
- * Dies after user interaction to prevent extension from continuing without UV.
+ * Aborts the operation that needs uv after user interaction.
  */
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: UvExecutionError,
@@ -500,12 +500,12 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
 
   const errorMessage = UvBin.$match(error.bin, {
     Bundled: (bin) =>
-      `The marimo extension requires uv.\n\nThe bundled binary "${bin.executable}" failed to execute.`,
+      `This operation requires uv.\n\nThe bundled binary "${bin.executable}" failed to execute.`,
     Configured: (bin) =>
-      `The marimo extension requires uv.\n\nThe configured path "${bin.executable}" was not found.`,
-    Default: () => "The marimo extension requires uv.",
+      `This operation requires uv.\n\nThe configured path "${bin.executable}" was not found.`,
+    Default: () => "This operation requires uv.",
     Discovered: (bin) =>
-      `The marimo extension requires uv.\n\nFound "${bin.executable}" but it failed to execute.`,
+      `This operation requires uv.\n\nFound "${bin.executable}" but it failed to execute.`,
   });
 
   const choice = yield* code.window.showErrorMessage(errorMessage, {
@@ -539,7 +539,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
 
     // Prompt user to reload after installation
     const reload = yield* code.window.showInformationMessage(
-      "After installing uv, reload the window to activate the marimo extension.",
+      "After installing uv, reload the window to retry.",
       { items: ["Reload Window"] },
     );
 
@@ -555,7 +555,7 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
     );
   }
 
-  // Die to prevent extension from continuing without UV
+  // Abort the operation that needs uv.
   return yield* Effect.die(error);
 });
 

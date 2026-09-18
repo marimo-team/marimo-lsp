@@ -7,16 +7,20 @@ Ready to build something amazing? Creating a marimo notebook is easy!
 ### Method 1: Command Palette (Recommended)
 
 1. Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
-2. Type "marimo: New marimo notebook"
+2. Run "Create: New marimo notebook"
 3. Choose a location and name for your notebook
-4. Start coding!
+4. Select a Python environment with marimo installed, or choose **marimo sandbox**
+5. Start coding and run a cell
 
-### Method 2: File Explorer
+### Method 2: File Menu
 
-1. Right-click in the Explorer
-2. Select "New File"
-3. Give it a `.py` extension
-4. When you save, VS Code will prompt you to open it as a marimo notebook
+1. Open **File > New File...**
+2. Select **Marimo notebook**
+3. Choose a location and name for your notebook
+
+To open an existing marimo `.py` file, use **marimo: Open as marimo notebook**
+from the command palette or the notebook icon in the editor title bar. An empty
+`.py` file is not automatically a marimo notebook.
 
 ## Your First Cells
 
@@ -27,6 +31,7 @@ import marimo as mo
 
 # Create an interactive slider
 slider = mo.ui.slider(1, 100, value=50)
+slider
 ```
 
 ```python

@@ -56,7 +56,8 @@ export class TyBinaryNotFound extends Data.TaggedError("TyBinaryNotFound")<{
   format(): string {
     return [
       `No ty ${this.serverVersion} or newer binary was found.`,
-      "Install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
+      "ty is optional and recommended for Python completions and type diagnostics. You can edit and run notebooks without it.",
+      "To enable these features, install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n");
   }
 }
@@ -372,10 +373,10 @@ export const makeTyMissingNotifier = Effect.fn(
         ? SHOW_TY_EXTENSION
         : INSTALL_TY_EXTENSION;
 
-      const selection = yield* code.window.showWarningMessage(
+      const selection = yield* code.window.showInformationMessage(
         alreadyInstalled
-          ? "The installed ty extension is too old for marimo notebooks. Update it to restore Python completions and diagnostics."
-          : "Install the ty extension to enable Python completions and diagnostics in marimo notebooks.",
+          ? "We recommend updating the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it."
+          : "We recommend installing the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it.",
         { items: [action, DONT_SHOW_AGAIN] },
       );
       if (Option.isNone(selection)) return;
