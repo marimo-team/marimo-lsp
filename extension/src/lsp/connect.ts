@@ -66,7 +66,9 @@ export const connectMarimoNotebookLspClient = Effect.fn(
               toLspDiagnostic(code, client.serverInfo.name, d),
             ),
           );
-        }),
+        }).pipe(
+          Effect.andThen(config.onFeatureUsed?.("diagnostics") ?? Effect.void),
+        ),
       ),
     ),
   );

@@ -28,6 +28,7 @@ import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
+import { noopTyTelemetry } from "../telemetry/tyTelemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.63" } as const;
@@ -56,7 +57,7 @@ export class TyBinaryNotFound extends Data.TaggedError("TyBinaryNotFound")<{
   format(): string {
     return [
       `No ty ${this.serverVersion} or newer binary was found.`,
-      "ty is optional and recommended for Python completions and type diagnostics. You can edit and run notebooks without it.",
+      "Python completions and type diagnostics are unavailable. You can still edit and run notebooks.",
       "To enable these features, install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
     ].join("\n");
   }
@@ -96,6 +97,10 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
       const pyExt = yield* PythonExtension;
       const envInvalidation = yield* PythonEnvInvalidation;
       const telemetry = yield* Effect.serviceOption(Telemetry);
+      const tyTelemetry = Option.match(telemetry, {
+        onSome: (telemetry) => telemetry.ty,
+        onNone: () => noopTyTelemetry,
+      });
       const code = yield* VsCode;
       const notifyMissingTy = yield* makeTyMissingNotifier();
 
@@ -105,6 +110,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
 
       const disabledReasonOption = yield* getTyDisabledReason();
       if (Option.isSome(disabledReasonOption)) {
+        yield* tyTelemetry.stateChanged({ state: "disabled" });
         yield* Ref.set(
           statusRef,
           TyLanguageServerStatus.Disabled({
@@ -125,6 +131,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
           // The Effect.scoped wrapper ensures the server process and all
           // resources are cleaned up before the next cycle begins.
           const serverCycle = Effect.gen(function* () {
+            yield* tyTelemetry.stateChanged({ state: "starting" });
             yield* Ref.set(statusRef, TyLanguageServerStatus.Starting());
             yield* Effect.logDebug("Starting language server").pipe(
               Effect.annotateLogs({
@@ -144,6 +151,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
               command: resolved.path,
               args: ["server"],
               outputChannel,
+              onFeatureUsed: tyTelemetry.featureUsed,
               initializationOptions: {},
               onConfigurationRequest: (params) =>
                 Effect.forEach(params.items, (item) =>
@@ -195,6 +203,11 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
             });
 
             const serverVersion = client.serverInfo.version;
+            yield* tyTelemetry.stateChanged({
+              state: "ready",
+              source: resolved._tag,
+              version: serverVersion,
+            });
 
             yield* Effect.logInfo("Language server started").pipe(
               Effect.annotateLogs({
@@ -247,6 +260,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
             // a crash: record it, nudge once, and stop the restart loop.
             Effect.catchTag("TyBinaryNotFound", (error) =>
               Effect.gen(function* () {
+                yield* tyTelemetry.stateChanged({ state: "missing" });
                 const message = error.format();
                 yield* Ref.set(
                   statusRef,
@@ -267,6 +281,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
                 if (isExpectedCancellation(cause)) return;
+                yield* tyTelemetry.stateChanged({ state: "failed" });
                 const message = "Failed to start ty language server";
                 yield* Ref.set(
                   statusRef,
@@ -349,48 +364,65 @@ const resolveTyBinary = Effect.fn(function* () {
  * Builds the one-shot prompt shown when no ty binary is available.
  *
  * Fires at most once per session (`Effect.cached`) and never again on this
- * machine once the user installs the extension or dismisses it.
+ * machine once the user chooses Don't Show Again. Installing is not dismissal.
+ * The local F5 configuration bypasses persistence so reloads can replay it.
  */
 export const makeTyMissingNotifier = Effect.fn(
   "TyLanguageServer.makeTyMissingNotifier",
 )(function* () {
   const code = yield* VsCode;
   const storage = yield* Storage;
+  const telemetry = Option.match(yield* Effect.serviceOption(Telemetry), {
+    onSome: (telemetry) => telemetry.ty,
+    onNone: () => noopTyTelemetry,
+  });
+  const persistDismissal = process.env.MARIMO_REPLAY_TY_PROMPT !== "1";
 
   return yield* Effect.cached(
     Effect.gen(function* () {
-      const dismissed = yield* storage.global
-        .get(tyPromptDismissedKey)
-        .pipe(Effect.orElseSucceed(() => Option.none<boolean>()));
-      if (Option.getOrElse(dismissed, () => false)) return;
-
-      // An installed-but-too-old ty extension needs an update, not an
-      // install, so the prompt has to know which situation it is in.
       const alreadyInstalled = Option.isSome(
         code.extensions.getExtension(TY_EXTENSION_ID),
       );
+      if (persistDismissal) {
+        const dismissed = yield* storage.global
+          .get(tyPromptDismissedKey)
+          .pipe(Effect.orElseSucceed(() => Option.none<boolean>()));
+        if (Option.getOrElse(dismissed, () => false)) {
+          yield* telemetry.prompt("suppressed", alreadyInstalled);
+          return;
+        }
+      }
+
+      // An installed-but-too-old ty extension needs an update, not an
+      // install, so the prompt has to know which situation it is in.
       const action = alreadyInstalled
         ? SHOW_TY_EXTENSION
         : INSTALL_TY_EXTENSION;
 
-      const selection = yield* code.window.showInformationMessage(
+      yield* telemetry.prompt("shown", alreadyInstalled);
+      const selection = yield* code.window.showWarningMessage(
         alreadyInstalled
-          ? "We recommend updating the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it."
-          : "We recommend installing the ty extension for Python completions and type diagnostics in marimo notebooks. You can edit and run notebooks without it.",
+          ? "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Update the ty extension to enable them. You can still edit and run notebooks."
+          : "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Install the recommended ty extension to enable them. You can still edit and run notebooks.",
         { items: [action, DONT_SHOW_AGAIN] },
       );
-      if (Option.isNone(selection)) return;
+      if (Option.isNone(selection)) {
+        yield* telemetry.prompt("dismiss", alreadyInstalled);
+        return;
+      }
 
-      const remember = storage.global
-        .set(tyPromptDismissedKey, true)
-        .pipe(Effect.ignore);
+      const remember = persistDismissal
+        ? storage.global.set(tyPromptDismissedKey, true).pipe(Effect.ignore)
+        : Effect.void;
 
       if (selection.value === DONT_SHOW_AGAIN) {
+        yield* telemetry.prompt("dont_show_again", alreadyInstalled);
         yield* remember;
         return;
       }
 
       if (alreadyInstalled) {
+        yield* telemetry.prompt("update", alreadyInstalled);
         // The extension view is where the update button lives; leave the
         // prompt un-dismissed so a user who ignores it is reminded later.
         yield* code.commands
@@ -399,6 +431,8 @@ export const makeTyMissingNotifier = Effect.fn(
         return;
       }
 
+      yield* telemetry.prompt("install", alreadyInstalled);
+      yield* telemetry.installStarted;
       const install = yield* Effect.exit(
         code.commands.executeVSCode(
           "workbench.extensions.installExtension",
@@ -406,6 +440,12 @@ export const makeTyMissingNotifier = Effect.fn(
         ),
       );
       if (Exit.isFailure(install)) {
+        if (isExpectedCancellation(install.cause)) {
+          // A never-successful Effect requires return yield* for Effect tooling.
+          // oxlint-disable-next-line typescript/consistent-return
+          return yield* Effect.failCause(install.cause);
+        }
+        yield* telemetry.installFinished("failed");
         yield* Effect.logError("Failed to install the ty extension").pipe(
           Effect.annotateLogs({ cause: install.cause }),
         );
@@ -415,7 +455,7 @@ export const makeTyMissingNotifier = Effect.fn(
         return;
       }
 
-      yield* remember;
+      yield* telemetry.installFinished("succeeded");
 
       const reload = yield* code.window.showInformationMessage(
         "Reload VS Code to finish enabling the ty extension in marimo notebooks.",

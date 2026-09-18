@@ -35,12 +35,34 @@ code .
 > ```sh
 > cd ../marimo
 > git checkout $(cd ../marimo-lsp && uv run --no-project python -m scripts.marimo_version show)
+> pnpm install --frozen-lockfile
+> pnpm exec turbo run build --filter='./packages/*'
 > ```
+>
+> Repeat the install and package build after switching marimo versions. The
+> extension links directly to that checkout, including its frontend dependencies.
 >
 > CI derives the same source tag from the exact dependency. To update the Bundled
 > marimo, run `uv run --no-project python -m scripts.marimo_version update`, or pass
 > an exact release as the final argument. You may check out a different sibling ref
 > temporarily when developing against unreleased marimo changes.
+
+### Replaying the missing-ty prompt
+
+The **Run Extension** F5 configuration sets `MARIMO_REPLAY_TY_PROMPT=1`.
+In that development host, the missing-ty warning ignores saved dismissals and
+does not persist new ones. Run **Developer: Reload Window** to try the flow
+again. Remove the environment variable from `.vscode/launch.json` to test the
+normal persistent dismissal behavior.
+
+The warning only appears when no compatible ty binary is available. To test
+the install flow again after installing ty, uninstall it in the development
+host and clear any `marimo.ty.path` or `ty.path` overrides, then reload. Other
+VS Code settings and extension state are preserved.
+
+Development hosts and replay mode are excluded from the new ty telemetry.
+See the [ty telemetry event guide](extension/src/telemetry/README.md) for event
+semantics and suggested PostHog metrics.
 
 ### Pre-commit Hooks
 
