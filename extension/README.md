@@ -22,79 +22,25 @@ scripts or apps.
 3. Select a Python environment with marimo installed, or choose **marimo sandbox**
    to manage the notebook's dependencies with `uv`, then run a cell
 
-If you have an existing Python file that's a marimo notebook, you'll see an
-icon in the editor title bar to open it as a notebook (see image above). You can
-also run **"marimo: Open as marimo notebook"** from the command palette.
+Open an existing marimo `.py` file with **"marimo: Open as marimo notebook"**.
+The default marimo language server is bundled. Platform-specific builds also
+include `uv`, so no separate installation is needed.
 
-The default language server is bundled with the extension and does not need a
-separate Python or `uv` installation. Platform-specific extension builds also
-bundle `uv` for sandbox environments and package management, so you do not need
-to install it yourself. The universal build does not bundle `uv`; install it or
-set `marimo.uv.path` when using that build.
+## Python Language Features
 
-## Commands
-
-| Command                                                   | Description                                                               |
-| --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `Create: New marimo notebook`                             | Create a new marimo notebook                                              |
-| `marimo: Open as marimo notebook`                         | Open a Python file as a marimo notebook                                   |
-| `marimo: Show notebook menu`                              | Configure reactivity and exports, create a setup cell, or publish         |
-| `marimo: Run stale cells`                                 | Execute all cells that need to be re-run                                  |
-| `marimo: Restart notebook kernel`                         | Restart the notebook's Python kernel                                      |
-| `marimo: Create setup cell`                               | Create or navigate to an existing setup cell                              |
-| `marimo: Publish notebook...`                             | Share your notebook as a GitHub Gist                                      |
-| `marimo: Export static HTML`                              | Export notebook with current outputs as HTML (without re-executing cells) |
-| `marimo: Set Python interpreter to match notebook kernel` | Set the active Python interpreter to match the notebook's kernel          |
-| `marimo: Restart marimo language server (marimo-lsp)`     | Restart the LSP server if it becomes unresponsive                         |
-| `marimo: Report an issue or suggest a feature`            | Open GitHub to report bugs or request features                            |
-| `marimo: Show diagnostics`                                | Display diagnostic information for troubleshooting                        |
-
-## Configuration
-
-| Setting                                 | Type      | Default          | Description                                                                                                                                                                                         |
-| --------------------------------------- | --------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marimo.lsp.server`                     | `string`  | `wasm`           | Language-server runtime: bundled `wasm`, uv-managed `python`, or `custom`. This does not change the interpreter used by notebook kernels.                                                           |
-| `marimo.lsp.path`                       | `array`   | `[]`             | Command and arguments used when `marimo.lsp.server` is `custom`, e.g., `["/path/to/marimo-lsp"]`.                                                                                                   |
-| `marimo.uv.path`                        | `string`  |                  | Path to a custom `uv` binary. Leave empty to use the bundled binary, then common installation locations or the system PATH if no binary is bundled.                                                 |
-| `marimo.ruff.path`                      | `string`  |                  | Path to a custom `ruff` binary, e.g., `/usr/local/bin/ruff`. Leave empty to discover one from the Ruff extension (charliermarsh.ruff).                                                              |
-| `marimo.ty.path`                        | `string`  |                  | Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Leave empty to discover one from the ty extension (astral-sh.ty).                                                                          |
-| `marimo.disableUvIntegration`           | `boolean` | `false`          | Disable uv integration features such as automatic package installation prompts.                                                                                                                     |
-| `marimo.disableManagedLanguageFeatures` | `boolean` | `false`          | Disable marimo's managed Python language features (completions, diagnostics, formatting). When enabled, notebook cells use the standard `python` language ID and rely on external language servers. |
-| `marimo.telemetry`                      | `boolean` | `true`           | Anonymous usage data. This helps us prioritize features for the marimo VSCode extension.                                                                                                            |
-| `marimo.notebookFileRoot`               | `string`  | `${fileDirname}` | Initial working directory for locally launched kernels. Supports the notebook directory, workspace folder, home-relative, absolute, and workspace-relative paths. Requires a kernel restart.        |
-
-By default, the WASM language server loads entirely from artifacts bundled with
-the extension and does not download Python packages at runtime. Set
-`marimo.lsp.server` to `python` to use the bundled server through a uv-managed
-CPython environment. The `custom` option with `marimo.lsp.path` is for extension
-development; the command must match the extension source revision. Notebook
-kernels run in the selected Python environment: executing a notebook launches
-that interpreter and runs the notebook's code locally.
-
-`marimo.notebookFileRoot` controls process-relative behavior such as `Path.cwd()`, file access, and subprocesses. For paths that must remain portable across VS Code, CLI execution, exports, and deployment, prefer `mo.notebook_dir()`.
-
-### Language Features
-
-By default, marimo manages dedicated ty and Ruff language servers for notebook
-cells when their binaries are available. These provide Python completions,
-type diagnostics, linting, and formatting while avoiding conflicts with other
-Python language servers.
-
-**Why managed mode?** Notebook cells use a custom language ID (`mo-python`) to isolate them from external language servers like Pylance or Jedi. This prevents duplicate completions, conflicting diagnostics, and other interference while editing marimo notebooks.
-
-**Recommended extensions:** We recommend
-[`ty`](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty) for
-Python completions and type diagnostics in marimo notebooks. It is optional:
-you can edit and run notebooks without it. You can also install
+We recommend [ty](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty)
+for Python completions and type diagnostics, and
 [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
-for linting and formatting.
+for linting and formatting. Both are optional; you can edit and run notebooks
+without them. marimo uses their extensions or binaries configured through
+`marimo.ty.path` / `marimo.ruff.path` and does not install them automatically.
 
-marimo uses binaries provided by these extensions, or existing binaries
-configured through `marimo.ty.path` / `marimo.ruff.path`. It never downloads
-ty or Ruff automatically. `marimo: Show diagnostics` reports which language
-servers are available.
+## Commands and Settings
 
-**When to disable managed mode:** If you prefer to use your own Python language server configuration (e.g., Pylance, pyright, or another LSP), enable `marimo.disableManagedLanguageFeatures`. This switches cells to use the standard `python` language ID, allowing external language servers to provide completions and diagnostics. Note that this may result in some language features not working as expected in the notebook context.
+Search **marimo** in the Command Palette or VS Code Settings for available
+commands and configuration. Use **marimo: Show diagnostics** to troubleshoot.
+To use an external Python language server, enable
+`marimo.disableManagedLanguageFeatures`.
 
 ## Support
 

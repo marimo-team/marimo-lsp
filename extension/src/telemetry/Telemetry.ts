@@ -22,7 +22,6 @@ import {
 import { VsCode } from "../platform/VsCode.ts";
 import { acquirePostHogAdapter, type PostHogAdapter } from "./posthogSink.ts";
 import { acquireSentryAdapter, type SentryAdapter } from "./sentrySink.ts";
-import { makeTyTelemetry, noopTyTelemetry } from "./tyTelemetry.ts";
 
 const ANONYMOUS_ID_KEY = createStorageKey(
   "telemetry.anonymousId",
@@ -35,6 +34,18 @@ const ExtensionMode: typeof vscode.ExtensionMode = {
   Development: 2,
   Test: 3,
 };
+
+export type TySetupAction =
+  | "disabled"
+  | "startup_failed"
+  | "prompt_shown"
+  | "prompt_suppressed"
+  | "install"
+  | "update"
+  | "dismiss"
+  | "dont_show_again"
+  | "install_succeeded"
+  | "install_failed";
 
 type ResolvedBinary =
   | {
@@ -147,13 +158,6 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
         ignoreTelemetryError(() => logger.logUsage(event, data)),
       );
 
-    const ty = yield* makeTyTelemetry({
-      activationId,
-      storage,
-      enabled: () => !development && logger.isUsageEnabled,
-      emit: ({ event, ...properties }) => usage(event, properties),
-    });
-
     const binaryResolved = (binary: ResolvedBinary): Effect.Effect<void> =>
       Effect.sync(() => {
         ignoreTelemetryError(() => {
@@ -192,7 +196,8 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
 
     yield* usage("extension_activated");
     return {
-      ty,
+      tySetup: (action: TySetupAction) =>
+        development ? Effect.void : usage("ty_setup", { action }),
       commandExecuted: (command: string, success: boolean) =>
         usage("executed_command", { command, success }),
       notebookCreated: usage("new_notebook_created"),
@@ -220,7 +225,7 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
 
 function disabledTelemetry() {
   return {
-    ty: noopTyTelemetry,
+    tySetup: (_action: TySetupAction) => Effect.void,
     commandExecuted: (_command: string, _success: boolean) => Effect.void,
     notebookCreated: Effect.void,
     notebookOpened: (_cellCount: number) => Effect.void,

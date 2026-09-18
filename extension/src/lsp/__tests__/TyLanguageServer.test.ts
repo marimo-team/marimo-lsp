@@ -47,12 +47,7 @@ const recordTelemetry = Effect.gen(function* () {
     events,
     layer: Layer.succeed(Telemetry, {
       ...base,
-      ty: {
-        ...base.ty,
-        prompt: (action, installed) => record(`prompt:${action}:${installed}`),
-        installStarted: record("install:started"),
-        installFinished: (outcome) => record(`install:${outcome}`),
-      },
+      tySetup: record,
     }),
   };
 });
@@ -96,6 +91,7 @@ it.effect(
 it.effect(
   "never prompts again once the user dismisses it",
   Effect.fn(function* () {
+    const telemetry = yield* recordTelemetry;
     const prompts = yield* Ref.make(0);
     const vscode = yield* TestVsCode.make({
       window: {
@@ -108,7 +104,11 @@ it.effect(
           ),
       },
     });
-    const layers = Layer.mergeAll(vscode.layer, freshStorage());
+    const layers = Layer.mergeAll(
+      vscode.layer,
+      freshStorage(),
+      telemetry.layer,
+    );
 
     // A fresh notifier stands in for a fresh session; the dismissal has to
     // outlive both of them.
@@ -116,6 +116,11 @@ it.effect(
     yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
 
     expect(yield* Ref.get(prompts)).toBe(1);
+    expect(telemetry.events).toEqual([
+      "prompt_shown",
+      "dont_show_again",
+      "prompt_suppressed",
+    ]);
   }),
 );
 
@@ -189,10 +194,9 @@ it.effect(
       globalState.get("languageServer.ty.installPromptDismissed"),
     ).toBeUndefined();
     expect(telemetry.events).toEqual([
-      "prompt:shown:false",
-      "prompt:install:false",
-      "install:started",
-      "install:succeeded",
+      "prompt_shown",
+      "install",
+      "install_succeeded",
     ]);
 
     expect(yield* Ref.get(vscode.executions)).toEqual([
@@ -277,10 +281,9 @@ it.effect(
 
     expect(yield* Ref.get(installAttempts)).toBe(1);
     expect(telemetry.events).toEqual([
-      "prompt:shown:false",
-      "prompt:install:false",
-      "install:started",
-      "install:failed",
+      "prompt_shown",
+      "install",
+      "install_failed",
     ]);
     expect(yield* Ref.get(reloadPrompts)).toBe(0);
     expect(yield* Ref.get(errorMessages)).toEqual([
@@ -288,56 +291,3 @@ it.effect(
     ]);
   }),
 );
-
-for (const { selection, installed, action, nextAction } of [
-  {
-    selection: "close",
-    installed: false,
-    action: "dismiss",
-    nextAction: "shown",
-  },
-  {
-    selection: "Don't Show Again",
-    installed: false,
-    action: "dont_show_again",
-    nextAction: "suppressed",
-  },
-  {
-    selection: "Show ty Extension",
-    installed: true,
-    action: "update",
-    nextAction: "shown",
-  },
-]) {
-  it.effect(
-    `distinguishes ${action} from disabling language features`,
-    Effect.fn(function* () {
-      const telemetry = yield* recordTelemetry;
-      const vscode = yield* TestVsCode.make({
-        installedExtensions: installed ? ["astral-sh.ty"] : [],
-        window: {
-          showWarningMessage: <T extends string>(
-            _message: string,
-            options: vscode.MessageOptions & { items?: readonly T[] } = {},
-          ) => Effect.succeed(selectedItem(options, selection)),
-        },
-      });
-      const layers = Layer.mergeAll(
-        vscode.layer,
-        freshStorage(),
-        telemetry.layer,
-      );
-      yield* Effect.flatten(makeTyMissingNotifier()).pipe(
-        Effect.provide(layers),
-      );
-      expect(telemetry.events).toEqual([
-        `prompt:shown:${installed}`,
-        `prompt:${action}:${installed}`,
-      ]);
-      yield* Effect.flatten(makeTyMissingNotifier()).pipe(
-        Effect.provide(layers),
-      );
-      expect(telemetry.events[2]).toBe(`prompt:${nextAction}:${installed}`);
-    }),
-  );
-}

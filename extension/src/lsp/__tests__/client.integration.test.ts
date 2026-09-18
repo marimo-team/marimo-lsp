@@ -21,7 +21,7 @@ import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSession
 import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
-import { makeNotebookLspClient, type LspFeature } from "../client.ts";
+import { makeNotebookLspClient } from "../client.ts";
 
 const variablesLayer = Layer.effect(
   NotebookVariables,
@@ -45,17 +45,12 @@ describe("makeNotebookLspClient against uv run ty server", () => {
         const code = yield* VsCode.pipe(Effect.provide(test.layer));
         const outputChannel = yield* code.window.createOutputChannel("ty");
 
-        const features: LspFeature[] = [];
         const client = yield* makeNotebookLspClient({
           name: "ty",
           command: "uv",
           args: ["run", "ty", "server"],
           outputChannel,
           workspaceFolders: [],
-          onFeatureUsed: (feature) =>
-            Effect.sync(() => {
-              features.push(feature);
-            }),
         });
 
         // --- 1. Server handshake -------------------------------------------
@@ -138,20 +133,6 @@ describe("makeNotebookLspClient against uv run ty server", () => {
       	  },
       	}
       `);
-
-        expect(features).toEqual(["hover"]);
-
-        // An invalid position receives a JSON-RPC error. The client's null
-        // fallback must not be mistaken for a successful feature response.
-        const invalidHover = yield* client.sendRequest(
-          lsp.HoverRequest.method,
-          {
-            textDocument: { uri: cell.document.uri.toString() },
-            position: { line: -1, character: 0 },
-          },
-        );
-        expect(invalidHover).toBeNull();
-        expect(features).toEqual(["hover"]);
 
         // --- 5. Forward a text edit within the cell ------------------------
         yield* client.textDocumentChange({

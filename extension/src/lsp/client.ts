@@ -188,17 +188,6 @@ export type LspRequestMap = {
   [lsp.ExecuteCommandRequest.method]: [lsp.ExecuteCommandParams, unknown];
 };
 
-export type LspFeature = "completion" | "hover" | "navigation" | "diagnostics";
-
-const REQUEST_FEATURES: Partial<Record<keyof LspRequestMap, LspFeature>> = {
-  [lsp.CompletionRequest.method]: "completion",
-  [lsp.HoverRequest.method]: "hover",
-  [lsp.DefinitionRequest.method]: "navigation",
-  [lsp.TypeDefinitionRequest.method]: "navigation",
-  [lsp.DeclarationRequest.method]: "navigation",
-  [lsp.ReferencesRequest.method]: "navigation",
-};
-
 export interface NotebookLspClientConfig {
   /** Human-readable name, e.g. "ruff" or "ty". */
   name: string;
@@ -212,8 +201,6 @@ export interface NotebookLspClientConfig {
   initializationOptions?: unknown;
   /** Output channel for server log messages. */
   outputChannel: vscode.OutputChannel;
-  /** Successful feature responses, including empty results; excludes errors. */
-  onFeatureUsed?: (feature: LspFeature) => Effect.Effect<void>;
   /**
    * Handler for `workspace/configuration` requests from the server.
    *
@@ -957,12 +944,6 @@ export const makeNotebookLspClient = Effect.fn("makeNotebookLspClient")(
               message: cause instanceof Error ? cause.message : String(cause),
             }),
         }).pipe(
-          Effect.tap(() => {
-            const feature = REQUEST_FEATURES[method];
-            return feature === undefined
-              ? Effect.void
-              : (config.onFeatureUsed?.(feature) ?? Effect.void);
-          }),
           Effect.catchTag("LspRequestError", (err) =>
             Effect.logDebug("LSP request failed").pipe(
               Effect.annotateLogs({ method: err.method, code: err.code }),
