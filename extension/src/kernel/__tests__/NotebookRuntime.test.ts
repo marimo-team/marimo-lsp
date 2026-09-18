@@ -9,6 +9,7 @@ import {
   Exit,
   Fiber,
   Layer,
+  Logger,
   Option,
   PubSub,
   Ref,
@@ -208,6 +209,50 @@ it.effect(
         values: [2],
       });
     }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "does not report renderer request interruption as a message failure",
+  Effect.fn(function* () {
+    const updateStarted = yield* Deferred.make<void>();
+    const updateCancelled = yield* Deferred.make<void>();
+    const errors: Array<unknown> = [];
+    const logger = Logger.make(({ logLevel, message }) => {
+      if (logLevel === "Error") errors.push(message);
+    });
+    const { layer, vscode } = yield* makeTestLayer({
+      send: (request) =>
+        request.kind === "update-ui-element"
+          ? Deferred.succeed(updateStarted, undefined).pipe(
+              Effect.andThen(Effect.interrupt),
+              Effect.onInterrupt(() =>
+                Deferred.succeed(updateCancelled, undefined),
+              ),
+            )
+          : Effect.succeed(null),
+    });
+
+    yield* Effect.gen(function* () {
+      const runtime = yield* NotebookRuntime;
+      const editor = TestVsCode.makeNotebookEditor(
+        NodePath.join(process.cwd(), "notebook.py"),
+      );
+      yield* vscode.openNotebook(editor.notebook);
+      yield* vscode.rendererMessaging.ready;
+      const document = yield* runtime.forDocument(editor.notebook);
+      yield* document.execute({ cells: [] }, "/usr/bin/python");
+
+      yield* vscode.rendererMessaging.send(editor, {
+        command: "update-ui-element",
+        params: { objectIds: ["slider"], values: [1] },
+      });
+      yield* Deferred.await(updateStarted);
+      yield* Effect.yieldNow;
+    }).pipe(Effect.provide(layer.pipe(Layer.provide(Logger.layer([logger])))));
+
+    expect(yield* Deferred.isDone(updateCancelled)).toBe(true);
+    expect(errors).toEqual([]);
   }),
 );
 

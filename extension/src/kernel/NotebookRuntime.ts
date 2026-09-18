@@ -1,4 +1,5 @@
 import {
+  Cause,
   Context,
   Data,
   Deferred,
@@ -891,9 +892,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 ),
               ),
               Effect.catchCause((cause) =>
-                Effect.logError("Failed to process renderer message").pipe(
-                  Effect.annotateLogs({ cause }),
-                ),
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logError("Failed to process renderer message").pipe(
+                      Effect.annotateLogs({ cause }),
+                    ),
               ),
               Effect.annotateLogs({
                 notebookUri: editor.notebook.uri.toString(),
