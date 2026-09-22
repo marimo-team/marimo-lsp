@@ -25,7 +25,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
@@ -203,7 +203,7 @@ type RuntimeWorkRequirements =
   | Config.Service
   | Constants
   | NotebookDatasources
-  | NotebookEditorRegistry
+  | NotebookEditorRegistry.Service
   | NotebookDocumentSessions.Service
   | NotebookRenderer.Service
   | OutputChannel.Service
@@ -1308,7 +1308,7 @@ function applyTransactionToEditor(
   sessionDocument: vscode.NotebookDocument,
 ) {
   return Effect.gen(function* () {
-    const editors = yield* NotebookEditorRegistry;
+    const editors = yield* NotebookEditorRegistry.Service;
     const editor = yield* editors.getLastNotebookEditor(notebookUri);
     if (Option.isNone(editor)) {
       yield* Effect.logWarning(
@@ -1341,7 +1341,7 @@ function processNotebookOperation(
   },
 ) {
   return Effect.gen(function* () {
-    const editors = yield* NotebookEditorRegistry;
+    const editors = yield* NotebookEditorRegistry.Service;
     const renderer = yield* NotebookRenderer.Service;
     const executions = yield* CellExecutions.Service;
     const sessionNotebook = MarimoNotebookDocument.from(

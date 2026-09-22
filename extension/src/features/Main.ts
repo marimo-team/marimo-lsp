@@ -11,7 +11,7 @@ import type * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
 import type * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";

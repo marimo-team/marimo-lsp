@@ -11,7 +11,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import refreshPackages from "../refreshPackages.ts";
 
@@ -56,7 +56,7 @@ it.effect("refreshes dependencies for the active document session", () =>
       Layer.provide(sessions),
       Layer.provide(runtime),
     );
-    const editors = Layer.succeed(NotebookEditorRegistry, {
+    const editors = Layer.succeed(NotebookEditorRegistry.Service, {
       getNotebookEditors: Effect.succeed([]),
       getLastNotebookEditor: () => Effect.succeed(Option.none()),
       getActiveNotebookUri: Effect.succeed(Option.some(NOTEBOOK_URI)),

@@ -14,7 +14,7 @@ import {
 import type * as vscode from "vscode";
 
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -94,7 +94,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const editorRegistry = yield* NotebookEditorRegistry;
+    const editorRegistry = yield* NotebookEditorRegistry.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const notebooks = new Map<NotebookId, NotebookEntry>();
     const opening = Semaphore.makeUnsafe(1);

@@ -1,7 +1,7 @@
 import { Data, Effect, Layer, Option, Queue, Stream } from "effect";
 
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -22,7 +22,7 @@ export const ThemeSyncLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const marimo = yield* MarimoClient.Service;
-    const editorRegistry = yield* NotebookEditorRegistry;
+    const editorRegistry = yield* NotebookEditorRegistry.Service;
 
     // Each source has its own fiber that writes to one queue. A
     // `Stream.zipLatest` attaches its inner subscriptions too late and loses

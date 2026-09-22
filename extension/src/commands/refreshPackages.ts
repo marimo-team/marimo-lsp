@@ -3,12 +3,12 @@ import { Effect, Option, Scope } from "effect";
 import { defineCommand } from "../commands.ts";
 import * as NotebookDependencies from "../notebook/NotebookDependencies.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.refreshPackages")(function* () {
-  const editorRegistry = yield* NotebookEditorRegistry;
+  const editorRegistry = yield* NotebookEditorRegistry.Service;
   const documentSessions = yield* NotebookDocumentSessions.Service;
   const sessionResources = yield* NotebookSessionResources;
   const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;

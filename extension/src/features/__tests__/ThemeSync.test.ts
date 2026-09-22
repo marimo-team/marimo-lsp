@@ -7,7 +7,7 @@ import {
   makeTestMarimoClient,
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import { ThemeSyncLive } from "../ThemeSync.ts";
 

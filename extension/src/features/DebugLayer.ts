@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 
 declare global {
@@ -25,7 +25,7 @@ export const DebugLayerLive = Layer.effectDiscard(
     globalThis.__marimoDebug = {
       cellExecutions: yield* CellExecutions.Service,
       notebookVariables: yield* NotebookVariables,
-      notebookEditorRegistry: yield* NotebookEditorRegistry,
+      notebookEditorRegistry: yield* NotebookEditorRegistry.Service,
       notebookRuntime: yield* NotebookRuntime.Service,
     };
   }),

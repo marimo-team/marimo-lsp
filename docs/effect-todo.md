@@ -46,7 +46,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `notebook/CellMetadataUIBinding.ts`
 - [x] `notebook/NotebookDependencies.ts`
 - [x] `notebook/NotebookDocumentSessions.ts`
-- [ ] `notebook/NotebookEditorRegistry.ts`
+- [x] `notebook/NotebookEditorRegistry.ts`
 - [ ] `notebook/NotebookSerializer.ts`
 - [ ] `notebook/NotebookSessionResources.ts`
 
