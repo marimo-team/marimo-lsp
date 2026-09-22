@@ -26,9 +26,10 @@ import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import * as Api from "../platform/Api.ts";
 import * as Constants from "../platform/Constants.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
 import * as GitHubClient from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { ExtensionContext, Storage } from "../platform/Storage.ts";
+import * as Storage from "../platform/Storage.ts";
 import type { VsCode } from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type { PythonExtension } from "../python/PythonExtension.ts";
@@ -114,12 +115,12 @@ export function makeExtension(
     | TyLanguageServer.Service
     | RuffLanguageServer.Service,
     never,
-    ExtensionContext
+    ExtensionContext.Service
   >,
   minimumLogLevel: LogLevel.LogLevel,
 ): {
   readonly activate: (
-    context: typeof ExtensionContext.Service,
+    context: ExtensionContext.Interface,
   ) => Promise<Api.Interface>;
   readonly deactivate: () => Promise<void>;
 } {
@@ -133,7 +134,7 @@ export function makeExtension(
 
       const appLayer = Layer.provide(
         Layer.provide(MainLive, layer),
-        Layer.succeed(ExtensionContext, context),
+        Layer.succeed(ExtensionContext.Service, context),
       ).pipe(
         Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
       );

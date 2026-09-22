@@ -6,7 +6,8 @@ import type * as vscode from "vscode";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
-import { ExtensionContext, Storage } from "../../platform/Storage.ts";
+import * as ExtensionContext from "../../platform/ExtensionContext.ts";
+import * as Storage from "../../platform/Storage.ts";
 import { Telemetry } from "../../telemetry/Telemetry.ts";
 import * as TyLanguageServer from "../TyLanguageServer.ts";
 
@@ -22,7 +23,7 @@ const selectedItem = <T extends string>(
 const freshStorage = (globalState = new Memento()) =>
   Storage.layer.pipe(
     Layer.provide(
-      Layer.succeed(ExtensionContext, {
+      Layer.succeed(ExtensionContext.Service, {
         globalState,
         workspaceState: new Memento(),
         extensionUri: Uri.parse("file:///test/extension/path", true),

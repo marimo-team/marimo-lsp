@@ -14,16 +14,13 @@ import type * as vscode from "vscode";
 
 import { type BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import {
-  createStorageKey,
-  ExtensionContext,
-  Storage,
-} from "../platform/Storage.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
+import * as Storage from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { acquirePostHogAdapter, type PostHogAdapter } from "./posthogSink.ts";
 import { acquireSentryAdapter, type SentryAdapter } from "./sentrySink.ts";
 
-const ANONYMOUS_ID_KEY = createStorageKey(
+const ANONYMOUS_ID_KEY = Storage.createStorageKey(
   "telemetry.anonymousId",
   Schema.String,
 );
@@ -84,9 +81,9 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
     const enabled = config.get<boolean>("telemetry") ?? true;
     if (!enabled) return disabledTelemetry();
 
-    const storage = yield* Storage;
+    const storage = yield* Storage.Service;
     const activationId = crypto.randomUUID();
-    const { extensionMode } = yield* ExtensionContext;
+    const { extensionMode } = yield* ExtensionContext.Service;
     const development =
       process.env.MARIMO_REPLAY_TY_PROMPT === "1" ||
       extensionMode === ExtensionMode.Development ||
@@ -492,7 +489,7 @@ function ignoreTelemetryError(action: () => void): void {
   }
 }
 
-function anonymousId(storage: typeof Storage.Service): Effect.Effect<string> {
+function anonymousId(storage: Storage.Interface): Effect.Effect<string> {
   return Effect.gen(function* () {
     const maybeId = yield* storage.global.get(ANONYMOUS_ID_KEY);
     if (Option.isSome(maybeId)) return maybeId.value;

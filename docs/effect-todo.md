@@ -62,7 +62,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `platform/Api.ts`
 - [x] `platform/Constants.ts`
 - [x] `platform/GitHubClient.ts`
-- [ ] `platform/Storage.ts`
+- [x] `platform/Storage.ts`
 - [ ] `platform/VsCode.ts`: `Window`
 - [ ] `platform/VsCode.ts`: `Commands`
 - [ ] `platform/VsCode.ts`: `Workspace`
@@ -91,7 +91,7 @@ Review these tags for explicit interfaces, `@marimo/` identities, and namespace
 imports. They do not need construction layers.
 
 - [ ] `notebook/NotebookSession.ts`
-- [ ] `platform/Storage.ts`: `ExtensionContext`
+- [x] `platform/ExtensionContext.ts`
 
 ## Activation layers
 

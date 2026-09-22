@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 
-import { ExtensionContext } from "../platform/Storage.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
 import { Uri } from "./TestVsCode.ts";
 
 export class Memento {
@@ -33,7 +33,7 @@ const testExtensionContext = {
 };
 
 export const TestExtensionContextLive = Layer.succeed(
-  ExtensionContext,
+  ExtensionContext.Service,
   testExtensionContext,
 );
 

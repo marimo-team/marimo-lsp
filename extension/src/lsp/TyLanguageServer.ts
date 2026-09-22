@@ -23,7 +23,7 @@ import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { createStorageKey, Storage } from "../platform/Storage.ts";
+import * as Storage from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
@@ -41,7 +41,7 @@ const RELOAD_WINDOW = "Reload Window";
  * Remembers that the user dismissed the "install ty" prompt, so we never ask
  * again on this machine. Installing the extension sets it too.
  */
-const tyPromptDismissedKey = createStorageKey(
+const tyPromptDismissedKey = Storage.createStorageKey(
   "languageServer.ty.installPromptDismissed",
   Schema.Boolean,
 );
@@ -355,7 +355,7 @@ export const makeMissingNotifier = Effect.fn(
   "TyLanguageServer.makeMissingNotifier",
 )(function* () {
   const code = yield* VsCode;
-  const storage = yield* Storage;
+  const storage = yield* Storage.Service;
   const trackSetup = Option.match(yield* Effect.serviceOption(Telemetry), {
     onSome: (telemetry) => telemetry.tySetup,
     onNone: () => () => Effect.void,
