@@ -18,7 +18,8 @@ import {
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { kernelSessionId } from "../../lib/__tests__/branded.ts";
-import { FileSystemError, VsCode } from "../../platform/VsCode.ts";
+import { VsCode } from "../../platform/VsCode.ts";
+import * as Workspace from "../../platform/Workspace.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -93,7 +94,7 @@ const withTestCtx = Effect.fn(function* (
           Ref.update(directories, (current) => [...current, uri.toString()]),
         readFile: (uri) =>
           Effect.fail(
-            new FileSystemError({
+            new Workspace.FileSystemError({
               cause: new Error(`ENOENT: ${uri.toString()}`),
             }),
           ),

@@ -22,15 +22,9 @@ import { commandId, decodeCommandResult } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import * as Commands from "../platform/Commands.ts";
-import {
-  Env,
-  FileSystemError,
-  type NotebookLifecycleEvent,
-  ParseUriError,
-  VsCode,
-  Workspace,
-} from "../platform/VsCode.ts";
+import { Env, ParseUriError, VsCode } from "../platform/VsCode.ts";
 import * as Window from "../platform/Window.ts";
+import * as Workspace from "../platform/Workspace.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
@@ -1541,7 +1535,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly documentClosedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
-  readonly documentLifecyclePubSub: PubSub.PubSub<NotebookLifecycleEvent>;
+  readonly documentLifecyclePubSub: PubSub.PubSub<Workspace.NotebookLifecycleEvent>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -1662,7 +1656,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window.Interface>;
       commands?: Partial<Commands.Interface>;
-      workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
+      workspace?: Partial<Workspace.Interface>;
       env?: Partial<Context.Service.Shape<typeof Env>>;
       installedExtensions?: ReadonlyArray<string>;
     } = {},
@@ -1694,7 +1688,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const documentClosed = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
-    const documentLifecycle = yield* PubSub.unbounded<NotebookLifecycleEvent>();
+    const documentLifecycle =
+      yield* PubSub.unbounded<Workspace.NotebookLifecycleEvent>();
 
     const commands = yield* Ref.make(HashSet.empty<string>());
     const controllers = yield* Ref.make(
@@ -1963,7 +1958,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             const entry = fileSystem.get(key);
 
             if (entry instanceof Error) {
-              return Effect.fail(new FileSystemError({ cause: entry }));
+              return Effect.fail(
+                new Workspace.FileSystemError({ cause: entry }),
+              );
             }
 
             if (entry !== undefined) {
@@ -1972,7 +1969,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
             // File not in map - return error for missing file
             return Effect.fail(
-              new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
+              new Workspace.FileSystemError({
+                cause: new Error(`ENOENT: ${key}`),
+              }),
             );
           },
           writeFile() {

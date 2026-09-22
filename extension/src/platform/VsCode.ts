@@ -5,7 +5,6 @@ import {
   Exit,
   Layer,
   Option,
-  Queue,
   Result,
   Scope,
   Stream,
@@ -30,12 +29,9 @@ import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import * as Commands from "./Commands.ts";
 import * as Window from "./Window.ts";
+import * as Workspace from "./Workspace.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
-  cause: unknown;
-}> {}
-
-export class FileSystemError extends Data.TaggedError("FileSystemError")<{
   cause: unknown;
 }> {}
 
@@ -44,208 +40,6 @@ export class DebugSessionStartError extends Data.TaggedError(
 )<{
   readonly configuration: string | vscode.DebugConfiguration;
 }> {}
-
-export interface NotebookLifecycleEvent {
-  readonly type: "opened" | "closed";
-  readonly document: vscode.NotebookDocument;
-}
-
-type NotebookLifecycleSource = Pick<
-  typeof vscode.workspace,
-  | "notebookDocuments"
-  | "onDidOpenNotebookDocument"
-  | "onDidCloseNotebookDocument"
->;
-
-/**
- * Subscribe before taking the initial snapshot, then release both listeners
- * with the stream's consumer. The enclosing scope is a fallback when the
- * consumer never starts or remains active until extension shutdown.
- */
-export const makeNotebookLifecycle = Effect.fn("makeNotebookLifecycle")(
-  function* (source: NotebookLifecycleSource) {
-    const queue = yield* Queue.make<NotebookLifecycleEvent>();
-    const [opened, closed] = yield* Effect.sync(() => {
-      const opened = source.onDidOpenNotebookDocument((document) =>
-        Queue.offerUnsafe(queue, { type: "opened", document }),
-      );
-      try {
-        return [
-          opened,
-          source.onDidCloseNotebookDocument((document) =>
-            Queue.offerUnsafe(queue, { type: "closed", document }),
-          ),
-        ] as const;
-      } catch (error) {
-        opened.dispose();
-        throw error;
-      }
-    });
-
-    let stopped = false;
-    const stop = Effect.suspend(() => {
-      if (stopped) return Effect.void;
-      stopped = true;
-      return Effect.sync(() => {
-        opened.dispose();
-        closed.dispose();
-      }).pipe(Effect.andThen(Queue.shutdown(queue)));
-    });
-    yield* Effect.addFinalizer(() => stop);
-
-    Queue.offerAllUnsafe(
-      queue,
-      source.notebookDocuments.map((document) => ({
-        type: "opened" as const,
-        document,
-      })),
-    );
-    return Stream.fromQueue(queue).pipe(Stream.ensuring(stop));
-  },
-);
-
-export class Workspace extends Context.Service<Workspace>()("Workspace", {
-  make: Effect.sync(() => {
-    const api = vscode.workspace;
-    return {
-      fs: {
-        createDirectory(uri: vscode.Uri) {
-          return Effect.tryPromise({
-            try: () => api.fs.createDirectory(uri),
-            catch: (cause) => new FileSystemError({ cause }),
-          });
-        },
-        readFile(uri: vscode.Uri) {
-          return Effect.tryPromise({
-            try: () => api.fs.readFile(uri),
-            catch: (cause) => new FileSystemError({ cause }),
-          });
-        },
-        writeFile(uri: vscode.Uri, contents: Uint8Array) {
-          return Effect.tryPromise({
-            try: () => api.fs.writeFile(uri, contents),
-            catch: (cause) => new FileSystemError({ cause }),
-          });
-        },
-      },
-      getNotebookDocuments: Effect.sync(() => api.notebookDocuments),
-      getTextDocuments: Effect.sync(() => api.textDocuments),
-      getConfiguration(section: string, scope?: vscode.ConfigurationScope) {
-        return Effect.succeed(api.getConfiguration(section, scope));
-      },
-      getWorkspaceFolders: Effect.sync(() =>
-        Option.fromNullishOr(api.workspaceFolders),
-      ),
-      isTrusted() {
-        return api.isTrusted;
-      },
-      registerNotebookSerializer(
-        notebookType: string,
-        impl: vscode.NotebookSerializer,
-        options?: vscode.NotebookDocumentContentOptions,
-      ) {
-        return acquireDisposable(() =>
-          api.registerNotebookSerializer(notebookType, impl, options),
-        ).pipe(Effect.andThen(Effect.void));
-      },
-      notebookDocumentChanges:
-        Stream.callback<vscode.NotebookDocumentChangeEvent>((queue) =>
-          acquireDisposable(() =>
-            api.onDidChangeNotebookDocument((event) =>
-              Queue.offerUnsafe(queue, event),
-            ),
-          ),
-        ),
-      notebookDocumentOpened: Stream.callback<vscode.NotebookDocument>(
-        (queue) =>
-          acquireDisposable(() =>
-            api.onDidOpenNotebookDocument((event) =>
-              Queue.offerUnsafe(queue, event),
-            ),
-          ),
-      ),
-      // Everything here — both listener registrations and the snapshot of
-      // already-open documents — runs before the effect completes, within one
-      // fiber turn, so no event can fall between snapshot and subscription. A
-      // document may be observed twice (snapshot and event) but never zero
-      // times; consumers must treat a re-observed open as idempotent.
-      subscribeNotebookLifecycle: makeNotebookLifecycle(api),
-      textDocumentChanges: Stream.callback<vscode.TextDocumentChangeEvent>(
-        (queue) =>
-          acquireDisposable(() =>
-            api.onDidChangeTextDocument((event) =>
-              Queue.offerUnsafe(queue, event),
-            ),
-          ),
-      ),
-      notebookDocumentClosed: Stream.callback<vscode.NotebookDocument>(
-        (queue) =>
-          acquireDisposable(() =>
-            api.onDidCloseNotebookDocument((event) =>
-              Queue.offerUnsafe(queue, event),
-            ),
-          ),
-      ),
-      fileRenames: Stream.callback<vscode.FileRenameEvent>((queue) =>
-        acquireDisposable(() =>
-          api.onDidRenameFiles((event) => Queue.offerUnsafe(queue, event)),
-        ),
-      ),
-      fileDeletes: Stream.callback<vscode.FileDeleteEvent>((queue) =>
-        acquireDisposable(() =>
-          api.onDidDeleteFiles((event) => Queue.offerUnsafe(queue, event)),
-        ),
-      ),
-      configurationChanges: Stream.callback<vscode.ConfigurationChangeEvent>(
-        (queue) =>
-          acquireDisposable(() =>
-            api.onDidChangeConfiguration((event) =>
-              Queue.offerUnsafe(queue, event),
-            ),
-          ),
-      ),
-      applyEdit(edit: vscode.WorkspaceEdit) {
-        return Effect.promise(() => api.applyEdit(edit));
-      },
-      openNotebookDocument(uri: vscode.Uri) {
-        return Effect.promise(() => api.openNotebookDocument(uri));
-      },
-      openUntitledNotebookDocument(
-        notebookType: string,
-        content?: vscode.NotebookData,
-      ) {
-        return Effect.promise(() =>
-          api.openNotebookDocument(notebookType, content),
-        );
-      },
-      openUntitledTextDocument(options: {
-        content?: string;
-        language?: string;
-      }) {
-        return Effect.promise(() => api.openTextDocument(options));
-      },
-      createFileSystemWatcher(globPattern: vscode.GlobPattern) {
-        return Stream.callback<{ uri: vscode.Uri; type: 1 | 2 | 3 }>((queue) =>
-          acquireDisposable(() => {
-            const watcher = api.createFileSystemWatcher(globPattern);
-            watcher.onDidCreate((uri) =>
-              Queue.offerUnsafe(queue, { uri, type: 1 }),
-            );
-            watcher.onDidChange((uri) =>
-              Queue.offerUnsafe(queue, { uri, type: 2 }),
-            );
-            watcher.onDidDelete((uri) =>
-              Queue.offerUnsafe(queue, { uri, type: 3 }),
-            );
-            return watcher;
-          }),
-        );
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 export class Env extends Context.Service<Env>()("Env", {
   make: Effect.sync(() => {
@@ -935,7 +729,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       // namespaces
       window: yield* Window.Service,
       commands: yield* Commands.Service,
-      workspace: yield* Workspace,
+      workspace: yield* Workspace.Service,
       env: yield* Env,
       debug: yield* Debug,
       notebooks: yield* Notebooks,

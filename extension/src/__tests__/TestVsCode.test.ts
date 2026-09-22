@@ -3,8 +3,9 @@ import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
-import { makeNotebookLifecycle, VsCode } from "../platform/VsCode.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import { makeActiveNotebookEditorChanges } from "../platform/Window.ts";
+import { makeNotebookLifecycle } from "../platform/Workspace.ts";
 
 // Tests for our VsCode test harness
 describe("TestVsCode", () => {

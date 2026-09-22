@@ -51,7 +51,7 @@ def _():
   },
   flow(
     Effect.catchTag(
-      "FileSystemError",
+      "Workspace.FileSystemError",
       Effect.fn(function* (error) {
         yield* Effect.logError("Failed to create notebook").pipe(
           Effect.annotateLogs({ cause: Cause.fail(error) }),
