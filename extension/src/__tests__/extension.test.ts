@@ -20,7 +20,9 @@ import { makeTestMarimoClient } from "./__utils__/TestMarimoClient.ts";
 const withTestCtx = Effect.fn(function* (
   additionalLayer: Layer.Layer<never> = Layer.empty,
 ) {
-  const vscode = yield* TestVsCode.make();
+  // Keep full activation hermetic: remote extension hosts do not publish a
+  // host-machine discovery record.
+  const vscode = yield* TestVsCode.make({ env: { remoteName: "test" } });
   const layer = Layer.empty.pipe(
     Layer.merge(additionalLayer),
     Layer.provideMerge(vscode.layer),

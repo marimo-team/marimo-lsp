@@ -2,6 +2,7 @@ import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
 import { Config } from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
+import { LocalDiscoveryLive } from "../discovery/LocalDiscoveryPublisher.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
@@ -78,6 +79,7 @@ const MainLive = Layer.empty
     Layer.merge(NotebookControllersLive),
   )
   .pipe(
+    Layer.merge(LocalDiscoveryLive),
     Layer.provideMerge(Api.layer),
     Layer.provide(DebugAdapter.layer),
     Layer.provide(GitHubClient.layer),

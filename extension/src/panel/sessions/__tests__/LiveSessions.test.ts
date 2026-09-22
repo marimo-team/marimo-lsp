@@ -19,6 +19,7 @@ const SNAPSHOT = {
       executable: "/venv/bin/python",
       workingDirectory: "/workspace",
       startedAt: 42,
+      marimoVersion: "0.24.0",
       status: "idle",
       attached: false,
     },

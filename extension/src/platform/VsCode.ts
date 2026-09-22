@@ -204,6 +204,28 @@ export class Window extends Context.Service<Window>()("Window", {
           api.createOutputChannel(name, { log: true }),
         );
       },
+      registerUriHandler(
+        handler: (uri: vscode.Uri) => Effect.Effect<void>,
+      ): Effect.Effect<void, never, Scope.Scope> {
+        return Effect.gen(function* () {
+          const runFork = Effect.runForkWith(yield* Effect.context());
+          yield* acquireDisposable(() =>
+            api.registerUriHandler({
+              handleUri(uri) {
+                runFork(
+                  handler(uri).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.logWarning("Failed to handle extension URI").pipe(
+                        Effect.annotateLogs({ cause }),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            }),
+          );
+        });
+      },
       getActiveNotebookEditor: Effect.sync(() =>
         Option.fromNullishOr(api.activeNotebookEditor),
       ),
@@ -549,6 +571,12 @@ export class Workspace extends Context.Service<Workspace>()("Workspace", {
             catch: (cause) => new FileSystemError({ cause }),
           });
         },
+        stat(uri: vscode.Uri) {
+          return Effect.tryPromise({
+            try: () => api.fs.stat(uri),
+            catch: (cause) => new FileSystemError({ cause }),
+          });
+        },
       },
       getNotebookDocuments: Effect.sync(() => api.notebookDocuments),
       getTextDocuments: Effect.sync(() => api.textDocuments),
@@ -585,6 +613,13 @@ export class Workspace extends Context.Service<Workspace>()("Workspace", {
               Queue.offerUnsafe(queue, event),
             ),
           ),
+      ),
+      notebookDocumentSaved: Stream.callback<vscode.NotebookDocument>((queue) =>
+        acquireDisposable(() =>
+          api.onDidSaveNotebookDocument((document) =>
+            Queue.offerUnsafe(queue, document),
+          ),
+        ),
       ),
       // Everything here — both listener registrations and the snapshot of
       // already-open documents — runs before the effect completes, within one
@@ -626,6 +661,14 @@ export class Workspace extends Context.Service<Workspace>()("Workspace", {
             ),
           ),
       ),
+      workspaceFoldersChanges:
+        Stream.callback<vscode.WorkspaceFoldersChangeEvent>((queue) =>
+          acquireDisposable(() =>
+            api.onDidChangeWorkspaceFolders((event) =>
+              Queue.offerUnsafe(queue, event),
+            ),
+          ),
+        ),
       applyEdit(edit: vscode.WorkspaceEdit) {
         return Effect.promise(() => api.applyEdit(edit));
       },
@@ -677,6 +720,8 @@ export class Env extends Context.Service<Env>()("Env", {
       appRoot: api.appRoot,
       appHost: api.appHost,
       machineId: api.machineId,
+      remoteName: api.remoteName,
+      uriScheme: api.uriScheme,
       createTelemetryLogger(
         sender: vscode.TelemetrySender,
         options?: vscode.TelemetryLoggerOptions,
@@ -684,6 +729,9 @@ export class Env extends Context.Service<Env>()("Env", {
         return acquireDisposable(() =>
           api.createTelemetryLogger(sender, options),
         );
+      },
+      asExternalUri(target: vscode.Uri): Effect.Effect<vscode.Uri> {
+        return Effect.promise(() => api.asExternalUri(target));
       },
       openExternal(target: vscode.Uri): Effect.Effect<boolean> {
         return Effect.promise(() => api.openExternal(target));
