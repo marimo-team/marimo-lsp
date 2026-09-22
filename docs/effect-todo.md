@@ -15,83 +15,83 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ## Pilot services
 
-- [x] `platform/OutputChannel.ts`
-- [x] `python/PythonEnvInvalidation.ts`
-- [x] `notebook/NotebookRenderer.ts`
+- [ ] `platform/OutputChannel.ts`
+- [ ] `python/PythonEnvInvalidation.ts`
+- [ ] `notebook/NotebookRenderer.ts`
 
 ## Service modules
 
 ### Configuration
 
-- [x] `config/Config.ts`
-- [x] `config/NotebookConfiguration.ts`
+- [ ] `config/Config.ts`
+- [ ] `config/NotebookConfiguration.ts`
 
 ### Kernel
 
-- [x] `kernel/CellExecutions.ts`
-- [x] `kernel/CellOutputProjections.ts`
-- [x] `kernel/DebugAdapter.ts`
-- [x] `kernel/NotebookRuntime.ts`
-- [x] `kernel/VsCodeCellDrive.ts`
-- [x] `kernel/VsCodeNotebookOutputPresenter.ts`
+- [ ] `kernel/CellExecutions.ts`
+- [ ] `kernel/CellOutputProjections.ts`
+- [ ] `kernel/DebugAdapter.ts`
+- [ ] `kernel/NotebookRuntime.ts`
+- [ ] `kernel/VsCodeCellDrive.ts`
+- [ ] `kernel/VsCodeNotebookOutputPresenter.ts`
 
 ### Language servers
 
-- [x] `lsp/MarimoClient.ts`
-- [x] `lsp/RuffLanguageServer.ts`
-- [x] `lsp/TyLanguageServer.ts`
+- [ ] `lsp/MarimoClient.ts`
+- [ ] `lsp/RuffLanguageServer.ts`
+- [ ] `lsp/TyLanguageServer.ts`
 
 ### Notebook
 
-- [x] `notebook/CellMetadataUIBinding.ts`
-- [x] `notebook/NotebookDependencies.ts`
-- [x] `notebook/NotebookDocumentSessions.ts`
-- [x] `notebook/NotebookEditorRegistry.ts`
-- [x] `notebook/NotebookSerializer.ts`
-- [x] `notebook/NotebookSessionResources.ts`
+- [ ] `notebook/CellMetadataUIBindingService.ts`
+- [ ] `notebook/NotebookDependencies.ts`
+- [ ] `notebook/NotebookDocumentSessions.ts`
+- [ ] `notebook/NotebookEditorRegistry.ts`
+- [ ] `notebook/NotebookSerializer.ts`
+- [ ] `notebook/NotebookSessionResources.ts`
 
 ### Panels
 
-- [x] `panel/TreeView.ts`
-- [x] `panel/datasources/NotebookDatasources.ts`
-- [x] `panel/sessions/LiveSessions.ts`
-- [x] `panel/variables/NotebookVariables.ts`
+- [ ] `panel/TreeView.ts`
+- [ ] `panel/datasources/NotebookDatasources.ts`
+- [ ] `panel/sessions/LiveSessions.ts`
+- [ ] `panel/variables/NotebookVariables.ts`
 
 ### Platform
 
-- [x] `platform/Api.ts`
-- [x] `platform/Constants.ts`
-- [x] `platform/GitHubClient.ts`
-- [x] `platform/Storage.ts`
-- [x] `platform/Window.ts`
-- [x] `platform/Commands.ts`
-- [x] `platform/Workspace.ts`
-- [x] `platform/Env.ts`
-- [x] `platform/Debug.ts`
-- [x] `platform/Notebooks.ts`
-- [x] `platform/Auth.ts`
-- [x] `platform/Languages.ts`
-- [x] `platform/VsCode.ts`: `VsCode`
+- [ ] `platform/Api.ts`
+- [ ] `platform/Constants.ts`
+- [ ] `platform/GitHubClient.ts`
+- [ ] `platform/Storage.ts`
+- [ ] `platform/VsCode.ts`: `Window`
+- [ ] `platform/VsCode.ts`: `Commands`
+- [ ] `platform/VsCode.ts`: `Workspace`
+- [ ] `platform/VsCode.ts`: `Env`
+- [ ] `platform/VsCode.ts`: `Debug`
+- [ ] `platform/VsCode.ts`: `Notebooks`
+- [ ] `platform/VsCode.ts`: `Auth`
+- [ ] `platform/VsCode.ts`: `Languages`
+- [ ] `platform/VsCode.ts`: `VsCode`
 
 ### Python
 
-- [x] `python/EnvironmentValidator.ts`
-- [x] `python/PythonExtension.ts`
-- [x] `python/Uv.ts`
+- [ ] `python/EnvironmentValidator.ts`
+- [ ] `python/PythonExtension.ts`
+- [ ] `python/Uv.ts`
 
 ### Status and telemetry
 
-- [x] `statusbar/StatusBar.ts`
-- [x] `telemetry/HealthService.ts`
-- [x] `telemetry/Telemetry.ts`
+- [ ] `statusbar/StatusBar.ts`
+- [ ] `telemetry/HealthService.ts`
+- [ ] `telemetry/Telemetry.ts`
 
 ## Context-only services
 
 Review these tags for explicit interfaces, `@marimo/` identities, and namespace
 imports. They do not need construction layers.
 
-- [x] `notebook/NotebookSession.ts`
-- [x] `platform/ExtensionContext.ts`
+- [ ] `notebook/NotebookSession.ts`
+- [ ] `platform/Storage.ts`: `ExtensionContext`
 
 ## Activation layers
 
@@ -99,26 +99,26 @@ Keep these as `Layer.effectDiscard` modules and verify their resources end with
 the layer scope. Export `layer`, import the module as a namespace, and remove
 `Live` suffixes.
 
-- [x] `config/ConfigContextManager.ts`
-- [x] `features/AutoExport.ts`
-- [x] `features/CellInputVisibilitySync.ts`
-- [x] `features/CellMetadataBindings.ts`
-- [x] `features/CellStatusBarProvider.ts`
-- [x] `features/Debug.ts`
-- [x] `features/MarimoCodeLensProvider.ts`
-- [x] `features/MarimoFileDetector.ts`
-- [x] `features/RegisterCommands.ts`
-- [x] `features/RegisterLanguageModelTools.ts`
-- [x] `features/ReloadOnConfigChange.ts`
-- [x] `features/ThemeSync.ts`
-- [x] `kernel/NotebookControllers.ts`
-- [x] `panel/datasources/DatasourcesView.ts`
-- [x] `panel/packages/PackagesView.ts`
-- [x] `panel/sessions/SessionFileLifecycle.ts`
-- [x] `panel/sessions/SessionsView.ts`
-- [x] `panel/variables/VariablesView.ts`
-- [x] `statusbar/MarimoStatusBar.ts`
-- [x] `statusbar/PythonEnvironmentStatusBar.ts`
+- [ ] `config/ConfigContextManager.ts`
+- [ ] `features/AutoExport.ts`
+- [ ] `features/CellInputVisibilitySync.ts`
+- [ ] `features/CellMetadataBindings.ts`
+- [ ] `features/CellStatusBarProvider.ts`
+- [ ] `features/DebugLayer.ts`
+- [ ] `features/MarimoCodeLensProvider.ts`
+- [ ] `features/MarimoFileDetector.ts`
+- [ ] `features/RegisterCommands.ts`
+- [ ] `features/RegisterLanguageModelTools.ts`
+- [ ] `features/ReloadOnConfigChange.ts`
+- [ ] `features/ThemeSync.ts`
+- [ ] `kernel/NotebookControllers.ts`
+- [ ] `panel/datasources/DatasourcesView.ts`
+- [ ] `panel/packages/PackagesView.ts`
+- [ ] `panel/sessions/SessionFileLifecycle.ts`
+- [ ] `panel/sessions/SessionsView.ts`
+- [ ] `panel/variables/VariablesView.ts`
+- [ ] `statusbar/MarimoStatusBar.ts`
+- [ ] `statusbar/PythonEnvironmentStatusBar.ts`
 
 ## Composition
 

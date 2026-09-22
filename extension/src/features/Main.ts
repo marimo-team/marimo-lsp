@@ -51,60 +51,57 @@ import * as RegisterLanguageModelTools from "./RegisterLanguageModelTools.ts";
 import * as ReloadOnConfigChange from "./ReloadOnConfigChange.ts";
 import * as ThemeSync from "./ThemeSync.ts";
 
-/**
- * Main application layer that wires together all services and layers
- * required for the marimo VS Code extension to function.
- */
-const MainLive = Layer.empty
-  .pipe(
-    Layer.merge(RegisterCommands.layer),
-    Layer.merge(RegisterLanguageModelTools.layer),
-    Layer.merge(MarimoStatusBar.layer),
-    Layer.merge(PythonEnvironmentStatusBar.layer),
-    Layer.merge(MarimoFileDetector.layer),
-    Layer.merge(MarimoCodeLensProvider.layer),
-    Layer.merge(SessionsView.layer),
-    Layer.merge(SessionFileLifecycle.layer),
-    Layer.merge(VariablesView.layer),
-    Layer.merge(DatasourcesView.layer),
-    Layer.merge(PackagesView.layer),
-    Layer.merge(CellStatusBarProvider.layer),
-    Layer.merge(CellMetadataBindings.layer),
-    Layer.merge(AutoExport.layer),
-    Layer.merge(ReloadOnConfigChange.layer),
-    Layer.merge(ConfigContextManager.layer),
-    Layer.merge(ThemeSync.layer),
-    Layer.merge(CellInputVisibilitySync.layer),
-    Layer.merge(Debug.layer),
-    Layer.merge(NotebookControllers.layer),
-  )
-  .pipe(
-    Layer.provideMerge(Api.layer),
-    Layer.provide(DebugAdapter.layer),
-    Layer.provide(GitHubClient.defaultLayer),
-    Layer.provide(NotebookRenderer.layer),
-    Layer.provide(NotebookSerializer.layer),
-    Layer.provide(CellExecutions.layer),
-    Layer.provide(NotebookVariables.defaultLayer),
-    Layer.provide(NotebookDatasources.defaultLayer),
-    Layer.provideMerge(LiveSessions.layer),
-    Layer.provide(HealthService.layer),
-    Layer.provide(CellMetadataUIBinding.layer),
-  )
-  .pipe(
-    Layer.provide(NotebookSessionResources.layer),
-    Layer.provide(NotebookDocumentSessions.layer),
-    Layer.provide(NotebookEditorRegistry.layer),
-    Layer.provide(Uv.layer),
-    Layer.provide(TreeView.layer),
-    Layer.provide(StatusBar.layer),
-    Layer.provide(Storage.layer),
-    Layer.provide(Constants.defaultLayer),
-    Layer.provide(Config.layer),
-    Layer.provide(OutputChannel.layer),
-    Layer.provide(PythonEnvInvalidation.layer),
-    Layer.provide(NotebookRuntime.defaultLayer),
-  );
+const activations = Layer.mergeAll(
+  RegisterCommands.layer,
+  RegisterLanguageModelTools.layer,
+  MarimoStatusBar.layer,
+  PythonEnvironmentStatusBar.layer,
+  MarimoFileDetector.layer,
+  MarimoCodeLensProvider.layer,
+  SessionsView.layer,
+  SessionFileLifecycle.layer,
+  VariablesView.layer,
+  DatasourcesView.layer,
+  PackagesView.layer,
+  CellStatusBarProvider.layer,
+  CellMetadataBindings.layer,
+  AutoExport.layer,
+  ReloadOnConfigChange.layer,
+  ConfigContextManager.layer,
+  ThemeSync.layer,
+  CellInputVisibilitySync.layer,
+  Debug.layer,
+  NotebookControllers.layer,
+);
+
+const MainLive = activations.pipe(
+  Layer.provideMerge(Api.layer),
+  Layer.provide([
+    DebugAdapter.layer,
+    GitHubClient.defaultLayer,
+    NotebookRenderer.layer,
+    NotebookSerializer.layer,
+    CellExecutions.layer,
+    NotebookVariables.defaultLayer,
+    NotebookDatasources.defaultLayer,
+  ]),
+  Layer.provideMerge(LiveSessions.layer),
+  Layer.provide([HealthService.layer, CellMetadataUIBinding.layer]),
+  Layer.provide(Uv.layer),
+  Layer.provide([
+    NotebookSessionResources.layer,
+    NotebookDocumentSessions.layer,
+    NotebookEditorRegistry.layer,
+    TreeView.layer,
+    StatusBar.layer,
+    Storage.layer,
+    Constants.defaultLayer,
+    Config.layer,
+    OutputChannel.layer,
+    PythonEnvInvalidation.layer,
+  ]),
+  Layer.provide(NotebookRuntime.defaultLayer),
+);
 
 export function makeExtension(
   layer: Layer.Layer<
