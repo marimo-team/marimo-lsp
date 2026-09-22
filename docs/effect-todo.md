@@ -83,7 +83,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 - [x] `statusbar/StatusBar.ts`
 - [x] `telemetry/HealthService.ts`
-- [ ] `telemetry/Telemetry.ts`
+- [x] `telemetry/Telemetry.ts`
 
 ## Context-only services
 

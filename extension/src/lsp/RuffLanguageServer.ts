@@ -22,7 +22,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
@@ -65,7 +65,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
-    const telemetry = yield* Effect.serviceOption(Telemetry);
+    const telemetry = yield* Effect.serviceOption(Telemetry.Service);
 
     const statusRef = yield* Ref.make<Status>(Status.Starting());
 

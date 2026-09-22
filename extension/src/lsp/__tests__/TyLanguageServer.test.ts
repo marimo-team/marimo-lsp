@@ -8,7 +8,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
 import * as ExtensionContext from "../../platform/ExtensionContext.ts";
 import * as Storage from "../../platform/Storage.ts";
-import { Telemetry } from "../../telemetry/Telemetry.ts";
+import * as Telemetry from "../../telemetry/Telemetry.ts";
 import * as TyLanguageServer from "../TyLanguageServer.ts";
 
 const selectedItem = <T extends string>(
@@ -35,7 +35,7 @@ const freshStorage = (globalState = new Memento()) =>
 afterEach(() => vi.unstubAllEnvs());
 
 const recordTelemetry = Effect.gen(function* () {
-  const base = yield* Telemetry.pipe(Effect.provide(TestTelemetryLive));
+  const base = yield* Telemetry.Service.pipe(Effect.provide(TestTelemetryLive));
   const events: string[] = [];
   const record = (event: string) =>
     Effect.sync(() => {
@@ -43,7 +43,7 @@ const recordTelemetry = Effect.gen(function* () {
     });
   return {
     events,
-    layer: Layer.succeed(Telemetry, {
+    layer: Layer.succeed(Telemetry.Service, {
       ...base,
       tySetup: record,
     }),

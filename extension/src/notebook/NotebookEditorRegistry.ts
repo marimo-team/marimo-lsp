@@ -13,7 +13,7 @@ import type * as vscode from "vscode";
 import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 
 export interface Interface {
   readonly getNotebookEditors: Effect.Effect<
@@ -42,7 +42,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
     const ref = yield* Ref.make(
       HashMap.empty<NotebookId, vscode.NotebookEditor>(),
     );

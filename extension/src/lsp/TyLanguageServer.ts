@@ -27,7 +27,7 @@ import * as Storage from "../platform/Storage.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 const TY_SERVER = { name: "ty", version: "0.0.63" } as const;
@@ -104,7 +104,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const pyExt = yield* PythonExtension.Service;
     const envInvalidation = yield* PythonEnvInvalidation.Service;
-    const telemetry = yield* Effect.serviceOption(Telemetry);
+    const telemetry = yield* Effect.serviceOption(Telemetry.Service);
     const code = yield* VsCode.Service;
     const notifyMissingTy = yield* makeMissingNotifier();
 
@@ -356,10 +356,13 @@ export const makeMissingNotifier = Effect.fn(
 )(function* () {
   const code = yield* VsCode.Service;
   const storage = yield* Storage.Service;
-  const trackSetup = Option.match(yield* Effect.serviceOption(Telemetry), {
-    onSome: (telemetry) => telemetry.tySetup,
-    onNone: () => () => Effect.void,
-  });
+  const trackSetup = Option.match(
+    yield* Effect.serviceOption(Telemetry.Service),
+    {
+      onSome: (telemetry) => telemetry.tySetup,
+      onNone: () => () => Effect.void,
+    },
+  );
   const persistDismissal = process.env.MARIMO_REPLAY_TY_PROMPT !== "1";
 
   return yield* Effect.cached(

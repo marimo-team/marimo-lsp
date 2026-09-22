@@ -28,7 +28,7 @@ import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as Uv from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import type {
   DocumentAnalysis,
   KernelNotification,
@@ -212,7 +212,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const config = yield* Config.Service;
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
 
     const lspServer = yield* config.lsp.server.pipe(
       Effect.catchTag(

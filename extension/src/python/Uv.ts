@@ -23,7 +23,7 @@ import { assert } from "../assert.ts";
 import * as Config from "../config/Config.ts";
 import { Version } from "../lib/Version.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import type { ProjectDependencyTarget } from "./ProjectDependencyTarget.ts";
 
 export const UvBin = Data.taggedEnum<UvBin>();
@@ -184,7 +184,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const config = yield* Config.Service;
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const scope = yield* Effect.scope;
     const outputChannel = yield* code.window.createOutputChannel("marimo (uv)");
@@ -566,7 +566,7 @@ const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: ExecutionError,
   code: VsCode.Interface,
-  telemetry: Context.Service.Shape<typeof Telemetry>,
+  telemetry: Telemetry.Interface,
 ) {
   yield* telemetry.uvMissing(error.bin._tag);
 

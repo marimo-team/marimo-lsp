@@ -20,7 +20,7 @@ import showNotebookMenu from "../commands/showNotebookMenu.ts";
 import updateActivePythonEnvironment from "../commands/updateActivePythonEnvironment.ts";
 import updateCellMetadata from "../commands/updateCellMetadata.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 
 /**
  * Registers VS Code commands for the marimo extension.
@@ -28,7 +28,7 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
 export const RegisterCommandsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
 
     yield* code.commands.register(newMarimoNotebook);
     yield* code.commands.register(createSetupCell);

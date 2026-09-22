@@ -12,7 +12,7 @@ import {
 } from "effect";
 
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 
 const structuredMessage = (u: unknown): unknown => {
   switch (typeof u) {
@@ -158,7 +158,7 @@ export const LoggerLive = Layer.unwrap(
   Effect.gen(function* () {
     const outputChannel = yield* OutputChannel.Service;
     const vscodeLogger = makeVsCodeLogger(outputChannel);
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
     return Logger.layer([
       vscodeLogger,
       withSpanAnnotations(telemetry.errorLogger),

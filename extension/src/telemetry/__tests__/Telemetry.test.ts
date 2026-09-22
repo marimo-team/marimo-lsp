@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { Telemetry } from "../Telemetry.ts";
+import * as Telemetry from "../Telemetry.ts";
 
 it.effect(
   "is inert when telemetry is disabled",
@@ -32,7 +32,7 @@ it.effect(
           }),
       },
     });
-    const telemetry = yield* Telemetry.pipe(
+    const telemetry = yield* Telemetry.Service.pipe(
       Effect.provide(
         Telemetry.layer.pipe(
           Layer.provide(code.layer),
