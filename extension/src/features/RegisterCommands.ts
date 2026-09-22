@@ -25,7 +25,7 @@ import * as Telemetry from "../telemetry/Telemetry.ts";
 /**
  * Registers VS Code commands for the marimo extension.
  */
-export const RegisterCommandsLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const telemetry = yield* Telemetry.Service;
@@ -51,19 +51,20 @@ export const RegisterCommandsLive = Layer.effectDiscard(
     yield* code.commands.register(updateCellMetadata);
 
     // Telemetry for commands
+    const recordTelemetry = Effect.fn("RegisterCommands.recordTelemetry")(
+      function* (result: Result.Result<string, string>) {
+        if (Result.isFailure(result)) {
+          yield* telemetry.commandExecuted(result.failure, false);
+        } else {
+          yield* telemetry.commandExecuted(result.success, true);
+        }
+      },
+    );
     const subscription = yield* code.commands.subscribeToCommands;
     yield* Effect.forkScoped(
       Stream.fromSubscription(subscription).pipe(
-        Stream.runForEach(
-          Effect.fn(function* (result) {
-            if (Result.isFailure(result)) {
-              yield* telemetry.commandExecuted(result.failure, false);
-            } else {
-              yield* telemetry.commandExecuted(result.success, true);
-            }
-          }),
-        ),
+        Stream.runForEach(recordTelemetry),
       ),
     );
-  }),
+  }).pipe(Effect.withSpan("RegisterCommands.layer")),
 );

@@ -107,7 +107,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `features/Debug.ts`
 - [x] `features/MarimoCodeLensProvider.ts`
 - [x] `features/MarimoFileDetector.ts`
-- [ ] `features/RegisterCommands.ts`
+- [x] `features/RegisterCommands.ts`
 - [ ] `features/RegisterLanguageModelTools.ts`
 - [ ] `features/ReloadOnConfigChange.ts`
 - [ ] `features/ThemeSync.ts`

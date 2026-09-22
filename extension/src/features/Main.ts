@@ -46,7 +46,7 @@ import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
 import * as Debug from "./Debug.ts";
 import * as MarimoCodeLensProvider from "./MarimoCodeLensProvider.ts";
 import * as MarimoFileDetector from "./MarimoFileDetector.ts";
-import { RegisterCommandsLive } from "./RegisterCommands.ts";
+import * as RegisterCommands from "./RegisterCommands.ts";
 import { RegisterLanguageModelToolsLive } from "./RegisterLanguageModelTools.ts";
 import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
 import { ThemeSyncLive } from "./ThemeSync.ts";
@@ -57,7 +57,7 @@ import { ThemeSyncLive } from "./ThemeSync.ts";
  */
 const MainLive = Layer.empty
   .pipe(
-    Layer.merge(RegisterCommandsLive),
+    Layer.merge(RegisterCommands.layer),
     Layer.merge(RegisterLanguageModelToolsLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
