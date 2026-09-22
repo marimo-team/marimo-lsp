@@ -67,63 +67,7 @@ when tracing the current architecture:
 Use the source tree to discover individual modules; their names and locations
 change as the architecture evolves.
 
-## Logging (Extension)
+## Effect (Extension)
 
-Use Effect's native logging primitives. Avoid custom logging utilities.
-
-### Named Effect Functions
-
-Add a name to `Effect.fn` for automatic span creation. Use `Effect.fnUntraced`
-for inner/callback functions to avoid span overhead:
-
-```ts
-// Do: Named function at entry points
-export const myCommand = Effect.fn("command.myCommand")(function* () {
-  // Do: Untraced for callbacks (avoids extra span overhead)
-  yield* SynchronizedRef.updateEffect(ref, Effect.fnUntraced(function* (value) { ... }));
-});
-
-// Don't: Anonymous at entry points
-export const myCommand = Effect.fn(function* () { ... });
-```
-
-### Logging with Annotations
-
-Put variable data in annotations, not the message:
-
-```ts
-// Do
-yield *
-  Effect.logInfo("Created notebook").pipe(
-    Effect.annotateLogs({ uri: notebook.uri.toString() }),
-  );
-
-// Don't
-yield * Effect.logDebug(`Processing ${count} items`);
-```
-
-### Span Annotations
-
-Use `Effect.annotateCurrentSpan` to add context to the enclosing span:
-
-```ts
-const refresh = Effect.fn("ControllerRegistry.refresh")(function* () {
-  yield* Effect.annotateCurrentSpan("environmentCount", envs.length);
-  // ...
-});
-```
-
-### Explicit Spans
-
-Use `Effect.withSpan` for important operations:
-
-```ts
-yield *
-  client
-    .executeCommand(cmd)
-    .pipe(
-      Effect.withSpan("lsp.executeCommand", {
-        attributes: { command: cmd.command },
-      }),
-    );
-```
+See the [extension Effect guide](docs/effect-guide.md) and
+[migration TODO](docs/effect-todo.md).

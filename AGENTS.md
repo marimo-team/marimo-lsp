@@ -35,9 +35,9 @@ Before writing Effect code, inspect the relevant APIs and concepts in
 `extension/node_modules/effect/src`. This source always matches the installed
 version.
 
-Follow the repository's Effect logging and function-naming conventions in
-`CONTRIBUTING.md`. Prefer existing Effect primitives and local patterns over
-introducing parallel abstractions.
+Follow `docs/effect-guide.md` for new or touched Effect modules and
+`docs/effect-todo.md` for incremental migration order. Prefer existing
+Effect primitives and local patterns over introducing parallel abstractions.
 
 ## Generated files
 
