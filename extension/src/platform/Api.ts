@@ -61,21 +61,28 @@ interface Kernels {
   getKernel(uri: vscode.Uri): Promise<Kernel | undefined>;
 }
 
-export interface MarimoApi {
+export interface Interface {
   experimental: {
     kernels: Kernels;
   };
 }
 
-export class Api extends Context.Service<Api>()("Api", {
-  make: Effect.gen(function* () {
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/Api",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
     const code = yield* VsCode;
     const notebooks = yield* NotebookRuntime.Service;
 
     const context = yield* Effect.context();
     const runPromise = Effect.runPromiseWith(context);
 
-    const findMarimoNotebookDocument = Effect.fn(function* (uri: vscode.Uri) {
+    const findMarimoNotebookDocument = Effect.fnUntraced(function* (
+      uri: vscode.Uri,
+    ) {
       const notebooks = yield* code.workspace.getNotebookDocuments;
       return ReadonlyArray.findFirst(
         ReadonlyArray.getSomes(
@@ -85,7 +92,7 @@ export class Api extends Context.Service<Api>()("Api", {
       );
     });
 
-    const getKernel = Effect.fn(function* (uri: vscode.Uri) {
+    const getKernel = Effect.fn("Api.getKernel")(function* (uri: vscode.Uri) {
       const doc = yield* findMarimoNotebookDocument(uri);
 
       if (Option.isNone(doc)) {
@@ -139,15 +146,12 @@ export class Api extends Context.Service<Api>()("Api", {
       return kernel;
     });
 
-    const api: MarimoApi = {
+    return Service.of({
       experimental: {
         kernels: {
           getKernel: (uri) => runPromise(getKernel(uri)),
         },
       },
-    };
-    return api;
+    });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+);

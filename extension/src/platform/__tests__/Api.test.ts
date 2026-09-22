@@ -10,7 +10,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import { Api } from "../Api.ts";
+import * as Api from "../Api.ts";
 import { VsCode } from "../VsCode.ts";
 
 const withTestCtx = Effect.fn(function* (
@@ -36,7 +36,7 @@ describe("Api", () => {
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
 
-      const api = yield* Api.pipe(Effect.provide(ctx.layer));
+      const api = yield* Api.Service.pipe(Effect.provide(ctx.layer));
 
       expect(api).toBeDefined();
       expect(api.experimental).toBeDefined();
@@ -51,7 +51,7 @@ describe("Api", () => {
       const ctx = yield* withTestCtx();
 
       const kernel = yield* Effect.gen(function* () {
-        const api = yield* Api;
+        const api = yield* Api.Service;
         const code = yield* VsCode;
         const fakeUri = yield* Effect.fromResult(
           code.utils.parseUri("file:///non-existent-notebook.py"),
@@ -90,7 +90,7 @@ describe("Api", () => {
       const ctx = yield* withTestCtx({ initialDocuments: [notebookDoc] });
 
       const kernel = yield* Effect.gen(function* () {
-        const api = yield* Api;
+        const api = yield* Api.Service;
         const code = yield* VsCode;
         const uri = yield* Effect.fromResult(
           code.utils.parseUri("file:///test/notebook_mo.py"),

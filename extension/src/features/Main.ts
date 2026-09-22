@@ -24,7 +24,7 @@ import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
-import { Api, type MarimoApi } from "../platform/Api.ts";
+import * as Api from "../platform/Api.ts";
 import { Constants } from "../platform/Constants.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
@@ -120,13 +120,13 @@ export function makeExtension(
 ): {
   readonly activate: (
     context: typeof ExtensionContext.Service,
-  ) => Promise<MarimoApi>;
+  ) => Promise<Api.Interface>;
   readonly deactivate: () => Promise<void>;
 } {
   let closeActive: (() => Promise<void>) | undefined;
 
   return {
-    async activate(context): Promise<MarimoApi> {
+    async activate(context): Promise<Api.Interface> {
       if (closeActive !== undefined) {
         throw new Error("Extension is already active");
       }
@@ -141,7 +141,7 @@ export function makeExtension(
       closeActive = runtime.dispose;
 
       try {
-        const api = await runtime.runPromise(Api);
+        const api = await runtime.runPromise(Api.Service);
         return { experimental: api.experimental };
       } catch (error) {
         closeActive = undefined;
