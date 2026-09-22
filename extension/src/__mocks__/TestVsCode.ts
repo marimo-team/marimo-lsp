@@ -2,7 +2,6 @@ import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
 
 import {
-  Context,
   Data,
   Deferred,
   Effect,
@@ -22,7 +21,8 @@ import { commandId, decodeCommandResult } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import * as Commands from "../platform/Commands.ts";
-import { Env, ParseUriError, VsCode } from "../platform/VsCode.ts";
+import * as Env from "../platform/Env.ts";
+import { ParseUriError, VsCode } from "../platform/VsCode.ts";
 import * as Window from "../platform/Window.ts";
 import * as Workspace from "../platform/Workspace.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
@@ -1657,7 +1657,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       window?: Partial<Window.Interface>;
       commands?: Partial<Commands.Interface>;
       workspace?: Partial<Workspace.Interface>;
-      env?: Partial<Context.Service.Shape<typeof Env>>;
+      env?: Partial<Env.Interface>;
       installedExtensions?: ReadonlyArray<string>;
     } = {},
   ) {

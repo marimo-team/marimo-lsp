@@ -66,7 +66,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `platform/Window.ts`
 - [x] `platform/Commands.ts`
 - [x] `platform/Workspace.ts`
-- [ ] `platform/VsCode.ts`: `Env`
+- [x] `platform/Env.ts`
 - [ ] `platform/VsCode.ts`: `Debug`
 - [ ] `platform/VsCode.ts`: `Notebooks`
 - [ ] `platform/VsCode.ts`: `Auth`

@@ -28,6 +28,7 @@ import * as vscode from "vscode";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import * as Commands from "./Commands.ts";
+import * as Env from "./Env.ts";
 import * as Window from "./Window.ts";
 import * as Workspace from "./Workspace.ts";
 
@@ -40,31 +41,6 @@ export class DebugSessionStartError extends Data.TaggedError(
 )<{
   readonly configuration: string | vscode.DebugConfiguration;
 }> {}
-
-export class Env extends Context.Service<Env>()("Env", {
-  make: Effect.sync(() => {
-    const api = vscode.env;
-    return {
-      appName: api.appName,
-      appRoot: api.appRoot,
-      appHost: api.appHost,
-      machineId: api.machineId,
-      createTelemetryLogger(
-        sender: vscode.TelemetrySender,
-        options?: vscode.TelemetryLoggerOptions,
-      ) {
-        return acquireDisposable(() =>
-          api.createTelemetryLogger(sender, options),
-        );
-      },
-      openExternal(target: vscode.Uri): Effect.Effect<boolean> {
-        return Effect.promise(() => api.openExternal(target));
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 export class Debug extends Context.Service<Debug>()("Debug", {
   make: Effect.sync(() => {
@@ -730,7 +706,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       window: yield* Window.Service,
       commands: yield* Commands.Service,
       workspace: yield* Workspace.Service,
-      env: yield* Env,
+      env: yield* Env.Service,
       debug: yield* Debug,
       notebooks: yield* Notebooks,
       auth: yield* Auth,
