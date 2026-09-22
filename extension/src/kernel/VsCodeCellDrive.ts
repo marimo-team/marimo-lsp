@@ -45,233 +45,237 @@ const resourceKey = (cell: CellRef, runId: RunId): string =>
   JSON.stringify([cell.notebookId, cell.cellId, runId]);
 
 /** Owns VS Code's live execution handles behind the {@link Drive} seam. */
-export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
-  "VsCodeCellDrive",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      const projections = yield* CellOutputProjections.Service;
-      const resources = new Map<string, PresentedRun>();
-      const errorDiagnostics = yield* acquireDisposable(() =>
-        code.languages.createDiagnosticCollection("marimo-runtime"),
-      );
+export interface Interface {
+  readonly bind: (binding: VsCodeDriveBinding) => Drive;
+}
 
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          for (const resource of resources.values()) {
-            try {
-              resource.execution.end(false);
-            } catch {
-              // The execution was already ended by a concurrent notification.
-            }
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/VsCodeCellDrive",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode;
+    const projections = yield* CellOutputProjections.Service;
+    const resources = new Map<string, PresentedRun>();
+    const errorDiagnostics = yield* acquireDisposable(() =>
+      code.languages.createDiagnosticCollection("marimo-runtime"),
+    );
+
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const resource of resources.values()) {
+          try {
+            resource.execution.end(false);
+          } catch {
+            // The execution was already ended by a concurrent notification.
           }
-          resources.clear();
-        }),
-      );
+        }
+        resources.clear();
+      }),
+    );
 
-      /** Applies a function while a cell run still has live resources. */
-      const withResource = (
-        cell: CellRef,
-        runId: RunId,
-        apply: (resource: PresentedRun) => Effect.Effect<void>,
-      ) => {
-        const resource = resources.get(resourceKey(cell, runId));
-        return resource === undefined
-          ? Effect.logDebug("No live VS Code execution for cell run").pipe(
-              Effect.annotateLogs({ ...cell, runId }),
-            )
-          : apply(resource);
-      };
+    /** Applies a function while a cell run still has live resources. */
+    const withResource = (
+      cell: CellRef,
+      runId: RunId,
+      apply: (resource: PresentedRun) => Effect.Effect<void>,
+    ) => {
+      const resource = resources.get(resourceKey(cell, runId));
+      return resource === undefined
+        ? Effect.logDebug("No live VS Code execution for cell run").pipe(
+            Effect.annotateLogs({ ...cell, runId }),
+          )
+        : apply(resource);
+    };
 
-      /** Resolves a cell within the notebook bound to this drive. */
-      const resolveCell = (cell: CellRef, binding: VsCodeDriveBinding) =>
-        Effect.gen(function* () {
-          if (binding.notebook.id !== cell.notebookId) {
-            return yield* new InvalidCellError({
-              cellId: cell.cellId,
-              cause: new Error("Drive is bound to another notebook"),
-            });
-          }
-          return yield* findNotebookCell(binding.notebook, cell.cellId);
-        });
-
-      /** Creates a VS Code execution for a resolved cell. */
-      const createExecution = (cell: CellRef, binding: VsCodeDriveBinding) =>
-        Effect.gen(function* () {
-          const notebookCell = yield* resolveCell(cell, binding);
-          return yield* Effect.try({
-            try: () =>
-              binding.controller.createNotebookCellExecution(notebookCell),
-            catch: (cause) =>
-              new InvalidCellError({ cellId: cell.cellId, cause }),
+    /** Resolves a cell within the notebook bound to this drive. */
+    const resolveCell = (cell: CellRef, binding: VsCodeDriveBinding) =>
+      Effect.gen(function* () {
+        if (binding.notebook.id !== cell.notebookId) {
+          return yield* new InvalidCellError({
+            cellId: cell.cellId,
+            cause: new Error("Drive is bound to another notebook"),
           });
-        });
+        }
+        return yield* findNotebookCell(binding.notebook, cell.cellId);
+      });
 
-      /** Projects state onto a tracked run's live execution. */
-      const renderOutputs = (
-        cell: CellRef,
-        runId: RunId,
-        state: CellRuntimeState,
-        final: boolean,
-      ) =>
-        withResource(cell, runId, ({ execution, notebook, started }) => {
-          if (!started) return Effect.void;
+    /** Creates a VS Code execution for a resolved cell. */
+    const createExecution = (cell: CellRef, binding: VsCodeDriveBinding) =>
+      Effect.gen(function* () {
+        const notebookCell = yield* resolveCell(cell, binding);
+        return yield* Effect.try({
+          try: () =>
+            binding.controller.createNotebookCellExecution(notebookCell),
+          catch: (cause) =>
+            new InvalidCellError({ cellId: cell.cellId, cause }),
+        });
+      });
+
+    /** Projects state onto a tracked run's live execution. */
+    const renderOutputs = (
+      cell: CellRef,
+      runId: RunId,
+      state: CellRuntimeState,
+      final: boolean,
+    ) =>
+      withResource(cell, runId, ({ execution, notebook, started }) => {
+        if (!started) return Effect.void;
+        const outputs = buildKeyedCellOutputs(
+          cell.cellId,
+          state,
+          code,
+          notebook,
+        );
+        const projection = projections.forCell(notebook, cell.cellId);
+        return (
+          final
+            ? projection.commit(execution, outputs)
+            : projection.project(execution, outputs)
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to update cell output").pipe(
+              Effect.annotateLogs({ cause, ...cell, runId }),
+            ),
+          ),
+        );
+      });
+
+    /** Reconciles the runtime diagnostic for a cell. */
+    const setDiagnostic = (
+      cell: CellRef,
+      binding: VsCodeDriveBinding,
+      state: Option.Option<CellRuntimeState>,
+    ) =>
+      resolveCell(cell, binding).pipe(
+        Effect.flatMap((notebookCell) =>
+          Effect.sync(() => {
+            const { document } = notebookCell;
+            if (Option.isNone(state)) {
+              errorDiagnostics.delete(document.uri);
+              return;
+            }
+            const frame =
+              state.value.output?.channel === "marimo-error"
+                ? cellTracebackFrame(state.value, cell.cellId)
+                : undefined;
+            if (frame === undefined) {
+              errorDiagnostics.delete(document.uri);
+              return;
+            }
+            const line = Math.min(
+              Math.max(frame.line - 1, 0),
+              Math.max(document.lineCount - 1, 0),
+            );
+            const diagnostic = new code.Diagnostic(
+              document.lineAt(line).range,
+              diagnosticMessage(state.value),
+              code.DiagnosticSeverity.Error,
+            );
+            diagnostic.source = "marimo";
+            errorDiagnostics.set(document.uri, [diagnostic]);
+          }),
+        ),
+      );
+
+    /** Presents an untracked error in one self-contained execution. */
+    const presentUntrackedError = (
+      cell: CellRef,
+      binding: VsCodeDriveBinding,
+      state: CellRuntimeState,
+      applyDiagnostic: boolean,
+    ) =>
+      Effect.gen(function* () {
+        const execution = yield* createExecution(cell, binding);
+        return yield* Effect.gen(function* () {
+          yield* Effect.sync(() => execution.start());
           const outputs = buildKeyedCellOutputs(
             cell.cellId,
             state,
             code,
-            notebook,
+            binding.notebook.rawNotebookDocument,
           );
-          const projection = projections.forCell(notebook, cell.cellId);
-          return (
-            final
-              ? projection.commit(execution, outputs)
-              : projection.project(execution, outputs)
-          ).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to update cell output").pipe(
-                Effect.annotateLogs({ cause, ...cell, runId }),
-              ),
-            ),
-          );
-        });
-
-      /** Reconciles the runtime diagnostic for a cell. */
-      const setDiagnostic = (
-        cell: CellRef,
-        binding: VsCodeDriveBinding,
-        state: Option.Option<CellRuntimeState>,
-      ) =>
-        resolveCell(cell, binding).pipe(
-          Effect.flatMap((notebookCell) =>
-            Effect.sync(() => {
-              const { document } = notebookCell;
-              if (Option.isNone(state)) {
-                errorDiagnostics.delete(document.uri);
-                return;
-              }
-              const frame =
-                state.value.output?.channel === "marimo-error"
-                  ? cellTracebackFrame(state.value, cell.cellId)
-                  : undefined;
-              if (frame === undefined) {
-                errorDiagnostics.delete(document.uri);
-                return;
-              }
-              const line = Math.min(
-                Math.max(frame.line - 1, 0),
-                Math.max(document.lineCount - 1, 0),
-              );
-              const diagnostic = new code.Diagnostic(
-                document.lineAt(line).range,
-                diagnosticMessage(state.value),
-                code.DiagnosticSeverity.Error,
-              );
-              diagnostic.source = "marimo";
-              errorDiagnostics.set(document.uri, [diagnostic]);
-            }),
-          ),
-        );
-
-      /** Presents an untracked error in one self-contained execution. */
-      const presentUntrackedError = (
-        cell: CellRef,
-        binding: VsCodeDriveBinding,
-        state: CellRuntimeState,
-        applyDiagnostic: boolean,
-      ) =>
-        Effect.gen(function* () {
-          const execution = yield* createExecution(cell, binding);
-          return yield* Effect.gen(function* () {
-            yield* Effect.sync(() => execution.start());
-            const outputs = buildKeyedCellOutputs(
-              cell.cellId,
-              state,
-              code,
-              binding.notebook.rawNotebookDocument,
-            );
-            yield* projections
-              .forCell(binding.notebook.rawNotebookDocument, cell.cellId)
-              .commit(execution, outputs)
-              .pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("Failed to update cell output").pipe(
-                    Effect.annotateLogs({ cause, ...cell }),
-                  ),
+          yield* projections
+            .forCell(binding.notebook.rawNotebookDocument, cell.cellId)
+            .commit(execution, outputs)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to update cell output").pipe(
+                  Effect.annotateLogs({ cause, ...cell }),
                 ),
-              );
-            if (applyDiagnostic) {
-              yield* setDiagnostic(cell, binding, Option.some(state));
-            }
-          }).pipe(
-            Effect.ensuring(
-              Effect.try(() => execution.end(false)).pipe(Effect.ignore),
-            ),
-          );
-        });
-
-      /** Interprets one reducer command against a VS Code binding. */
-      const apply = (
-        cell: CellRef,
-        binding: VsCodeDriveBinding,
-        command: CellCommand,
-      ) =>
-        CellCommand.$match(command, {
-          OpenRun: ({ runId }) =>
-            Effect.gen(function* () {
-              const execution = yield* createExecution(cell, binding);
-              resources.set(resourceKey(cell, runId), {
-                execution,
-                notebook: binding.notebook.rawNotebookDocument,
-                started: false,
-              });
-            }),
-          StartRun: ({ runId, at }) =>
-            withResource(cell, runId, (resource) =>
-              Effect.sync(() => {
-                resource.execution.start(Option.getOrUndefined(at));
-                resource.started = true;
-              }),
-            ),
-          RenderOutputs: ({ runId, state, final }) =>
-            renderOutputs(cell, runId, state, final),
-          CloseRun: ({ runId, success, at }) =>
-            withResource(cell, runId, ({ execution }) =>
-              Effect.gen(function* () {
-                yield* Effect.try(() =>
-                  execution.end(success, Option.getOrUndefined(at)),
-                ).pipe(Effect.ignore);
-                resources.delete(resourceKey(cell, runId));
-              }),
-            ),
-          PresentUntrackedError: ({ state, applyDiagnostic }) =>
-            presentUntrackedError(cell, binding, state, applyDiagnostic),
-          SetDiagnostic: ({ state }) => setDiagnostic(cell, binding, state),
+              ),
+            );
+          if (applyDiagnostic) {
+            yield* setDiagnostic(cell, binding, Option.some(state));
+          }
         }).pipe(
-          Effect.catchTag("NotebookCellNotFoundError", () =>
-            Effect.logWarning("Notebook cell not found for command").pipe(
-              Effect.annotateLogs({ ...cell, command: command._tag }),
-            ),
-          ),
-          Effect.catchTag("InvalidCellError", (error) =>
-            Effect.logWarning("Cell is no longer valid; skipping command").pipe(
-              Effect.annotateLogs({
-                cause: Cause.fail(error.cause),
-                ...cell,
-                command: command._tag,
-              }),
-            ),
+          Effect.ensuring(
+            Effect.try(() => execution.end(false)).pipe(Effect.ignore),
           ),
         );
+      });
 
-      return {
-        bind:
-          (binding: VsCodeDriveBinding): Drive =>
-          (cell, command) =>
-            apply(cell, binding, command),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+    /** Interprets one reducer command against a VS Code binding. */
+    const apply = (
+      cell: CellRef,
+      binding: VsCodeDriveBinding,
+      command: CellCommand,
+    ) =>
+      CellCommand.$match(command, {
+        OpenRun: ({ runId }) =>
+          Effect.gen(function* () {
+            const execution = yield* createExecution(cell, binding);
+            resources.set(resourceKey(cell, runId), {
+              execution,
+              notebook: binding.notebook.rawNotebookDocument,
+              started: false,
+            });
+          }),
+        StartRun: ({ runId, at }) =>
+          withResource(cell, runId, (resource) =>
+            Effect.sync(() => {
+              resource.execution.start(Option.getOrUndefined(at));
+              resource.started = true;
+            }),
+          ),
+        RenderOutputs: ({ runId, state, final }) =>
+          renderOutputs(cell, runId, state, final),
+        CloseRun: ({ runId, success, at }) =>
+          withResource(cell, runId, ({ execution }) =>
+            Effect.gen(function* () {
+              yield* Effect.try(() =>
+                execution.end(success, Option.getOrUndefined(at)),
+              ).pipe(Effect.ignore);
+              resources.delete(resourceKey(cell, runId));
+            }),
+          ),
+        PresentUntrackedError: ({ state, applyDiagnostic }) =>
+          presentUntrackedError(cell, binding, state, applyDiagnostic),
+        SetDiagnostic: ({ state }) => setDiagnostic(cell, binding, state),
+      }).pipe(
+        Effect.catchTag("NotebookCellNotFoundError", () =>
+          Effect.logWarning("Notebook cell not found for command").pipe(
+            Effect.annotateLogs({ ...cell, command: command._tag }),
+          ),
+        ),
+        Effect.catchTag("InvalidCellError", (error) =>
+          Effect.logWarning("Cell is no longer valid; skipping command").pipe(
+            Effect.annotateLogs({
+              cause: Cause.fail(error.cause),
+              ...cell,
+              command: command._tag,
+            }),
+          ),
+        ),
+      );
+
+    return Service.of({
+      bind:
+        (binding: VsCodeDriveBinding): Drive =>
+        (cell, command) =>
+          apply(cell, binding, command),
+    });
+  }),
+);

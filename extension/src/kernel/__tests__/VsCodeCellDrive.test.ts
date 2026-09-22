@@ -11,7 +11,7 @@ import {
 import type { CellRuntimeState } from "../../types.ts";
 import * as CellOutputProjections from "../CellOutputProjections.ts";
 import { CellCommand, runIdFromWire } from "../CellRunReducer.ts";
-import { VsCodeCellDrive } from "../VsCodeCellDrive.ts";
+import * as VsCodeCellDrive from "../VsCodeCellDrive.ts";
 
 const errorState = (): CellRuntimeState => ({
   ...createCellRuntimeState(),
@@ -79,9 +79,15 @@ describe("VsCodeCellDrive", () => {
         appendOutputItems: async () => {},
         replaceOutputItems: async () => {},
       };
-      const drive = (yield* VsCodeCellDrive.make.pipe(
-        Effect.provide(code.layer),
-        Effect.provideService(CellOutputProjections.Service, projections),
+      const drive = (yield* VsCodeCellDrive.Service.pipe(
+        Effect.provide(
+          VsCodeCellDrive.layer.pipe(
+            Layer.provide(code.layer),
+            Layer.provide(
+              Layer.succeed(CellOutputProjections.Service, projections),
+            ),
+          ),
+        ),
       )).bind({
         notebook,
         controller: { createNotebookCellExecution: () => execution },
@@ -173,9 +179,15 @@ describe("VsCodeCellDrive", () => {
           };
         },
       };
-      const cellDrive = yield* VsCodeCellDrive.make.pipe(
-        Effect.provide(code.layer),
-        Effect.provideService(CellOutputProjections.Service, projections),
+      const cellDrive = yield* VsCodeCellDrive.Service.pipe(
+        Effect.provide(
+          VsCodeCellDrive.layer.pipe(
+            Layer.provide(code.layer),
+            Layer.provide(
+              Layer.succeed(CellOutputProjections.Service, projections),
+            ),
+          ),
+        ),
       );
 
       yield* cellDrive.bind({

@@ -20,7 +20,7 @@ import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import * as NotebookRuntime from "./NotebookRuntime.ts";
-import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
+import * as VsCodeCellDrive from "./VsCodeCellDrive.ts";
 import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
@@ -34,7 +34,7 @@ export const createPythonController = Effect.fn("createPythonController")(
   }) {
     const uv = yield* Uv;
     const code = yield* VsCode;
-    const cellDrive = yield* VsCodeCellDrive;
+    const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter;
     const config = yield* Config.Service;
     const notebooks = yield* NotebookRuntime.Service;

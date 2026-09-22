@@ -31,7 +31,7 @@ import * as CellOutputProjections from "../../kernel/CellOutputProjections.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
-import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
+import * as VsCodeCellDrive from "../../kernel/VsCodeCellDrive.ts";
 import {
   cellId,
   kernelSessionId,
@@ -151,9 +151,15 @@ const withTestCtx = Effect.fn(function* (
       CellOutputProjections.layer.pipe(Layer.provide(vscode.layer)),
     ),
   );
-  const cellDrive = yield* VsCodeCellDrive.make.pipe(
-    Effect.provide(vscode.layer),
-    Effect.provideService(CellOutputProjections.Service, projections),
+  const cellDrive = yield* VsCodeCellDrive.Service.pipe(
+    Effect.provide(
+      VsCodeCellDrive.layer.pipe(
+        Layer.provide(vscode.layer),
+        Layer.provide(
+          Layer.succeed(CellOutputProjections.Service, projections),
+        ),
+      ),
+    ),
   );
 
   const mockController = yield* Effect.gen(function* () {
