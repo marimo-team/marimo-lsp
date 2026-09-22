@@ -15,7 +15,7 @@ import {
   isPathInsideDirectory,
   NotebookControllersLive,
 } from "../../kernel/NotebookControllers.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
@@ -70,7 +70,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
 
       expect((yield* ctx.vscode.snapshot()).controllers).toEqual([
         "marimo-/home/user/.venv/bin/python",
@@ -105,7 +105,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
       const initial = yield* notebooks.forNotebook(
@@ -180,7 +180,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialEnvs: [first] });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
 
       // Drain once so the forked environmentChanges consumer subscribes to
       // the mock PubSub before we publish; the PubSub has no replay, so an
@@ -214,7 +214,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialEnvs: [environment] });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
       yield* ctx.vscode.addNotebookDocument(editor.notebook);
       // Drain so the selection listener and the environmentChanges consumer
@@ -247,7 +247,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const code = yield* VsCode;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
@@ -273,7 +273,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const code = yield* VsCode;
       const uri = "/test/notebook_mo.py";
 
@@ -317,7 +317,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const code = yield* VsCode;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 
@@ -361,7 +361,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const code = yield* VsCode;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 

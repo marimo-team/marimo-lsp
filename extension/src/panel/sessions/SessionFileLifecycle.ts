@@ -1,7 +1,7 @@
 import { Effect, Layer, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { NotebookIdFromString } from "../../schemas/MarimoNotebookDocument.ts";
 
@@ -57,7 +57,7 @@ export function containsNotebookUri(
 export const SessionFileLifecycleLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const runtime = yield* NotebookRuntime;
+    const runtime = yield* NotebookRuntime.Service;
     const deletedWhileOpen = new Set<string>();
 
     yield* Effect.forkScoped(

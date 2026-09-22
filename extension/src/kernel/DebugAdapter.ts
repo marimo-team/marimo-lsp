@@ -30,10 +30,7 @@ import {
   NotebookIdFromString,
 } from "../schemas/MarimoNotebookDocument.ts";
 import { NotebookFileRootError } from "./NotebookFileRoot.ts";
-import {
-  ExecutableResolutionError,
-  NotebookRuntime,
-} from "./NotebookRuntime.ts";
+import * as NotebookRuntime from "./NotebookRuntime.ts";
 
 const DEBUG_TYPE = "marimo";
 
@@ -117,7 +114,7 @@ export interface Interface {
   ) => Effect.Effect<
     void,
     Error,
-    NotebookRuntime | OutputChannel.Service | VsCode
+    NotebookRuntime.Service | OutputChannel.Service | VsCode
   >;
 }
 
@@ -125,7 +122,7 @@ export type Error =
   | DebugpyActivationError
   | DebugSourceWriteError
   | DebugSessionStartError
-  | ExecutableResolutionError
+  | NotebookRuntime.ExecutableResolutionError
   | MarimoClientStartError
   | MarimoCommandError
   | NotebookFileRootError
@@ -321,7 +318,7 @@ const activateDebugpy = Effect.fn("DebugAdapter.activateDebugpy")(function* (
   notebookUri: NotebookId,
   debugpyLibsPath: string,
 ) {
-  const notebooks = yield* NotebookRuntime;
+  const notebooks = yield* NotebookRuntime.Service;
   const script = activationScript(debugpyLibsPath);
   const notebook = yield* notebooks.forNotebook(notebookUri);
   const ops = notebook.executeScratchpad(script);

@@ -4,7 +4,7 @@ import { Context, Effect, Layer, Option } from "effect";
 
 import * as Config from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
@@ -31,7 +31,7 @@ export class HealthService extends Context.Service<HealthService>()(
       const code = yield* VsCode;
       const config = yield* Config.Service;
       const marimo = yield* MarimoClient;
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const pyExt = yield* PythonExtension;
       const tyLsp = yield* TyLanguageServer;
       const ruffLsp = yield* RuffLanguageServer;

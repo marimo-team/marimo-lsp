@@ -29,7 +29,7 @@ import {
 import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
 import * as CellOutputProjections from "../../kernel/CellOutputProjections.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { PythonController } from "../../kernel/PythonController.ts";
 import { VsCodeCellDrive } from "../../kernel/VsCodeCellDrive.ts";
 import {
@@ -181,7 +181,7 @@ const withTestCtx = Effect.fn(function* (
 
   let revision = 0;
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(NotebookRuntime.layer),
+    Layer.provideMerge(NotebookRuntime.defaultLayer),
     // Merged out (not just provided) so tests can observe the same service
     // instances NotebookRuntime writes to.
     Layer.provideMerge(NotebookVariables.layer),
@@ -241,7 +241,7 @@ const withTestCtx = Effect.fn(function* (
   );
 
   const selectedLayer = Layer.effectDiscard(
-    NotebookRuntime.pipe(
+    NotebookRuntime.Service.pipe(
       Effect.flatMap((runtime) =>
         runtime.attachController(notebookUri, mockController),
       ),
@@ -412,7 +412,7 @@ describe("NotebookRuntime operation processing", () => {
       });
 
       yield* Effect.gen(function* () {
-        yield* NotebookRuntime;
+        yield* NotebookRuntime.Service;
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
 
@@ -452,7 +452,7 @@ describe("NotebookRuntime cell identity", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        yield* NotebookRuntime;
+        yield* NotebookRuntime.Service;
         // One scheduler drain so NotebookRuntime's forked
         // notebookDocumentChanges consumer subscribes to the mock PubSub
         // before we publish the change event. In production this stream is a
@@ -498,7 +498,7 @@ describe("NotebookRuntime cell identity", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        yield* NotebookRuntime;
+        yield* NotebookRuntime.Service;
         // Drain so the change event below is actually delivered (see the
         // deleted-cell test above); without it this test would pass vacuously
         // because the mock PubSub drops events published before the forked
@@ -731,7 +731,7 @@ describe("NotebookRuntime stdin", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
@@ -774,7 +774,7 @@ describe("NotebookRuntime scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         const first = yield* Effect.forkChild(
           notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
@@ -856,7 +856,7 @@ describe("NotebookRuntime scratch stream", () => {
       const otherNotebook = MarimoNotebookDocument.from(otherEditor.notebook);
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
         // No drain needed before the open: the document-session service acquires its
         // lifecycle subscription before its layer finishes building, so an
@@ -934,7 +934,7 @@ describe("NotebookRuntime scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
 
         // Route cell-op notifications through processSessionOperation.
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
@@ -1032,7 +1032,7 @@ describe("NotebookRuntime scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
@@ -1083,7 +1083,7 @@ describe("NotebookRuntime scratch stream", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
@@ -1136,7 +1136,7 @@ describe("NotebookRuntime state eviction", () => {
       const ctx = yield* withTestCtx(activeSessionId);
 
       yield* Effect.gen(function* () {
-        yield* NotebookRuntime;
+        yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables;
         yield* Effect.yieldNow;
 
@@ -1169,7 +1169,7 @@ describe("NotebookRuntime state eviction", () => {
       const ctx = yield* withTestCtx();
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables;
         const datasources = yield* NotebookDatasources;
 

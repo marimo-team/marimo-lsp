@@ -13,7 +13,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -70,7 +70,7 @@ export const AutoExportLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const marimo = yield* MarimoClient;
-    const runtime = yield* NotebookRuntime;
+    const runtime = yield* NotebookRuntime.Service;
     const states = yield* Ref.make(
       HashMap.empty<NotebookId, AutoExportState>(),
     );

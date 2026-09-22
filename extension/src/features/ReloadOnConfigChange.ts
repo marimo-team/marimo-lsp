@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Result, Stream } from "effect";
 
 import restartKernel from "../commands/restartKernel.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -20,7 +20,7 @@ export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
 /** Watches configuration changes that require an explicit reload or restart. */
 export const watchForConfigurationChanges = Effect.fn(function* () {
   const code = yield* VsCode;
-  const notebooks = yield* NotebookRuntime;
+  const notebooks = yield* NotebookRuntime.Service;
   const pendingFileRootChanges = new Set<string>();
 
   const watchForWindowReload = Effect.fn(function* (

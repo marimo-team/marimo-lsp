@@ -9,15 +9,7 @@ import {
 } from "effect";
 
 import { MarimoLspServer } from "../../config/Config.ts";
-import {
-  type NotebookController,
-  type NotebookControllerSelection,
-  type NotebookDocumentHandle,
-  type NotebookHandle,
-  NotebookRuntime,
-  type RuntimeSession,
-  type RuntimeSessionEntry,
-} from "../../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
 import {
   MarimoNotebookDocument,
@@ -42,9 +34,9 @@ interface Options {
   readonly kernelNotifications?: Stream.Stream<KernelNotification>;
   readonly documentAnalysis?: Stream.Stream<DocumentAnalysis>;
   readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
-  readonly initialControllers?: ReadonlyArray<NotebookControllerSelection>;
-  readonly runtimeSession?: RuntimeSession;
-  readonly runtimeSessions?: ReadonlyArray<RuntimeSessionEntry>;
+  readonly initialControllers?: ReadonlyArray<NotebookRuntime.NotebookControllerSelection>;
+  readonly runtimeSession?: NotebookRuntime.RuntimeSession;
+  readonly runtimeSessions?: ReadonlyArray<NotebookRuntime.RuntimeSessionEntry>;
 }
 
 const TEST_KERNEL_SESSION_ID = Schema.decodeUnknownSync(
@@ -60,26 +52,29 @@ export function makeTestNotebookRuntime(options: Options = {}) {
   return Layer.merge(
     Layer.succeed(MarimoClient, client),
     Layer.effect(
-      NotebookRuntime,
+      NotebookRuntime.Service,
       Effect.gen(function* () {
-        const handles = new Map<NotebookId, NotebookHandle>();
-        const controllers = new Map<NotebookId, NotebookController>(
+        const handles = new Map<NotebookId, NotebookRuntime.NotebookHandle>();
+        const controllers = new Map<
+          NotebookId,
+          NotebookRuntime.NotebookController
+        >(
           options.initialControllers?.map(({ notebookUri, controller }) => [
             notebookUri,
             controller,
           ]),
         );
         const selections =
-          yield* PubSub.unbounded<NotebookControllerSelection>();
+          yield* PubSub.unbounded<NotebookRuntime.NotebookControllerSelection>();
         yield* Effect.addFinalizer(() => PubSub.shutdown(selections));
 
         const forNotebook = (
           notebookId: NotebookId,
-        ): Effect.Effect<NotebookHandle> =>
+        ): Effect.Effect<NotebookRuntime.NotebookHandle> =>
           Effect.sync(() => {
             const existing = handles.get(notebookId);
             if (existing !== undefined) return existing;
-            const handle: NotebookHandle = {
+            const handle: NotebookRuntime.NotebookHandle = {
               id: notebookId,
               getController: Effect.sync(() =>
                 Option.fromNullishOr(controllers.get(notebookId)),
@@ -130,7 +125,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
 
         const forDocument = (
           document: Parameters<typeof MarimoNotebookDocument.from>[0],
-        ): Effect.Effect<NotebookDocumentHandle> => {
+        ): Effect.Effect<NotebookRuntime.NotebookDocumentHandle> => {
           const notebookId = MarimoNotebookDocument.from(document).id;
           return Effect.succeed({
             execute: (request, executable) =>
@@ -146,7 +141,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           });
         };
 
-        const runtime: Context.Service.Shape<typeof NotebookRuntime> = {
+        const runtime: NotebookRuntime.Interface = {
           attachController: (notebookId, controller) =>
             Effect.gen(function* () {
               controllers.set(notebookId, controller);

@@ -7,13 +7,13 @@ import { findVenvPath } from "../python/findVenvPath.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../types.ts";
-import type { NotebookController } from "./NotebookRuntime.ts";
+import type * as NotebookRuntime from "./NotebookRuntime.ts";
 
 export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
   function* (
     operation: NotificationOf<"missing-package-alert">,
     notebook: MarimoNotebookDocument,
-    controller: NotebookController,
+    controller: NotebookRuntime.NotebookController,
   ) {
     const code = yield* VsCode;
     const config = yield* Config.Service;

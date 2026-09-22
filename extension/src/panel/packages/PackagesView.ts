@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Ref, Scope, Stream } from "effect";
 
 import refreshPackagesCommand from "../../commands/refreshPackages.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import {
   NotebookDependencies,
   type NotebookDependencyState,
@@ -42,7 +42,7 @@ export const PackagesViewLive = Layer.effectDiscard(
     const treeView = yield* TreeView;
     const documentSessions = yield* NotebookDocumentSessions;
     const sessionResources = yield* NotebookSessionResources;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
     const code = yield* VsCode;
 
     // Track the current package tree items for the active notebook

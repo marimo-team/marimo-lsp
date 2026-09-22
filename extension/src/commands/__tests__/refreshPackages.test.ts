@@ -8,7 +8,7 @@ import {
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type { NotebookController } from "../../kernel/NotebookRuntime.ts";
+import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
@@ -17,7 +17,7 @@ import refreshPackages from "../refreshPackages.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
-const controller: NotebookController = {
+const controller: NotebookRuntime.NotebookController = {
   id: "script",
   drive: () => () => Effect.void,
   presentOutputs: () => Effect.void,

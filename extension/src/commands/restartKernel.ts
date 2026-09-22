@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -13,7 +13,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
 ) {
   const code = yield* VsCode;
   const sessions = yield* LiveSessions;
-  const runtime = yield* NotebookRuntime;
+  const runtime = yield* NotebookRuntime.Service;
 
   if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(

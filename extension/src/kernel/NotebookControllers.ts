@@ -27,10 +27,7 @@ import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import * as CellOutputProjections from "./CellOutputProjections.ts";
-import {
-  type NotebookController as RuntimeNotebookController,
-  NotebookRuntime,
-} from "./NotebookRuntime.ts";
+import * as NotebookRuntime from "./NotebookRuntime.ts";
 import {
   createPythonController,
   type NotebookControllerId,
@@ -40,7 +37,7 @@ import { createSandboxController } from "./SandboxController.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
 import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
-export interface NotebookController extends RuntimeNotebookController {
+export interface NotebookController extends NotebookRuntime.NotebookController {
   readonly selectedNotebookChanges: Stream.Stream<{
     notebook: vscode.NotebookDocument;
     selected: boolean;
@@ -70,7 +67,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
     const uv = yield* Uv;
     const code = yield* VsCode;
     const pyExt = yield* PythonExtension;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
     const sandboxController = yield* createSandboxController();
 
     const uvCacheDir = yield* uv.getCacheDir.pipe(
@@ -246,7 +243,7 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
 
 const trackControllerSelections = (
   controller: NotebookController,
-  notebooks: NotebookRuntime["Service"],
+  notebooks: NotebookRuntime.Interface,
 ) =>
   controller.selectedNotebookChanges.pipe(
     Stream.runForEach(
@@ -275,7 +272,7 @@ const createOrUpdateController = Effect.fn(
   handlesRef: SynchronizedRef.SynchronizedRef<
     HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
   >;
-  notebooks: NotebookRuntime["Service"];
+  notebooks: NotebookRuntime.Interface;
 }) {
   const { env, handlesRef, notebooks } = options;
   const code = yield* VsCode;
@@ -328,7 +325,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
-    notebooks: NotebookRuntime["Service"];
+    notebooks: NotebookRuntime.Interface;
   }) {
     const { envs, handlesRef, notebooks } = options;
     yield* Effect.logTrace("Checking for stale controllers");

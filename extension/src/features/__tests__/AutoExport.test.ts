@@ -16,7 +16,7 @@ import {
   makeTestNotebookRuntime,
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type { NotebookController } from "../../kernel/NotebookRuntime.ts";
+import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { kernelSessionId } from "../../lib/__tests__/branded.ts";
 import { FileSystemError, VsCode } from "../../platform/VsCode.ts";
 import {
@@ -30,7 +30,7 @@ import {
   autoExportUri,
 } from "../AutoExport.ts";
 
-const controller: NotebookController = {
+const controller: NotebookRuntime.NotebookController = {
   id: "test-controller",
   drive: () => () => Effect.void,
   presentOutputs: () => Effect.void,

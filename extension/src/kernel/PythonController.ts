@@ -19,7 +19,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
-import { NotebookRuntime } from "./NotebookRuntime.ts";
+import * as NotebookRuntime from "./NotebookRuntime.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
 import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
@@ -37,7 +37,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const cellDrive = yield* VsCodeCellDrive;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter;
     const config = yield* Config.Service;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer;
     const { LanguageId } = yield* Constants;

@@ -12,8 +12,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import type { NotebookController } from "../kernel/NotebookRuntime.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { MarimoClient } from "../lsp/MarimoClient.ts";
 import type {
   DependencyTreeNode,
@@ -33,7 +32,9 @@ export const NotebookDependencyState =
 
 type PackageSource = VenvSource | ScriptSource;
 
-function controllerSource(controller: NotebookController): PackageSource {
+function controllerSource(
+  controller: NotebookRuntime.NotebookController,
+): PackageSource {
   return typeof controller.executable === "string"
     ? { kind: "venv", executable: controller.executable }
     : { kind: "script" };
@@ -45,7 +46,7 @@ export class NotebookDependencies extends Context.Service<NotebookDependencies>(
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const session = yield* NotebookSession;
       const generation = yield* Ref.make(0);
       const state = yield* SubscriptionRef.make<NotebookDependencyState>(

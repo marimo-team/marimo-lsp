@@ -18,12 +18,7 @@ import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
-import {
-  ExecutableResolutionError,
-  type NotebookController,
-  NotebookRuntime,
-  UnsavedNotebookError,
-} from "./NotebookRuntime.ts";
+import * as NotebookRuntime from "./NotebookRuntime.ts";
 import { VsCodeCellDrive } from "./VsCodeCellDrive.ts";
 import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
 
@@ -34,7 +29,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const cellDrive = yield* VsCodeCellDrive;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter;
     const marimo = yield* MarimoClient;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
     const python = yield* PythonExtension;
     const { LanguageId } = yield* Constants;
 
@@ -59,7 +54,9 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         // notebook has no path to sync. The run handler guards this earlier
         // (prompts to save); the scratchpad path reaches here directly.
         if (notebook.isUntitled) {
-          return yield* new UnsavedNotebookError({ notebookUri: notebook.id });
+          return yield* new NotebookRuntime.UnsavedNotebookError({
+            notebookUri: notebook.id,
+          });
         }
 
         const requirements = yield* findRequirements(notebook);
@@ -215,18 +212,16 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const selectedNotebookChanges =
       yield* makeControllerSelectionChanges(controller);
 
-    const presentOutputs: NotebookController["presentOutputs"] = (
-      notebook,
-      replays,
-    ) =>
-      outputPresenter.present(
-        notebook,
-        {
-          createNotebookCellExecution: (cell) =>
-            controller.createNotebookCellExecution(cell),
-        },
-        replays,
-      );
+    const presentOutputs: NotebookRuntime.NotebookController["presentOutputs"] =
+      (notebook, replays) =>
+        outputPresenter.present(
+          notebook,
+          {
+            createNotebookCellExecution: (cell) =>
+              controller.createNotebookCellExecution(cell),
+          },
+          replays,
+        );
 
     return {
       id: controller.id,
@@ -236,7 +231,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
           Effect.mapError((error) =>
             error._tag === "UnsavedNotebookError"
               ? error
-              : new ExecutableResolutionError({
+              : new NotebookRuntime.ExecutableResolutionError({
                   notebookUri: notebook.id,
                   cause: error,
                 }),

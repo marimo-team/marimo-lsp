@@ -250,7 +250,7 @@ function isScratchpadOutput(
  * Owns notebook handles, controller selection, and kernel message handling.
  *
  * ```ts
- * const runtime = yield* NotebookRuntime;
+ * const runtime = yield* NotebookRuntime.Service;
  * const documentHandle = yield* runtime.forDocument(rawNotebook);
  * const notebook = yield* runtime.forNotebook(notebookId);
  *
@@ -261,183 +261,211 @@ function isScratchpadOutput(
  *
  * Kernel work is admitted to one ordered executor per notebook.
  */
-export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
-  "NotebookRuntime",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      const config = yield* Config.Service;
-      const marimo = yield* MarimoClient;
-      const renderer = yield* NotebookRenderer.Service;
-      const executions = yield* CellExecutions.Service;
-      const variables = yield* NotebookVariables;
-      const datasources = yield* NotebookDatasources;
-      const liveSessions = yield* LiveSessions;
-      const documentSessions = yield* NotebookDocumentSessions;
-      const operations = yield* PubSub.unbounded<SessionNotification>();
-      const notebookStates = new Map<
-        NotebookId | NotebookDocumentSession,
-        NotebookState
-      >();
-      const kernelSessions = new Map<NotebookId, KernelSessionId>(
-        (yield* liveSessions.get).map((session) => [
-          session.notebookUri,
-          session.sessionId,
-        ]),
+export interface Interface {
+  readonly attachController: (
+    notebookId: NotebookId,
+    controller: NotebookController,
+  ) => Effect.Effect<void>;
+  readonly controllerChanges: Stream.Stream<NotebookControllerSelection>;
+  readonly getRuntimeSession: (
+    notebookId: NotebookId,
+  ) => Effect.Effect<Option.Option<RuntimeSession>>;
+  readonly getRuntimeSessions: Effect.Effect<
+    ReadonlyArray<RuntimeSessionEntry>
+  >;
+  readonly activeRuntimeSession: Effect.Effect<Option.Option<RuntimeSession>>;
+  readonly moveSession: (
+    notebookId: NotebookId,
+    newNotebookId: NotebookId,
+  ) => Effect.Effect<void, Effect.Error<ReturnType<LiveSessionsShape["move"]>>>;
+  readonly restoreSession: (
+    notebookId: NotebookId,
+    executable: string,
+    workingDirectory: string,
+  ) => Effect.Effect<
+    void,
+    Effect.Error<ReturnType<LiveSessionsShape["restore"]>>
+  >;
+  readonly shutdownAll: Effect.Effect<
+    void,
+    Effect.Error<ReturnType<LiveSessionsShape["shutdown"]>>
+  >;
+  readonly forDocument: (
+    document: vscode.NotebookDocument,
+  ) => Effect.Effect<NotebookDocumentHandle, NoActiveKernelError>;
+  readonly forNotebook: (
+    notebookId: NotebookId,
+  ) => Effect.Effect<NotebookHandle>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/NotebookRuntime",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode;
+    const config = yield* Config.Service;
+    const marimo = yield* MarimoClient;
+    const renderer = yield* NotebookRenderer.Service;
+    const executions = yield* CellExecutions.Service;
+    const variables = yield* NotebookVariables;
+    const datasources = yield* NotebookDatasources;
+    const liveSessions = yield* LiveSessions;
+    const documentSessions = yield* NotebookDocumentSessions;
+    const operations = yield* PubSub.unbounded<SessionNotification>();
+    const notebookStates = new Map<
+      NotebookId | NotebookDocumentSession,
+      NotebookState
+    >();
+    const kernelSessions = new Map<NotebookId, KernelSessionId>(
+      (yield* liveSessions.get).map((session) => [
+        session.notebookUri,
+        session.sessionId,
+      ]),
+    );
+    const executor = yield* makeNotebookExecutor<RuntimeWorkRequirements>();
+    const controllerSelections =
+      yield* PubSub.unbounded<NotebookControllerSelection>();
+
+    yield* Effect.addFinalizer(() =>
+      Effect.all(
+        [PubSub.shutdown(operations), PubSub.shutdown(controllerSelections)],
+        { discard: true },
+      ),
+    );
+
+    const reconcileKernelSession = Effect.fn(
+      "NotebookRuntime.reconcileKernelSession",
+    )(function* (notebookId: NotebookId) {
+      const sessions = yield* liveSessions.get;
+      const next = sessions.find(
+        (session) => session.notebookUri === notebookId,
+      )?.sessionId;
+      const previous = kernelSessions.get(notebookId);
+      if (previous === next) return;
+
+      if (next === undefined) kernelSessions.delete(notebookId);
+      else kernelSessions.set(notebookId, next);
+      if (previous !== undefined) {
+        yield* executions.invalidate(notebookId);
+        yield* datasources.clearKernelSession(notebookId, previous);
+      }
+    });
+
+    const refreshKernelSession = Effect.fn(
+      "NotebookRuntime.refreshKernelSession",
+    )((notebookId: NotebookId) =>
+      liveSessions
+        .refresh()
+        .pipe(Effect.andThen(reconcileKernelSession(notebookId))),
+    );
+
+    const runInNotebook = executor.submit;
+
+    // Renderer requests have no session identity: they target the kernel at
+    // dequeue time, even across a restart. Stdin replies retain their identity.
+    const runInKernelSession = <A, E, R extends RuntimeWorkRequirements>(
+      notebookId: NotebookId,
+      effect: (sessionId: KernelSessionId) => Effect.Effect<A, E, R>,
+      expectedSessionId?: KernelSessionId,
+    ) =>
+      runInNotebook(
+        notebookId,
+        Effect.gen(function* () {
+          yield* reconcileKernelSession(notebookId);
+          const sessionId = kernelSessions.get(notebookId);
+          if (
+            sessionId === undefined ||
+            (expectedSessionId !== undefined && sessionId !== expectedSessionId)
+          ) {
+            return yield* new NoActiveKernelError({
+              notebookUri: notebookId,
+            });
+          }
+          return yield* effect(sessionId);
+        }),
       );
-      const executor = yield* makeNotebookExecutor<RuntimeWorkRequirements>();
-      const controllerSelections =
-        yield* PubSub.unbounded<NotebookControllerSelection>();
 
-      yield* Effect.addFinalizer(() =>
-        Effect.all(
-          [PubSub.shutdown(operations), PubSub.shutdown(controllerSelections)],
-          { discard: true },
-        ),
+    const mutateKernelSession = <E>(
+      notebookId: NotebookId,
+      effect: Effect.Effect<unknown, E>,
+    ) =>
+      runInNotebook(
+        notebookId,
+        effect.pipe(Effect.andThen(reconcileKernelSession(notebookId))),
       );
 
-      const reconcileKernelSession = Effect.fn(
-        "NotebookRuntime.reconcileKernelSession",
-      )(function* (notebookId: NotebookId) {
-        const sessions = yield* liveSessions.get;
-        const next = sessions.find(
-          (session) => session.notebookUri === notebookId,
-        )?.sessionId;
-        const previous = kernelSessions.get(notebookId);
-        if (previous === next) return;
-
-        if (next === undefined) kernelSessions.delete(notebookId);
-        else kernelSessions.set(notebookId, next);
-        if (previous !== undefined) {
-          yield* executions.invalidate(notebookId);
-          yield* datasources.clearKernelSession(notebookId, previous);
-        }
-      });
-
-      const refreshKernelSession = Effect.fn(
-        "NotebookRuntime.refreshKernelSession",
-      )((notebookId: NotebookId) =>
-        liveSessions
-          .refresh()
-          .pipe(Effect.andThen(reconcileKernelSession(notebookId))),
-      );
-
-      const runInNotebook = executor.submit;
-
-      // Renderer requests have no session identity: they target the kernel at
-      // dequeue time, even across a restart. Stdin replies retain their identity.
-      const runInKernelSession = <A, E, R extends RuntimeWorkRequirements>(
-        notebookId: NotebookId,
-        effect: (sessionId: KernelSessionId) => Effect.Effect<A, E, R>,
-        expectedSessionId?: KernelSessionId,
-      ) =>
-        runInNotebook(
-          notebookId,
-          Effect.gen(function* () {
-            yield* reconcileKernelSession(notebookId);
-            const sessionId = kernelSessions.get(notebookId);
-            if (
-              sessionId === undefined ||
-              (expectedSessionId !== undefined &&
-                sessionId !== expectedSessionId)
-            ) {
-              return yield* new NoActiveKernelError({
+    const respondToStdin: RespondToStdin = (
+      notebookId: NotebookId,
+      sessionId: KernelSessionId,
+      result: Option.Option<string>,
+    ) =>
+      runInKernelSession(
+        notebookId,
+        (currentSessionId) =>
+          Option.match(result, {
+            onSome: (text) =>
+              marimo.sendStdin({
                 notebookUri: notebookId,
-              });
-            }
-            return yield* effect(sessionId);
+                kernelSessionId: currentSessionId,
+                text,
+              }),
+            onNone: () =>
+              marimo.interrupt({
+                notebookUri: notebookId,
+                kernelSessionId: currentSessionId,
+              }),
           }),
-        );
+        sessionId,
+      );
 
-      const mutateKernelSession = <E>(
-        notebookId: NotebookId,
-        effect: Effect.Effect<unknown, E>,
-      ) =>
-        runInNotebook(
-          notebookId,
-          effect.pipe(Effect.andThen(reconcileKernelSession(notebookId))),
-        );
-
-      const respondToStdin: RespondToStdin = (
-        notebookId: NotebookId,
-        sessionId: KernelSessionId,
-        result: Option.Option<string>,
-      ) =>
-        runInKernelSession(
-          notebookId,
-          (currentSessionId) =>
-            Option.match(result, {
-              onSome: (text) =>
-                marimo.sendStdin({
-                  notebookUri: notebookId,
-                  kernelSessionId: currentSessionId,
-                  text,
-                }),
-              onNone: () =>
-                marimo.interrupt({
-                  notebookUri: notebookId,
-                  kernelSessionId: currentSessionId,
-                }),
-            }),
-          sessionId,
-        );
-
-      const makeDocumentHandle = (
-        session: NotebookDocumentSession,
-        controller: Ref.Ref<Option.Option<NotebookController>>,
-      ): NotebookDocumentHandle => ({
-        execute: (request, executable) =>
-          stateForDocumentSession(session).pipe(
-            Effect.andThen(
-              executor
-                .submitScoped(
-                  session.notebookId,
-                  Effect.gen(function* () {
-                    const notebookId = session.notebookId;
-                    const notebook = MarimoNotebookDocument.from(
-                      session.document,
-                    );
-                    const workingDirectory = yield* resolveWorkingDirectory(
-                      notebookId,
-                      executable,
-                      notebook,
-                    );
-                    const send = marimo.execute({
-                      notebookUri: notebookId,
-                      executable,
-                      workingDirectory,
-                      cells: request.cells,
-                    });
-                    const notebookExecutions = yield* executions.open(session, {
-                      getDrive: Ref.get(controller).pipe(
-                        Effect.map(
-                          Option.map((selected) => selected.drive(notebook)),
-                        ),
-                      ),
-                    });
-                    const result = yield* notebookExecutions.submit(
-                      request.cells.map(({ cellId, code }) => ({
-                        cellId: makeNotebookCellId(cellId),
-                        source: code,
-                      })),
-                      send,
-                    );
-                    yield* liveSessions.accept(result);
-                    yield* reconcileKernelSession(notebookId);
-                    return null;
-                  }).pipe(
-                    Effect.catchTag("NotebookDocumentSessionEndedError", () =>
-                      Effect.fail(
-                        new NoActiveKernelError({
-                          notebookUri: session.notebookId,
-                        }),
+    const makeDocumentHandle = (
+      session: NotebookDocumentSession,
+      controller: Ref.Ref<Option.Option<NotebookController>>,
+    ): NotebookDocumentHandle => ({
+      execute: (request, executable) =>
+        stateForDocumentSession(session).pipe(
+          Effect.andThen(
+            executor
+              .submitScoped(
+                session.notebookId,
+                Effect.gen(function* () {
+                  const notebookId = session.notebookId;
+                  const notebook = MarimoNotebookDocument.from(
+                    session.document,
+                  );
+                  const workingDirectory = yield* resolveWorkingDirectory(
+                    notebookId,
+                    executable,
+                    notebook,
+                  );
+                  const send = marimo.execute({
+                    notebookUri: notebookId,
+                    executable,
+                    workingDirectory,
+                    cells: request.cells,
+                  });
+                  const notebookExecutions = yield* executions.open(session, {
+                    getDrive: Ref.get(controller).pipe(
+                      Effect.map(
+                        Option.map((selected) => selected.drive(notebook)),
                       ),
                     ),
-                  ),
-                )
-                .pipe(
-                  Scope.provide(session.scope),
-                  Effect.catchTag("NotebookExecutionScopeClosedError", () =>
+                  });
+                  const result = yield* notebookExecutions.submit(
+                    request.cells.map(({ cellId, code }) => ({
+                      cellId: makeNotebookCellId(cellId),
+                      source: code,
+                    })),
+                    send,
+                  );
+                  yield* liveSessions.accept(result);
+                  yield* reconcileKernelSession(notebookId);
+                  return null;
+                }).pipe(
+                  Effect.catchTag("NotebookDocumentSessionEndedError", () =>
                     Effect.fail(
                       new NoActiveKernelError({
                         notebookUri: session.notebookId,
@@ -445,346 +473,337 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     ),
                   ),
                 ),
-            ),
-          ),
-      });
-
-      const makeHandle = (
-        notebookId: NotebookId,
-        controller: Ref.Ref<Option.Option<NotebookController>>,
-        scratchpadLock: Semaphore.Semaphore,
-      ): NotebookHandle => ({
-        id: notebookId,
-        getController: Ref.get(controller),
-        executeScratchpad: (sourceCode) =>
-          Stream.unwrap(
-            Effect.gen(function* () {
-              // Hold one permit for the lifetime of the stream's scope.
-              yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
-                scratchpadLock.release(1),
-              );
-              const subscription = yield* PubSub.subscribe(operations);
-              const runId = crypto.randomUUID();
-              const abandoned = yield* Deferred.make<void>();
-
-              // Register cancellation in the stream scope before the command
-              // enters the notebook worker.
-              yield* Effect.addFinalizer((exit) =>
-                Exit.hasInterrupts(exit)
-                  ? Deferred.succeed(abandoned, undefined).pipe(
-                      Effect.andThen(
-                        marimo
-                          .interrupt({
-                            notebookUri: notebookId,
-                            runId,
-                          })
-                          .pipe(
-                            Effect.timeout("5 seconds"),
-                            Effect.catchCause((cause) =>
-                              Effect.logWarning(
-                                "Failed to interrupt kernel after scratchpad stream was abandoned",
-                              ).pipe(Effect.annotateLogs({ cause })),
-                            ),
-                          ),
-                      ),
-                    )
-                  : Effect.void,
-              );
-
-              return yield* runInNotebook(
-                notebookId,
-                Effect.raceFirst(
-                  Effect.gen(function* () {
-                    const selectedController = yield* Ref.get(controller);
-                    if (Option.isNone(selectedController)) {
-                      return yield* new NoActiveKernelError({
-                        notebookUri: notebookId,
-                      });
-                    }
-
-                    const session = documentSessions.current(notebookId);
-                    if (Option.isNone(session)) {
-                      return yield* new NoActiveKernelError({
-                        notebookUri: notebookId,
-                      });
-                    }
-                    const notebook = yield* findOpenNotebook(notebookId);
-                    const executable =
-                      yield* selectedController.value.resolveExecutable(
-                        notebook,
-                      );
-                    const workingDirectory = yield* resolveWorkingDirectory(
-                      notebookId,
-                      executable,
-                      notebook,
-                    );
-                    yield* marimo.executeScratchpad({
-                      notebookUri: notebookId,
-                      executable,
-                      workingDirectory,
-                      code: sourceCode,
-                      runId,
-                    });
-                    yield* refreshKernelSession(notebookId);
-
-                    return Stream.fromSubscription(subscription).pipe(
-                      // Only output owned by the requesting document session;
-                      // a reopened notebook's operations belong to a new one.
-                      Stream.filter(
-                        (operation) => operation.session === session.value,
-                      ),
-                      Stream.takeUntil(isCompletedRunFor(runId)),
-                      Stream.filterMap(
-                        Filter.fromPredicateOption(
-                          ({ notification }: KernelNotification) =>
-                            isScratchpadOutput(notification)
-                              ? Option.some(notification)
-                              : Option.none(),
-                        ),
-                      ),
-                    );
-                  }),
-                  Deferred.await(abandoned).pipe(
-                    Effect.andThen(Effect.interrupt),
+              )
+              .pipe(
+                Scope.provide(session.scope),
+                Effect.catchTag("NotebookExecutionScopeClosedError", () =>
+                  Effect.fail(
+                    new NoActiveKernelError({
+                      notebookUri: session.notebookId,
+                    }),
                   ),
                 ),
-              );
-            }),
+              ),
           ),
-        updateUIElements: (request) =>
-          runInKernelSession(notebookId, (sessionId) =>
-            marimo.updateUiElement({
-              ...request,
-              notebookUri: notebookId,
-              kernelSessionId: sessionId,
-            }),
-          ),
-        updateModel: (request) =>
-          runInKernelSession(notebookId, (sessionId) =>
-            marimo.setModelValue({
-              ...request,
-              notebookUri: notebookId,
-              kernelSessionId: sessionId,
-            }),
-          ),
-        invokeFunction: (request) =>
-          runInKernelSession(notebookId, (sessionId) =>
-            marimo.invokeFunction({
-              ...request,
-              notebookUri: notebookId,
-              kernelSessionId: sessionId,
-            }),
-          ),
-        deleteCell: (request) =>
-          runInKernelSession(notebookId, (sessionId) =>
-            marimo.deleteCell({
-              ...request,
-              notebookUri: notebookId,
-              kernelSessionId: sessionId,
-            }),
-          ),
-        interrupt: runInKernelSession(notebookId, (sessionId) =>
-          marimo.interrupt({
+        ),
+    });
+
+    const makeHandle = (
+      notebookId: NotebookId,
+      controller: Ref.Ref<Option.Option<NotebookController>>,
+      scratchpadLock: Semaphore.Semaphore,
+    ): NotebookHandle => ({
+      id: notebookId,
+      getController: Ref.get(controller),
+      executeScratchpad: (sourceCode) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            // Hold one permit for the lifetime of the stream's scope.
+            yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
+              scratchpadLock.release(1),
+            );
+            const subscription = yield* PubSub.subscribe(operations);
+            const runId = crypto.randomUUID();
+            const abandoned = yield* Deferred.make<void>();
+
+            // Register cancellation in the stream scope before the command
+            // enters the notebook worker.
+            yield* Effect.addFinalizer((exit) =>
+              Exit.hasInterrupts(exit)
+                ? Deferred.succeed(abandoned, undefined).pipe(
+                    Effect.andThen(
+                      marimo
+                        .interrupt({
+                          notebookUri: notebookId,
+                          runId,
+                        })
+                        .pipe(
+                          Effect.timeout("5 seconds"),
+                          Effect.catchCause((cause) =>
+                            Effect.logWarning(
+                              "Failed to interrupt kernel after scratchpad stream was abandoned",
+                            ).pipe(Effect.annotateLogs({ cause })),
+                          ),
+                        ),
+                    ),
+                  )
+                : Effect.void,
+            );
+
+            return yield* runInNotebook(
+              notebookId,
+              Effect.raceFirst(
+                Effect.gen(function* () {
+                  const selectedController = yield* Ref.get(controller);
+                  if (Option.isNone(selectedController)) {
+                    return yield* new NoActiveKernelError({
+                      notebookUri: notebookId,
+                    });
+                  }
+
+                  const session = documentSessions.current(notebookId);
+                  if (Option.isNone(session)) {
+                    return yield* new NoActiveKernelError({
+                      notebookUri: notebookId,
+                    });
+                  }
+                  const notebook = yield* findOpenNotebook(notebookId);
+                  const executable =
+                    yield* selectedController.value.resolveExecutable(notebook);
+                  const workingDirectory = yield* resolveWorkingDirectory(
+                    notebookId,
+                    executable,
+                    notebook,
+                  );
+                  yield* marimo.executeScratchpad({
+                    notebookUri: notebookId,
+                    executable,
+                    workingDirectory,
+                    code: sourceCode,
+                    runId,
+                  });
+                  yield* refreshKernelSession(notebookId);
+
+                  return Stream.fromSubscription(subscription).pipe(
+                    // Only output owned by the requesting document session;
+                    // a reopened notebook's operations belong to a new one.
+                    Stream.filter(
+                      (operation) => operation.session === session.value,
+                    ),
+                    Stream.takeUntil(isCompletedRunFor(runId)),
+                    Stream.filterMap(
+                      Filter.fromPredicateOption(
+                        ({ notification }: KernelNotification) =>
+                          isScratchpadOutput(notification)
+                            ? Option.some(notification)
+                            : Option.none(),
+                      ),
+                    ),
+                  );
+                }),
+                Deferred.await(abandoned).pipe(
+                  Effect.andThen(Effect.interrupt),
+                ),
+              ),
+            );
+          }),
+        ),
+      updateUIElements: (request) =>
+        runInKernelSession(notebookId, (sessionId) =>
+          marimo.updateUiElement({
+            ...request,
             notebookUri: notebookId,
             kernelSessionId: sessionId,
           }),
         ),
-        restart: mutateKernelSession(
-          notebookId,
-          liveSessions.restart(notebookId),
+      updateModel: (request) =>
+        runInKernelSession(notebookId, (sessionId) =>
+          marimo.setModelValue({
+            ...request,
+            notebookUri: notebookId,
+            kernelSessionId: sessionId,
+          }),
         ),
-        close: mutateKernelSession(
-          notebookId,
-          liveSessions.shutdown(notebookId),
+      invokeFunction: (request) =>
+        runInKernelSession(notebookId, (sessionId) =>
+          marimo.invokeFunction({
+            ...request,
+            notebookUri: notebookId,
+            kernelSessionId: sessionId,
+          }),
         ),
-      });
-
-      const updateKernelContext = Effect.fn(
-        "NotebookRuntime.updateKernelContext",
-      )(function* () {
-        const activeNotebook = Option.flatMap(
-          yield* code.window.getActiveNotebookEditor,
-          (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-        );
-        const hasKernel = Option.isSome(activeNotebook)
-          ? Option.isSome(yield* liveSessions.find(activeNotebook.value.id))
-          : false;
-
-        yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
-      });
-
-      yield* Effect.forkScoped(updateKernelContext());
-      yield* Effect.forkScoped(
-        code.window.activeNotebookEditorChanges.pipe(
-          Stream.runForEach(updateKernelContext),
+      deleteCell: (request) =>
+        runInKernelSession(notebookId, (sessionId) =>
+          marimo.deleteCell({
+            ...request,
+            notebookUri: notebookId,
+            kernelSessionId: sessionId,
+          }),
         ),
+      interrupt: runInKernelSession(notebookId, (sessionId) =>
+        marimo.interrupt({
+          notebookUri: notebookId,
+          kernelSessionId: sessionId,
+        }),
+      ),
+      restart: mutateKernelSession(
+        notebookId,
+        liveSessions.restart(notebookId),
+      ),
+      close: mutateKernelSession(notebookId, liveSessions.shutdown(notebookId)),
+    });
+
+    const updateKernelContext = Effect.fn(
+      "NotebookRuntime.updateKernelContext",
+    )(function* () {
+      const activeNotebook = Option.flatMap(
+        yield* code.window.getActiveNotebookEditor,
+        (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
       );
-      const makeState = (notebookId: NotebookId): NotebookState => {
-        const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
-          Option.none(),
-        );
-        return {
-          controller,
-          handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
-        };
+      const hasKernel = Option.isSome(activeNotebook)
+        ? Option.isSome(yield* liveSessions.find(activeNotebook.value.id))
+        : false;
+
+      yield* code.commands.setContext("marimo.notebook.hasKernel", hasKernel);
+    });
+
+    yield* Effect.forkScoped(updateKernelContext());
+    yield* Effect.forkScoped(
+      code.window.activeNotebookEditorChanges.pipe(
+        Stream.runForEach(updateKernelContext),
+      ),
+    );
+    const makeState = (notebookId: NotebookId): NotebookState => {
+      const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
+        Option.none(),
+      );
+      return {
+        controller,
+        handle: makeHandle(notebookId, controller, Semaphore.makeUnsafe(1)),
       };
+    };
 
-      const stateForDocumentSession = Effect.fn(
-        "NotebookRuntime.stateForDocumentSession",
-      )((session: NotebookDocumentSession) =>
-        Effect.uninterruptible(
-          Effect.suspend(() => {
-            const existing = notebookStates.get(session);
-            if (existing !== undefined) return Effect.succeed(existing);
+    const stateForDocumentSession = Effect.fn(
+      "NotebookRuntime.stateForDocumentSession",
+    )(function* (session: NotebookDocumentSession) {
+      return yield* Effect.uninterruptible(
+        Effect.suspend(() => {
+          const existing = notebookStates.get(session);
+          if (existing !== undefined) return Effect.succeed(existing);
 
-            const { notebookId } = session;
-            const state = makeState(notebookId);
-            notebookStates.delete(notebookId);
-            notebookStates.set(session, state);
-            return Scope.addFinalizer(
-              session.scope,
-              executor
-                .post(
-                  notebookId,
-                  Effect.gen(function* () {
-                    notebookStates.delete(session);
-                    yield* updateKernelContext();
-                  }),
-                )
-                .pipe(Effect.exit, Effect.asVoid),
-            ).pipe(Effect.as(state));
-          }),
-        ),
+          const { notebookId } = session;
+          const state = makeState(notebookId);
+          notebookStates.delete(notebookId);
+          notebookStates.set(session, state);
+          return Scope.addFinalizer(
+            session.scope,
+            executor
+              .post(
+                notebookId,
+                Effect.gen(function* () {
+                  notebookStates.delete(session);
+                  yield* updateKernelContext();
+                }),
+              )
+              .pipe(Effect.exit, Effect.asVoid),
+          ).pipe(Effect.as(state));
+        }),
       );
+    });
 
-      const stateForNotebook = Effect.fn("NotebookRuntime.stateForNotebook")(
-        (notebookId: NotebookId) =>
-          Effect.suspend(() => {
-            const session = documentSessions.current(notebookId);
-            if (Option.isSome(session)) {
-              return stateForDocumentSession(session.value);
-            }
+    const stateForNotebook = Effect.fn("NotebookRuntime.stateForNotebook")(
+      function* (notebookId: NotebookId) {
+        return yield* Effect.suspend(() => {
+          const session = documentSessions.current(notebookId);
+          if (Option.isSome(session)) {
+            return stateForDocumentSession(session.value);
+          }
 
-            const existing = notebookStates.get(notebookId);
-            if (existing !== undefined) return Effect.succeed(existing);
+          const existing = notebookStates.get(notebookId);
+          if (existing !== undefined) return Effect.succeed(existing);
 
-            const state = makeState(notebookId);
-            notebookStates.set(notebookId, state);
-            return Effect.succeed(state);
-          }),
-      );
+          const state = makeState(notebookId);
+          notebookStates.set(notebookId, state);
+          return Effect.succeed(state);
+        });
+      },
+    );
 
-      const forNotebook = (notebookId: NotebookId) =>
-        stateForNotebook(notebookId).pipe(Effect.map((state) => state.handle));
+    const forNotebook = Effect.fn("NotebookRuntime.forNotebook")(function* (
+      notebookId: NotebookId,
+    ) {
+      const state = yield* stateForNotebook(notebookId);
+      return state.handle;
+    });
 
-      yield* Effect.forkScoped(
-        liveSessions.changes.pipe(
-          Stream.runForEach((snapshot) =>
-            Effect.gen(function* () {
-              yield* updateKernelContext();
-              const notebookIds = new Set<NotebookId>([
-                ...kernelSessions.keys(),
-                ...snapshot.map((session) => session.notebookUri),
-              ]);
-              // Admit work without waiting for busy notebooks. Each worker reads
-              // the latest accepted snapshot when it reaches the front of its queue.
-              yield* Effect.forEach(
-                notebookIds,
-                (notebookUri) =>
-                  executor.post(
-                    notebookUri,
-                    reconcileKernelSession(notebookUri),
+    yield* Effect.forkScoped(
+      liveSessions.changes.pipe(
+        Stream.runForEach((snapshot) =>
+          Effect.gen(function* () {
+            yield* updateKernelContext();
+            const notebookIds = new Set<NotebookId>([
+              ...kernelSessions.keys(),
+              ...snapshot.map((session) => session.notebookUri),
+            ]);
+            // Admit work without waiting for busy notebooks. Each worker reads
+            // the latest accepted snapshot when it reaches the front of its queue.
+            yield* Effect.forEach(
+              notebookIds,
+              (notebookUri) =>
+                executor.post(notebookUri, reconcileKernelSession(notebookUri)),
+              { discard: true },
+            );
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.interrupt
+                : Effect.logWarning("Failed to reconcile kernel sessions").pipe(
+                    Effect.annotateLogs({ cause }),
                   ),
-                { discard: true },
-              );
-            }).pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.interrupt
-                  : Effect.logWarning(
-                      "Failed to reconcile kernel sessions",
-                    ).pipe(Effect.annotateLogs({ cause })),
-              ),
             ),
           ),
         ),
-      );
-      yield* Effect.forkScoped(
-        marimo.kernelNotifications.pipe(
-          Stream.filterMap(
-            Filter.fromPredicateOption((message: KernelNotification) => {
-              return Option.map(
-                documentSessions.current(message.notebookUri),
-                (session): SessionNotification => ({ ...message, session }),
-              );
-            }),
-          ),
-          Stream.runForEach((message) => {
-            const run = (notebook: NotebookHandle) =>
-              Effect.gen(function* () {
-                // The kernel-session gate covers one race: sessionsChanged and
-                // kernel notifications arrive on independent streams, so a
-                // notification from a kernel replaced by restart can reach this
-                // worker after the reconcile that installed the new session id.
-                // The server never emits a stale id after announcing its
-                // replacement on the wire; only this client-side reordering
-                // needs guarding. (File-backed close/reopen reuses the same
-                // kernel session, so no id change is involved there.)
-                if (
-                  kernelSessions.get(message.notebookUri) !== message.sessionId
-                ) {
-                  yield* refreshKernelSession(message.notebookUri);
-                }
-                if (
-                  kernelSessions.get(message.notebookUri) !== message.sessionId
-                ) {
-                  yield* Effect.logDebug(
-                    "Ignored notification from an inactive kernel session",
-                  ).pipe(
-                    Effect.annotateLogs({
-                      notebookUri: message.notebookUri,
-                      sessionId: message.sessionId,
-                      notification: message.notification.op,
-                    }),
-                  );
-                  return;
-                }
-
-                yield* PubSub.publish(operations, message);
-                yield* Effect.annotateCurrentSpan(
-                  "notification.type",
-                  message.notification.op,
-                );
-                yield* processOperation(message, {
-                  notebook,
-                  respondToStdin,
-                  session: message.session,
-                }).pipe(
-                  Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
-                    () => Effect.void,
-                  ),
-                  Effect.catchCause(
-                    Effect.fn(function* (cause) {
-                      yield* Effect.logError(
-                        "Failed to process marimo operation",
-                      ).pipe(Effect.annotateLogs({ cause }));
-                      yield* Effect.forkChild(
-                        showErrorAndPromptLogs(
-                          "Failed to process marimo operation.",
-                        ),
-                      );
-                    }),
-                  ),
+      ),
+    );
+    yield* Effect.forkScoped(
+      marimo.kernelNotifications.pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption((message: KernelNotification) => {
+            return Option.map(
+              documentSessions.current(message.notebookUri),
+              (session): SessionNotification => ({ ...message, session }),
+            );
+          }),
+        ),
+        Stream.runForEach((message) => {
+          const run = (notebook: NotebookHandle) =>
+            Effect.gen(function* () {
+              // The kernel-session gate covers one race: sessionsChanged and
+              // kernel notifications arrive on independent streams, so a
+              // notification from a kernel replaced by restart can reach this
+              // worker after the reconcile that installed the new session id.
+              // The server never emits a stale id after announcing its
+              // replacement on the wire; only this client-side reordering
+              // needs guarding. (File-backed close/reopen reuses the same
+              // kernel session, so no id change is involved there.)
+              if (
+                kernelSessions.get(message.notebookUri) !== message.sessionId
+              ) {
+                yield* refreshKernelSession(message.notebookUri);
+              }
+              if (
+                kernelSessions.get(message.notebookUri) !== message.sessionId
+              ) {
+                yield* Effect.logDebug(
+                  "Ignored notification from an inactive kernel session",
+                ).pipe(
                   Effect.annotateLogs({
-                    "notification.type": message.notification.op,
+                    notebookUri: message.notebookUri,
+                    sessionId: message.sessionId,
+                    notification: message.notification.op,
                   }),
                 );
+                return;
+              }
+
+              yield* PubSub.publish(operations, message);
+              yield* Effect.annotateCurrentSpan(
+                "notification.type",
+                message.notification.op,
+              );
+              yield* processOperation(message, {
+                notebook,
+                respondToStdin,
+                session: message.session,
               }).pipe(
+                Effect.catchTag(
+                  "NotebookDocumentSessionEndedError",
+                  () => Effect.void,
+                ),
                 Effect.catchCause(
                   Effect.fn(function* (cause) {
                     yield* Effect.logError(
-                      "Failed to coordinate marimo operation",
+                      "Failed to process marimo operation",
                     ).pipe(Effect.annotateLogs({ cause }));
                     yield* Effect.forkChild(
                       showErrorAndPromptLogs(
@@ -793,371 +812,392 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                     );
                   }),
                 ),
-                Effect.withSpan("NotebookRuntime.processOperation"),
+                Effect.annotateLogs({
+                  "notification.type": message.notification.op,
+                }),
               );
-            return stateForDocumentSession(message.session).pipe(
-              Effect.flatMap((state) =>
-                executor
-                  .postScoped(message.notebookUri, run(state.handle))
-                  .pipe(Scope.provide(message.session.scope)),
-              ),
-            );
-          }),
-        ),
-      );
-      yield* Effect.forkScoped(
-        marimo.documentAnalysis.pipe(
-          Stream.runForEach((message) => {
-            const session = documentSessions.current(message.notebookUri);
-            if (Option.isNone(session)) return Effect.void;
-            return stateForDocumentSession(session.value).pipe(
-              Effect.andThen(
-                executor
-                  .postScoped(
-                    message.notebookUri,
-                    variables.updateVariables(session.value, message.analysis),
-                  )
-                  .pipe(Scope.provide(session.value.scope)),
-              ),
-            );
-          }),
-        ),
-      );
-
-      yield* Effect.forkScoped(
-        renderer.messages.pipe(
-          Stream.runForEach(({ editor, message }) =>
-            Effect.gen(function* () {
-              const notebook = MarimoNotebookDocument.from(editor.notebook);
-              const handle = yield* forNotebook(notebook.id);
-
-              switch (message.command) {
-                case "update-ui-element":
-                  yield* handle.updateUIElements(message.params);
-                  break;
-                case "invoke-function":
-                  yield* handle.invokeFunction(message.params);
-                  break;
-                case "set-model-value":
-                  yield* handle.updateModel(message.params);
-                  break;
-                case "navigate-to-cell": {
-                  const activeEditor =
-                    yield* code.window.getActiveNotebookEditor;
-                  if (Option.isNone(activeEditor)) {
-                    yield* Effect.logWarning(
-                      "No active notebook editor to navigate to cell",
-                    );
-                    break;
-                  }
-
-                  const cellIndex = MarimoNotebookDocument.from(
-                    activeEditor.value.notebook,
-                  )
-                    .getCells()
-                    .findIndex((cell) =>
-                      Option.contains(cell.id, message.params.cellId),
-                    );
-
-                  if (cellIndex !== -1) {
-                    activeEditor.value.revealRange(
-                      new code.NotebookRange(cellIndex, cellIndex + 1),
-                      code.NotebookEditorRevealType.InCenter,
-                    );
-                  }
-                  break;
-                }
-                case "save-image":
-                  yield* saveImageToDisk(
-                    message.params.src,
-                    message.params.suggestedName,
-                    editor.notebook.uri,
-                  ).pipe(
-                    Effect.catch((cause) =>
-                      Effect.logError("Failed to save image").pipe(
-                        Effect.annotateLogs({ cause }),
-                      ),
+            }).pipe(
+              Effect.catchCause(
+                Effect.fn(function* (cause) {
+                  yield* Effect.logError(
+                    "Failed to coordinate marimo operation",
+                  ).pipe(Effect.annotateLogs({ cause }));
+                  yield* Effect.forkChild(
+                    showErrorAndPromptLogs(
+                      "Failed to process marimo operation.",
                     ),
                   );
-                  break;
-                case "copy-image": {
-                  const dataUri = yield* resolveImageDataUri(
-                    message.params.src,
-                  ).pipe(Effect.option);
-                  yield* renderer.postMessage(
-                    {
-                      op: "image-data-result",
-                      requestId: message.params.requestId,
-                      dataUri: Option.getOrNull(dataUri),
-                    },
-                    editor,
+                }),
+              ),
+              Effect.withSpan("NotebookRuntime.processOperation"),
+            );
+          return stateForDocumentSession(message.session).pipe(
+            Effect.flatMap((state) =>
+              executor
+                .postScoped(message.notebookUri, run(state.handle))
+                .pipe(Scope.provide(message.session.scope)),
+            ),
+          );
+        }),
+      ),
+    );
+    yield* Effect.forkScoped(
+      marimo.documentAnalysis.pipe(
+        Stream.runForEach((message) => {
+          const session = documentSessions.current(message.notebookUri);
+          if (Option.isNone(session)) return Effect.void;
+          return stateForDocumentSession(session.value).pipe(
+            Effect.andThen(
+              executor
+                .postScoped(
+                  message.notebookUri,
+                  variables.updateVariables(session.value, message.analysis),
+                )
+                .pipe(Scope.provide(session.value.scope)),
+            ),
+          );
+        }),
+      ),
+    );
+
+    yield* Effect.forkScoped(
+      renderer.messages.pipe(
+        Stream.runForEach(({ editor, message }) =>
+          Effect.gen(function* () {
+            const notebook = MarimoNotebookDocument.from(editor.notebook);
+            const handle = yield* forNotebook(notebook.id);
+
+            switch (message.command) {
+              case "update-ui-element":
+                yield* handle.updateUIElements(message.params);
+                break;
+              case "invoke-function":
+                yield* handle.invokeFunction(message.params);
+                break;
+              case "set-model-value":
+                yield* handle.updateModel(message.params);
+                break;
+              case "navigate-to-cell": {
+                const activeEditor = yield* code.window.getActiveNotebookEditor;
+                if (Option.isNone(activeEditor)) {
+                  yield* Effect.logWarning(
+                    "No active notebook editor to navigate to cell",
                   );
                   break;
                 }
-                default:
-                  unreachable(message, "Unknown message from frontend");
+
+                const cellIndex = MarimoNotebookDocument.from(
+                  activeEditor.value.notebook,
+                )
+                  .getCells()
+                  .findIndex((cell) =>
+                    Option.contains(cell.id, message.params.cellId),
+                  );
+
+                if (cellIndex !== -1) {
+                  activeEditor.value.revealRange(
+                    new code.NotebookRange(cellIndex, cellIndex + 1),
+                    code.NotebookEditorRevealType.InCenter,
+                  );
+                }
+                break;
               }
-            }).pipe(
-              // Restored outputs can publish before their kernel starts.
-              // Recover per message so one interaction cannot end this stream.
-              Effect.catchTag("NoActiveKernelError", () =>
-                Effect.logDebug(
-                  "Ignored renderer message without an active kernel",
-                ),
-              ),
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.failCause(cause)
-                  : Effect.logError("Failed to process renderer message").pipe(
+              case "save-image":
+                yield* saveImageToDisk(
+                  message.params.src,
+                  message.params.suggestedName,
+                  editor.notebook.uri,
+                ).pipe(
+                  Effect.catch((cause) =>
+                    Effect.logError("Failed to save image").pipe(
                       Effect.annotateLogs({ cause }),
                     ),
-              ),
-              Effect.annotateLogs({
-                notebookUri: editor.notebook.uri.toString(),
-                "renderer.command": message.command,
-              }),
-            ),
-          ),
-        ),
-      );
-
-      yield* Effect.forkScoped(
-        code.workspace.notebookDocumentChanges.pipe(
-          Stream.filterMap(
-            Filter.fromPredicateOption(
-              (event: vscode.NotebookDocumentChangeEvent) =>
-                Option.map(
-                  MarimoNotebookDocument.tryFrom(event.notebook),
-                  (notebook) => ({ ...event, notebook }),
-                ),
-            ),
-          ),
-          Stream.runForEach((event) =>
-            Effect.gen(function* () {
-              const notebook = yield* forNotebook(event.notebook.id);
-              yield* syncCellIdentity(event, {
-                code,
-                executions,
-                notebook,
-              });
-            }),
-          ),
-        ),
-      );
-
-      return {
-        attachController(
-          notebookId: NotebookId,
-          controller: NotebookController,
-        ) {
-          return Effect.gen(function* () {
-            yield* Effect.uninterruptible(
-              Effect.gen(function* () {
-                const state = yield* stateForNotebook(notebookId);
-                yield* Ref.set(state.controller, Option.some(controller));
-                yield* PubSub.publish(controllerSelections, {
-                  notebookUri: notebookId,
-                  controller,
-                });
-              }),
-            );
-            yield* updateKernelContext();
-
-            const documentSession = documentSessions.current(notebookId);
-            if (Option.isNone(documentSession)) return;
-            const session = documentSession.value;
-            const notebook = MarimoNotebookDocument.from(session.document);
-            yield* readNotebookOutputs(notebook, marimo).pipe(
-              Effect.flatMap(({ cells }) => {
-                if (cells.length === 0 || session.document.isClosed) {
-                  return Effect.void;
-                }
-                return executor
-                  .submitScoped(
-                    notebookId,
-                    Effect.gen(function* () {
-                      const state = yield* stateForDocumentSession(session);
-                      const selected = yield* Ref.get(state.controller);
-                      if (!Option.contains(selected, controller)) return;
-
-                      const notebookExecutions = yield* executions.open(
-                        session,
-                        {
-                          getDrive: Effect.succeed(
-                            Option.some(controller.drive(notebook)),
-                          ),
-                        },
-                      );
-                      yield* Effect.forEach(
-                        cells,
-                        notebookExecutions.restoreOutput,
-                        { discard: true },
-                      );
-                      yield* controller.presentOutputs(notebook, cells);
-                    }),
-                  )
-                  .pipe(Scope.provide(session.scope));
-              }),
-              Effect.catchCause((cause) =>
-                Effect.logDebug("Notebook output replay unavailable").pipe(
-                  Effect.annotateLogs({ cause, notebookUri: notebookId }),
-                ),
-              ),
-              Effect.forkIn(session.scope),
-            );
-          });
-        },
-        controllerChanges: Stream.fromPubSub(controllerSelections),
-        getRuntimeSession(notebookId: NotebookId) {
-          return liveSessions.find(notebookId).pipe(
-            Effect.map(
-              Option.map(({ executable, workingDirectory }) => ({
-                executable,
-                workingDirectory,
-              })),
-            ),
-          );
-        },
-        getRuntimeSessions: liveSessions.get.pipe(
-          Effect.map((sessions) =>
-            sessions.map(({ notebookUri, executable, workingDirectory }) => ({
-              notebookId: notebookUri,
-              session: { executable, workingDirectory },
-            })),
-          ),
-        ),
-        activeRuntimeSession: Effect.gen(function* () {
-          const activeNotebook = Option.flatMap(
-            yield* code.window.getActiveNotebookEditor,
-            (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
-          );
-          if (Option.isNone(activeNotebook)) {
-            return Option.none<RuntimeSession>();
-          }
-          return Option.map(
-            yield* liveSessions.find(activeNotebook.value.id),
-            ({ executable, workingDirectory }) => ({
-              executable,
-              workingDirectory,
-            }),
-          );
-        }),
-        moveSession(notebookId: NotebookId, newNotebookId: NotebookId) {
-          return runInNotebook(
-            notebookId,
-            Effect.gen(function* () {
-              yield* liveSessions.move(notebookId, newNotebookId);
-              yield* reconcileKernelSession(notebookId);
-              yield* executor.post(
-                newNotebookId,
-                reconcileKernelSession(newNotebookId),
-              );
-            }),
-          );
-        },
-        restoreSession(
-          notebookId: NotebookId,
-          executable: string,
-          workingDirectory: string,
-        ) {
-          return mutateKernelSession(
-            notebookId,
-            liveSessions.restore(notebookId, executable, workingDirectory),
-          );
-        },
-        shutdownAll: Effect.gen(function* () {
-          const current = yield* liveSessions.get;
-          yield* Effect.forEach(
-            current,
-            (session) =>
-              forNotebook(session.notebookUri).pipe(
-                Effect.andThen((handle) => handle.close),
-              ),
-            { discard: true },
-          );
-        }),
-        forDocument(document: vscode.NotebookDocument) {
-          return Effect.gen(function* () {
-            const session = documentSessions.forDocument(document);
-            if (Option.isNone(session)) {
-              const notebook = MarimoNotebookDocument.from(document);
-              return yield* new NoActiveKernelError({
-                notebookUri: notebook.id,
-              });
+                  ),
+                );
+                break;
+              case "copy-image": {
+                const dataUri = yield* resolveImageDataUri(
+                  message.params.src,
+                ).pipe(Effect.option);
+                yield* renderer.postMessage(
+                  {
+                    op: "image-data-result",
+                    requestId: message.params.requestId,
+                    dataUri: Option.getOrNull(dataUri),
+                  },
+                  editor,
+                );
+                break;
+              }
+              default:
+                unreachable(message, "Unknown message from frontend");
             }
-            const state = yield* stateForDocumentSession(session.value);
-            return makeDocumentHandle(session.value, state.controller);
-          });
-        },
-        forNotebook,
-      };
-
-      function findOpenNotebook(notebookId: NotebookId) {
-        return Effect.gen(function* () {
-          const documents = yield* code.workspace.getNotebookDocuments;
-          const notebook = EffectArray.findFirst(
-            EffectArray.getSomes(
-              documents.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
+          }).pipe(
+            // Restored outputs can publish before their kernel starts.
+            // Recover per message so one interaction cannot end this stream.
+            Effect.catchTag("NoActiveKernelError", () =>
+              Effect.logDebug(
+                "Ignored renderer message without an active kernel",
+              ),
             ),
-            (candidate) => candidate.id === notebookId,
-          );
-          if (Option.isNone(notebook)) {
-            return yield* new NoActiveKernelError({ notebookUri: notebookId });
-          }
-          return notebook.value;
-        });
-      }
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logError("Failed to process renderer message").pipe(
+                    Effect.annotateLogs({ cause }),
+                  ),
+            ),
+            Effect.annotateLogs({
+              notebookUri: editor.notebook.uri.toString(),
+              "renderer.command": message.command,
+            }),
+          ),
+        ),
+      ),
+    );
 
-      function resolveWorkingDirectory(
+    yield* Effect.forkScoped(
+      code.workspace.notebookDocumentChanges.pipe(
+        Stream.filterMap(
+          Filter.fromPredicateOption(
+            (event: vscode.NotebookDocumentChangeEvent) =>
+              Option.map(
+                MarimoNotebookDocument.tryFrom(event.notebook),
+                (notebook) => ({ ...event, notebook }),
+              ),
+          ),
+        ),
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            const notebook = yield* forNotebook(event.notebook.id);
+            yield* syncCellIdentity(event, {
+              code,
+              executions,
+              notebook,
+            });
+          }),
+        ),
+      ),
+    );
+
+    const attachController = Effect.fn("NotebookRuntime.attachController")(
+      function* (notebookId: NotebookId, controller: NotebookController) {
+        yield* Effect.gen(function* () {
+          yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              const state = yield* stateForNotebook(notebookId);
+              yield* Ref.set(state.controller, Option.some(controller));
+              yield* PubSub.publish(controllerSelections, {
+                notebookUri: notebookId,
+                controller,
+              });
+            }),
+          );
+          yield* updateKernelContext();
+
+          const documentSession = documentSessions.current(notebookId);
+          if (Option.isNone(documentSession)) return;
+          const session = documentSession.value;
+          const notebook = MarimoNotebookDocument.from(session.document);
+          yield* readNotebookOutputs(notebook, marimo).pipe(
+            Effect.flatMap(({ cells }) => {
+              if (cells.length === 0 || session.document.isClosed) {
+                return Effect.void;
+              }
+              return executor
+                .submitScoped(
+                  notebookId,
+                  Effect.gen(function* () {
+                    const state = yield* stateForDocumentSession(session);
+                    const selected = yield* Ref.get(state.controller);
+                    if (!Option.contains(selected, controller)) return;
+
+                    const notebookExecutions = yield* executions.open(session, {
+                      getDrive: Effect.succeed(
+                        Option.some(controller.drive(notebook)),
+                      ),
+                    });
+                    yield* Effect.forEach(
+                      cells,
+                      notebookExecutions.restoreOutput,
+                      { discard: true },
+                    );
+                    yield* controller.presentOutputs(notebook, cells);
+                  }),
+                )
+                .pipe(Scope.provide(session.scope));
+            }),
+            Effect.catchCause((cause) =>
+              Effect.logDebug("Notebook output replay unavailable").pipe(
+                Effect.annotateLogs({ cause, notebookUri: notebookId }),
+              ),
+            ),
+            Effect.forkIn(session.scope),
+          );
+        });
+      },
+    );
+
+    const getRuntimeSession = Effect.fn("NotebookRuntime.getRuntimeSession")(
+      function* (notebookId: NotebookId) {
+        const session = yield* liveSessions.find(notebookId);
+        return Option.map(session, ({ executable, workingDirectory }) => ({
+          executable,
+          workingDirectory,
+        }));
+      },
+    );
+
+    const moveSession = Effect.fn("NotebookRuntime.moveSession")(function* (
+      notebookId: NotebookId,
+      newNotebookId: NotebookId,
+    ) {
+      yield* runInNotebook(
+        notebookId,
+        Effect.gen(function* () {
+          yield* liveSessions.move(notebookId, newNotebookId);
+          yield* reconcileKernelSession(notebookId);
+          yield* executor.post(
+            newNotebookId,
+            reconcileKernelSession(newNotebookId),
+          );
+        }),
+      );
+    });
+
+    const restoreSession = Effect.fn("NotebookRuntime.restoreSession")(
+      function* (
         notebookId: NotebookId,
         executable: string,
-        openNotebook?: MarimoNotebookDocument,
+        workingDirectory: string,
       ) {
-        return Effect.gen(function* () {
-          const session = yield* liveSessions.find(notebookId);
-          if (
-            Option.isSome(session) &&
-            session.value.executable === executable
-          ) {
-            return session.value.workingDirectory;
-          }
+        yield* mutateKernelSession(
+          notebookId,
+          liveSessions.restore(notebookId, executable, workingDirectory),
+        );
+      },
+    );
 
-          const notebook =
-            openNotebook ?? (yield* findOpenNotebook(notebookId));
-          const configuredValue = yield* config.notebookFileRoot(notebook.uri);
-          const resolution = yield* resolveNotebookFileRoot({
-            configuredValue,
-            notebookUri: notebook.uri,
-            workspaceFolders: yield* code.workspace.getWorkspaceFolders,
-          });
-          if (resolution.usedFirstWorkspaceFallback) {
-            yield* Effect.logInfo(
-              "Untitled notebook has multiple workspace folders; using the first for ${fileDirname}",
-            ).pipe(Effect.annotateLogs({ workingDirectory: resolution.path }));
-          }
-          return resolution.path;
+    const forDocument = Effect.fn("NotebookRuntime.forDocument")(function* (
+      document: vscode.NotebookDocument,
+    ) {
+      const session = documentSessions.forDocument(document);
+      if (Option.isNone(session)) {
+        const notebook = MarimoNotebookDocument.from(document);
+        return yield* new NoActiveKernelError({
+          notebookUri: notebook.id,
         });
       }
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([
-      Uv.layer,
-      Config.layer,
-      Constants.layer,
-      OutputChannel.layer,
-      NotebookVariables.layer,
-      NotebookRenderer.layer,
-      CellExecutions.defaultLayer,
-      NotebookDatasources.layer,
-      NotebookEditorRegistry.layer,
-      PythonEnvInvalidation.layer,
-      LiveSessions.layer,
-      NotebookDocumentSessions.layer,
-    ]),
-  );
-}
+      const state = yield* stateForDocumentSession(session.value);
+      return makeDocumentHandle(session.value, state.controller);
+    });
+
+    return Service.of({
+      attachController,
+      controllerChanges: Stream.fromPubSub(controllerSelections),
+      getRuntimeSession,
+      getRuntimeSessions: liveSessions.get.pipe(
+        Effect.map((sessions) =>
+          sessions.map(({ notebookUri, executable, workingDirectory }) => ({
+            notebookId: notebookUri,
+            session: { executable, workingDirectory },
+          })),
+        ),
+      ),
+      activeRuntimeSession: Effect.gen(function* () {
+        const activeNotebook = Option.flatMap(
+          yield* code.window.getActiveNotebookEditor,
+          (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
+        );
+        if (Option.isNone(activeNotebook)) {
+          return Option.none<RuntimeSession>();
+        }
+        return Option.map(
+          yield* liveSessions.find(activeNotebook.value.id),
+          ({ executable, workingDirectory }) => ({
+            executable,
+            workingDirectory,
+          }),
+        );
+      }),
+      moveSession,
+      restoreSession,
+      shutdownAll: Effect.gen(function* () {
+        const current = yield* liveSessions.get;
+        yield* Effect.forEach(
+          current,
+          (session) =>
+            forNotebook(session.notebookUri).pipe(
+              Effect.andThen((handle) => handle.close),
+            ),
+          { discard: true },
+        );
+      }),
+      forDocument,
+      forNotebook,
+    });
+
+    function findOpenNotebook(notebookId: NotebookId) {
+      return Effect.gen(function* () {
+        const documents = yield* code.workspace.getNotebookDocuments;
+        const notebook = EffectArray.findFirst(
+          EffectArray.getSomes(
+            documents.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
+          ),
+          (candidate) => candidate.id === notebookId,
+        );
+        if (Option.isNone(notebook)) {
+          return yield* new NoActiveKernelError({ notebookUri: notebookId });
+        }
+        return notebook.value;
+      });
+    }
+
+    function resolveWorkingDirectory(
+      notebookId: NotebookId,
+      executable: string,
+      openNotebook?: MarimoNotebookDocument,
+    ) {
+      return Effect.gen(function* () {
+        const session = yield* liveSessions.find(notebookId);
+        if (Option.isSome(session) && session.value.executable === executable) {
+          return session.value.workingDirectory;
+        }
+
+        const notebook = openNotebook ?? (yield* findOpenNotebook(notebookId));
+        const configuredValue = yield* config.notebookFileRoot(notebook.uri);
+        const resolution = yield* resolveNotebookFileRoot({
+          configuredValue,
+          notebookUri: notebook.uri,
+          workspaceFolders: yield* code.workspace.getWorkspaceFolders,
+        });
+        if (resolution.usedFirstWorkspaceFallback) {
+          yield* Effect.logInfo(
+            "Untitled notebook has multiple workspace folders; using the first for ${fileDirname}",
+          ).pipe(Effect.annotateLogs({ workingDirectory: resolution.path }));
+        }
+        return resolution.path;
+      });
+    }
+  }),
+);
+
+export const defaultLayer = layer.pipe(
+  Layer.provide([
+    Uv.layer,
+    Config.layer,
+    Constants.layer,
+    OutputChannel.layer,
+    NotebookVariables.layer,
+    NotebookRenderer.layer,
+    CellExecutions.defaultLayer,
+    NotebookDatasources.layer,
+    NotebookEditorRegistry.layer,
+    PythonEnvInvalidation.layer,
+    LiveSessions.layer,
+    NotebookDocumentSessions.layer,
+  ]),
+);
 
 function isValueUpdateEcho(
   operation: NotificationOf<"send-ui-element-message">,

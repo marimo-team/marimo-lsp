@@ -17,7 +17,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { VsCode } from "./VsCode.ts";
@@ -70,7 +70,7 @@ export interface MarimoApi {
 export class Api extends Context.Service<Api>()("Api", {
   make: Effect.gen(function* () {
     const code = yield* VsCode;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
 
     const context = yield* Effect.context();
     const runPromise = Effect.runPromiseWith(context);

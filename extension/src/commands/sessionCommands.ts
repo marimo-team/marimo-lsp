@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -37,7 +37,7 @@ export const openSession = Effect.fn("command.openSession")(function* ({
 export const restartSession = Effect.fn("command.restartSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
-  const runtime = yield* NotebookRuntime;
+  const runtime = yield* NotebookRuntime.Service;
   const notebook = yield* runtime.forNotebook(notebookUri);
   yield* notebook.restart.pipe(
     Effect.catchCause(
@@ -56,7 +56,7 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
 }: SessionCommandTarget) {
   const code = yield* VsCode;
   const sessions = yield* LiveSessions;
-  const runtime = yield* NotebookRuntime;
+  const runtime = yield* NotebookRuntime.Service;
   const session = yield* sessions.find(notebookUri);
   if (Option.isNone(session)) return;
 
@@ -80,7 +80,7 @@ export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
   function* () {
     const code = yield* VsCode;
     const sessions = yield* LiveSessions;
-    const runtime = yield* NotebookRuntime;
+    const runtime = yield* NotebookRuntime.Service;
     const live = yield* sessions.get;
     if (live.length === 0) return;
     if (live.length > 1) {

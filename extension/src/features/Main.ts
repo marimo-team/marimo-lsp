@@ -5,7 +5,7 @@ import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import type { MarimoClient } from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
@@ -102,7 +102,7 @@ const MainLive = Layer.empty
     Layer.provide(Config.layer),
     Layer.provide(OutputChannel.layer),
     Layer.provide(PythonEnvInvalidation.layer),
-    Layer.provide(NotebookRuntime.layer),
+    Layer.provide(NotebookRuntime.defaultLayer),
   );
 
 export function makeExtension(

@@ -11,7 +11,7 @@ import {
 } from "effect";
 
 import { SCRATCH_CELL_ID } from "../constants.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -103,7 +103,7 @@ export function scratchpadResultText(
 export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const notebooks = yield* NotebookRuntime;
+    const notebooks = yield* NotebookRuntime.Service;
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
     const decoder = new TextDecoder();
 

@@ -19,10 +19,7 @@ import {
   makeTestNotebookRuntime,
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type {
-  NotebookController,
-  NotebookControllerSelection,
-} from "../../kernel/NotebookRuntime.ts";
+import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
@@ -46,7 +43,7 @@ const TREE: DependencyTreeNode = {
 function makeController(options: {
   readonly id: string;
   readonly executable?: string;
-}): NotebookController {
+}): NotebookRuntime.NotebookController {
   return {
     ...options,
     drive: () => () => Effect.void,
@@ -61,7 +58,7 @@ const isTerminal = (state: NotebookDependencyState) =>
 
 const makeContext = Effect.fn(function* (options: {
   readonly notebookIds?: ReadonlyArray<NotebookId>;
-  readonly controllers?: ReadonlyArray<NotebookControllerSelection>;
+  readonly controllers?: ReadonlyArray<NotebookRuntime.NotebookControllerSelection>;
   readonly send: (
     request: TestCommand,
   ) => Effect.Effect<unknown, Schema.SchemaError>;
