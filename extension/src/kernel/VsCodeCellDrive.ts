@@ -11,7 +11,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../types.ts";
 import type { CellRef, Drive } from "./CellExecutions.ts";
-import { CellOutputProjections } from "./CellOutputProjections.ts";
+import * as CellOutputProjections from "./CellOutputProjections.ts";
 import { CellCommand, type RunId } from "./CellRunReducer.ts";
 import {
   buildKeyedCellOutputs,
@@ -50,7 +50,7 @@ export class VsCodeCellDrive extends Context.Service<VsCodeCellDrive>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
-      const projections = yield* CellOutputProjections;
+      const projections = yield* CellOutputProjections.Service;
       const resources = new Map<string, PresentedRun>();
       const errorDiagnostics = yield* acquireDisposable(() =>
         code.languages.createDiagnosticCollection("marimo-runtime"),

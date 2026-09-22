@@ -26,7 +26,7 @@ import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { CellOutputProjections } from "./CellOutputProjections.ts";
+import * as CellOutputProjections from "./CellOutputProjections.ts";
 import {
   type NotebookController as RuntimeNotebookController,
   NotebookRuntime,

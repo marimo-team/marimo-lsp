@@ -10,7 +10,7 @@ import {
 } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import { tryCellOutputOperation } from "./CellOutputOperation.ts";
-import { CellOutputProjections } from "./CellOutputProjections.ts";
+import * as CellOutputProjections from "./CellOutputProjections.ts";
 import { transitionCell } from "./CellRunReducer.ts";
 import { buildKeyedCellOutputs } from "./VsCodeCellOutputs.ts";
 
@@ -26,7 +26,7 @@ export class VsCodeNotebookOutputPresenter extends Context.Service<VsCodeNoteboo
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
-      const projections = yield* CellOutputProjections;
+      const projections = yield* CellOutputProjections.Service;
 
       const present = Effect.fn("VsCodeNotebookOutputPresenter.present")(
         function* (
