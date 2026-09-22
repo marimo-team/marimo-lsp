@@ -1,7 +1,7 @@
 import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
 import * as Config from "../config/Config.ts";
-import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
+import * as ConfigContextManager from "../config/ConfigContextManager.ts";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
@@ -72,7 +72,7 @@ const MainLive = Layer.empty
     Layer.merge(CellMetadataBindingsLive),
     Layer.merge(AutoExportLive),
     Layer.merge(ReloadOnConfigChangeLive),
-    Layer.merge(ConfigContextManagerLive),
+    Layer.merge(ConfigContextManager.layer),
     Layer.merge(ThemeSyncLive),
     Layer.merge(CellInputVisibilitySyncLive),
     Layer.merge(DebugLayerLive),

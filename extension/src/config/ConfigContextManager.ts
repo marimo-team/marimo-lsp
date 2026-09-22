@@ -13,7 +13,7 @@ import * as NotebookConfiguration from "./NotebookConfiguration.ts";
  *
  * Pure side effect: nothing consumes this as a service.
  */
-export const ConfigContextManagerLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
@@ -100,5 +100,5 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
       ),
     );
     yield* Effect.forkScoped(publishActiveConfiguration);
-  }).pipe(Effect.annotateLogs("service", "ConfigContextManager")),
+  }).pipe(Effect.withSpan("ConfigContextManager.layer")),
 );

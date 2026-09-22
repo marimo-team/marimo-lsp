@@ -99,7 +99,7 @@ Keep these as `Layer.effectDiscard` modules and verify their resources end with
 the layer scope. Export `layer`, import the module as a namespace, and remove
 `Live` suffixes.
 
-- [ ] `config/ConfigContextManager.ts`
+- [x] `config/ConfigContextManager.ts`
 - [ ] `features/AutoExport.ts`
 - [ ] `features/CellInputVisibilitySync.ts`
 - [ ] `features/CellMetadataBindings.ts`
