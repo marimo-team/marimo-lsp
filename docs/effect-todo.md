@@ -114,7 +114,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `kernel/NotebookControllers.ts`
 - [x] `panel/datasources/DatasourcesView.ts`
 - [x] `panel/packages/PackagesView.ts`
-- [ ] `panel/sessions/SessionFileLifecycle.ts`
+- [x] `panel/sessions/SessionFileLifecycle.ts`
 - [ ] `panel/sessions/SessionsView.ts`
 - [ ] `panel/variables/VariablesView.ts`
 - [ ] `statusbar/MarimoStatusBar.ts`

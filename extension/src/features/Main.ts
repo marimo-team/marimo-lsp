@@ -19,7 +19,7 @@ import * as DatasourcesView from "../panel/datasources/DatasourcesView.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import * as PackagesView from "../panel/packages/PackagesView.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
-import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
+import * as SessionFileLifecycle from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
@@ -64,7 +64,7 @@ const MainLive = Layer.empty
     Layer.merge(MarimoFileDetector.layer),
     Layer.merge(MarimoCodeLensProvider.layer),
     Layer.merge(SessionsViewLive),
-    Layer.merge(SessionFileLifecycleLive),
+    Layer.merge(SessionFileLifecycle.layer),
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesView.layer),
     Layer.merge(PackagesView.layer),
