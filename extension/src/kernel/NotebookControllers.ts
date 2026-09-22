@@ -19,7 +19,7 @@ import { Config } from "../config/Config.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";

@@ -22,7 +22,7 @@ import {
 import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";

@@ -20,7 +20,7 @@ import {
 } from "../lib/binaryResolution.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";

@@ -5,7 +5,7 @@ import { makeExtension } from "./features/Main.ts";
 import { MarimoClient } from "./lsp/MarimoClient.ts";
 import { RuffLanguageServer } from "./lsp/RuffLanguageServer.ts";
 import { TyLanguageServer } from "./lsp/TyLanguageServer.ts";
-import { OutputChannel } from "./platform/OutputChannel.ts";
+import * as OutputChannel from "./platform/OutputChannel.ts";
 import { VsCode } from "./platform/VsCode.ts";
 import { PythonExtension } from "./python/PythonExtension.ts";
 import { Telemetry } from "./telemetry/Telemetry.ts";

@@ -10,7 +10,7 @@ import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { GitHubClient } from "../../platform/GitHubClient.ts";
-import { OutputChannel } from "../../platform/OutputChannel.ts";
+import * as OutputChannel from "../../platform/OutputChannel.ts";
 import {
   MarimoNotebookDocument,
   MarimoNotebookCell,

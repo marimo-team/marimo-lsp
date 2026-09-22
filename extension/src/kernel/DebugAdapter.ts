@@ -16,7 +16,7 @@ import {
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import {

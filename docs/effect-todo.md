@@ -15,7 +15,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ## Pilot services
 
-- [ ] `platform/OutputChannel.ts`
+- [x] `platform/OutputChannel.ts`
 - [ ] `python/PythonEnvInvalidation.ts`
 - [ ] `notebook/NotebookRenderer.ts`
 

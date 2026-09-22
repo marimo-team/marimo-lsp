@@ -39,7 +39,7 @@ import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
@@ -216,7 +216,7 @@ type RuntimeWorkRequirements =
   | NotebookEditorRegistry
   | NotebookDocumentSessions
   | NotebookRenderer
-  | OutputChannel
+  | OutputChannel.Service
   | PythonEnvInvalidation
   | Uv
   | NotebookVariables
