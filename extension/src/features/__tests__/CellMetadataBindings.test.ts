@@ -14,15 +14,12 @@ import * as NotebookDatasources from "../../panel/datasources/NotebookDatasource
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
-import {
-  CellMetadataBindingsLive,
-  DEFAULT_SQL_ENGINE,
-} from "../CellMetadataBindings.ts";
+import * as CellMetadataBindings from "../CellMetadataBindings.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(CellMetadataBindingsLive),
+    Layer.provideMerge(CellMetadataBindings.layer),
     Layer.provide(CellMetadataUIBinding.layer),
     Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provide(makeTestMarimoClient()),
@@ -101,7 +98,7 @@ it.effect("should display dataframeName from SQL metadata", () =>
                 quotePrefix: "",
                 commentLines: [],
                 showOutput: true,
-                engine: DEFAULT_SQL_ENGINE,
+                engine: CellMetadataBindings.defaultSqlEngine,
               },
             },
           },

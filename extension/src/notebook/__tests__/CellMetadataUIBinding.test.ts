@@ -10,7 +10,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { commandId } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
-import { DEFAULT_SQL_ENGINE } from "../../features/CellMetadataBindings.ts";
+import * as CellMetadataBindings from "../../features/CellMetadataBindings.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
@@ -145,7 +145,7 @@ it.effect("should display value from cell metadata", () =>
                 quotePrefix: "",
                 commentLines: [],
                 showOutput: true,
-                engine: DEFAULT_SQL_ENGINE,
+                engine: CellMetadataBindings.defaultSqlEngine,
               },
             },
           },

@@ -41,7 +41,7 @@ import * as HealthService from "../telemetry/HealthService.ts";
 import type * as Telemetry from "../telemetry/Telemetry.ts";
 import * as AutoExport from "./AutoExport.ts";
 import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
-import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
+import * as CellMetadataBindings from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
@@ -69,7 +69,7 @@ const MainLive = Layer.empty
     Layer.merge(DatasourcesViewLive),
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
-    Layer.merge(CellMetadataBindingsLive),
+    Layer.merge(CellMetadataBindings.layer),
     Layer.merge(AutoExport.layer),
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ConfigContextManager.layer),

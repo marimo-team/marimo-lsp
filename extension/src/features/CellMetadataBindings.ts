@@ -11,7 +11,7 @@ import {
 
 // Decoding an empty struct applies each field's decoding default.
 const DEFAULT_SQL_METADATA = Schema.decodeUnknownSync(SqlCellProjection)({});
-export const DEFAULT_SQL_ENGINE = DEFAULT_SQL_METADATA.engine;
+export const defaultSqlEngine = DEFAULT_SQL_METADATA.engine;
 const DEFAULT_LABEL = "duckdb (In-Memory)";
 
 /**
@@ -44,7 +44,7 @@ function updateSqlMetadata(
   };
 }
 
-export const CellMetadataBindingsLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const { LanguageId } = yield* Constants.Service;
     const bindingService = yield* CellMetadataUIBinding.Service;
@@ -193,7 +193,7 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
       },
 
       getValue: (metadata: MarimoCellMetadata) => {
-        return metadata.sourceProjections?.sql?.engine ?? DEFAULT_SQL_ENGINE;
+        return metadata.sourceProjections?.sql?.engine ?? defaultSqlEngine;
       },
 
       setValue: (metadata: MarimoCellMetadata, value: string | boolean) => {
@@ -204,8 +204,8 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
       },
 
       getLabel: (value: string | boolean | undefined) => {
-        const engine = typeof value === "string" ? value : DEFAULT_SQL_ENGINE;
-        if (engine === DEFAULT_SQL_ENGINE) {
+        const engine = typeof value === "string" ? value : defaultSqlEngine;
+        if (engine === defaultSqlEngine) {
           // Pretty name for default engine
           return DEFAULT_LABEL;
         }
@@ -213,8 +213,8 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
       },
 
       getTooltip: (value: string | boolean | undefined) => {
-        const engine = typeof value === "string" ? value : DEFAULT_SQL_ENGINE;
-        if (engine === DEFAULT_SQL_ENGINE) {
+        const engine = typeof value === "string" ? value : defaultSqlEngine;
+        if (engine === defaultSqlEngine) {
           // Pretty name for default engine
           return DEFAULT_LABEL;
         }
@@ -223,22 +223,22 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
 
       inputPlaceholder: "Select a database connection",
 
-      getOptions: (cell) => {
-        return Effect.gen(function* () {
+      getOptions: Effect.fn("CellMetadataBindings.getOptions")(
+        function* (cell) {
           const connectionsOption = yield* datasources.getConnections(
             cell.notebook.id,
           );
 
           // Always include duckdb as default
           const options: Array<{ label: string; value: string }> = [
-            { label: DEFAULT_LABEL, value: DEFAULT_SQL_ENGINE },
+            { label: DEFAULT_LABEL, value: defaultSqlEngine },
           ];
 
           // Add available connections
           if (Option.isSome(connectionsOption)) {
             const connections = connectionsOption.value.connections;
             for (const [name, connection] of connections) {
-              if (name === DEFAULT_SQL_ENGINE) {
+              if (name === defaultSqlEngine) {
                 continue;
               }
               options.push({
@@ -249,8 +249,8 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
           }
 
           return options;
-        });
-      },
+        },
+      ),
     });
-  }),
+  }).pipe(Effect.withSpan("CellMetadataBindings.layer")),
 );
