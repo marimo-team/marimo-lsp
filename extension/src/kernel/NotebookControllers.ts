@@ -21,7 +21,7 @@ import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
+import * as EnvironmentValidator from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";

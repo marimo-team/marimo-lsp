@@ -75,7 +75,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ### Python
 
-- [ ] `python/EnvironmentValidator.ts`
+- [x] `python/EnvironmentValidator.ts`
 - [ ] `python/PythonExtension.ts`
 - [ ] `python/Uv.ts`
 
