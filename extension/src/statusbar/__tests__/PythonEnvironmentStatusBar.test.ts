@@ -3,7 +3,7 @@ import { Effect, Layer, Option, Ref } from "effect";
 
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { PythonEnvironmentStatusBarLive } from "../PythonEnvironmentStatusBar.ts";
+import * as PythonEnvironmentStatusBar from "../PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../StatusBar.ts";
 
 /**
@@ -41,7 +41,7 @@ const withTestCtx = Effect.gen(function* () {
   return {
     vscode,
     statusBarVisible: visible,
-    layer: PythonEnvironmentStatusBarLive.pipe(
+    layer: PythonEnvironmentStatusBar.layer.pipe(
       Layer.provide(vscode.layer),
       Layer.provide(pythonExt.layer),
       Layer.provide(statusBarLayer),

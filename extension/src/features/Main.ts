@@ -35,7 +35,7 @@ import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
 import * as MarimoStatusBar from "../statusbar/MarimoStatusBar.ts";
-import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
+import * as PythonEnvironmentStatusBar from "../statusbar/PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../statusbar/StatusBar.ts";
 import * as HealthService from "../telemetry/HealthService.ts";
 import type * as Telemetry from "../telemetry/Telemetry.ts";
@@ -60,7 +60,7 @@ const MainLive = Layer.empty
     Layer.merge(RegisterCommands.layer),
     Layer.merge(RegisterLanguageModelTools.layer),
     Layer.merge(MarimoStatusBar.layer),
-    Layer.merge(PythonEnvironmentStatusBarLive),
+    Layer.merge(PythonEnvironmentStatusBar.layer),
     Layer.merge(MarimoFileDetector.layer),
     Layer.merge(MarimoCodeLensProvider.layer),
     Layer.merge(SessionsView.layer),

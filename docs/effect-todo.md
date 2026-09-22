@@ -118,7 +118,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `panel/sessions/SessionsView.ts`
 - [x] `panel/variables/VariablesView.ts`
 - [x] `statusbar/MarimoStatusBar.ts`
-- [ ] `statusbar/PythonEnvironmentStatusBar.ts`
+- [x] `statusbar/PythonEnvironmentStatusBar.ts`
 
 ## Composition
 

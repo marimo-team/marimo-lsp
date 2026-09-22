@@ -20,6 +20,7 @@
  * @see https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/interpreterService.ts
  */
 
+import type * as py from "@vscode/python-extension";
 import { Effect, Function, Layer, Option, Queue, Stream } from "effect";
 
 import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
@@ -41,7 +42,7 @@ const STATUS_BAR_ITEM_PRIORITY = 100.09999;
  * Implementation closely follows:
  * https://github.com/microsoft/vscode-python/blob/main/src/client/interpreter/display/index.ts
  */
-export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const statusBar = yield* StatusBar.Service;
@@ -91,14 +92,16 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
       ),
     );
 
+    const handleEnvironmentChange = Effect.fn(
+      "PythonEnvironmentStatusBar.handleEnvironmentChange",
+    )(function* (event: py.ActiveEnvironmentPathChangeEvent) {
+      yield* updateDisplay(item, Option.some(event.path));
+      yield* updateVisibility(item);
+    });
+
     // Listen for environment changes and update the status bar
     yield* pythonExtension.activeEnvironmentPathChanges.pipe(
-      Stream.runForEach(
-        Effect.fn(function* (event) {
-          yield* updateDisplay(item, Option.some(event.path));
-          yield* updateVisibility(item);
-        }),
-      ),
+      Stream.runForEach(handleEnvironmentChange),
       Effect.forkScoped,
     );
 
@@ -108,54 +111,61 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
     yield* updateVisibility(item);
 
     yield* Effect.logDebug("Python environment status bar initialized");
-  }),
+  }).pipe(Effect.withSpan("PythonEnvironmentStatusBar.layer")),
 );
 
 /**
  * Updates the status bar display based on the active Python interpreter.
  * Follows the same logic as the Python extension's updateDisplay method.
  */
-const updateDisplay = Effect.fn(function* (
-  item: StatusBar.StatusBarItem,
-  environmentPath: Option.Option<string>,
-) {
-  const code = yield* VsCode.Service;
-  const pythonExtension = yield* PythonExtension.Service;
+const updateDisplay = Effect.fn("PythonEnvironmentStatusBar.updateDisplay")(
+  function* (
+    item: StatusBar.StatusBarItem,
+    environmentPath: Option.Option<string>,
+  ) {
+    const code = yield* VsCode.Service;
+    const pythonExtension = yield* PythonExtension.Service;
 
-  if (Option.isNone(environmentPath)) {
-    // No interpreter selected - show warning state
-    yield* item.setText("$(alert) Select Python Interpreter");
-    yield* item.setTooltip("");
+    if (Option.isNone(environmentPath)) {
+      // No interpreter selected - show warning state
+      yield* item.setText("$(alert) Select Python Interpreter");
+      yield* item.setTooltip("");
+      yield* item.setColor("");
+      yield* item.setBackgroundColor("statusBarItem.warningBackground");
+      return;
+    }
+
+    // Resolve the environment to get details
+    const env = yield* pythonExtension.resolveEnvironment(
+      environmentPath.value,
+    );
+
+    if (Option.isNone(env)) {
+      // Couldn't resolve - show the path
+      const pathParts = environmentPath.value.split(/[/\\]/);
+      const shortName =
+        pathParts[pathParts.length - 1] || environmentPath.value;
+      yield* item.setText(shortName);
+      yield* item.setTooltip(environmentPath.value);
+      yield* item.setColor("");
+      yield* item.setBackgroundColor("statusBarItem.warningBackground");
+      return;
+    }
+
+    yield* Effect.logDebug(`Python interpreter path: ${env.value.path}`);
+    yield* item.setText(formatPythonStatusBarLabel(code, env.value));
+    yield* item.setTooltip(env.value.path);
     yield* item.setColor("");
-    yield* item.setBackgroundColor("statusBarItem.warningBackground");
-    return;
-  }
-
-  // Resolve the environment to get details
-  const env = yield* pythonExtension.resolveEnvironment(environmentPath.value);
-
-  if (Option.isNone(env)) {
-    // Couldn't resolve - show the path
-    const pathParts = environmentPath.value.split(/[/\\]/);
-    const shortName = pathParts[pathParts.length - 1] || environmentPath.value;
-    yield* item.setText(shortName);
-    yield* item.setTooltip(environmentPath.value);
-    yield* item.setColor("");
-    yield* item.setBackgroundColor("statusBarItem.warningBackground");
-    return;
-  }
-
-  yield* Effect.logDebug(`Python interpreter path: ${env.value.path}`);
-  yield* item.setText(formatPythonStatusBarLabel(code, env.value));
-  yield* item.setTooltip(env.value.path);
-  yield* item.setColor("");
-  yield* item.setBackgroundColor(undefined);
-});
+    yield* item.setBackgroundColor(undefined);
+  },
+);
 
 /**
  * Determines if the status bar should be shown.
  */
-const updateVisibility = Effect.fn(function* (item: StatusBar.StatusBarItem) {
+const updateVisibility = Effect.fn(
+  "PythonEnvironmentStatusBar.updateVisibility",
+)(function* (item: StatusBar.StatusBarItem) {
   const code = yield* VsCode.Service;
 
   const config = yield* code.workspace.getConfiguration("python");
