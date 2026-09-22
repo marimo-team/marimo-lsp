@@ -21,7 +21,7 @@ import {
 } from "../lib/binaryResolution.ts";
 import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -296,7 +296,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide([
     Config.layer,
     OutputChannel.layer,
-    NotebookVariables.layer,
+    NotebookVariables.defaultLayer,
     PythonEnvInvalidation.layer,
     Storage.layer,
   ]),

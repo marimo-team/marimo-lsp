@@ -22,7 +22,7 @@ import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import { Api, type MarimoApi } from "../platform/Api.ts";
 import { Constants } from "../platform/Constants.ts";
@@ -84,7 +84,7 @@ const MainLive = Layer.empty
     Layer.provide(NotebookRenderer.layer),
     Layer.provide(NotebookSerializer.layer),
     Layer.provide(CellExecutions.layer),
-    Layer.provide(NotebookVariables.layer),
+    Layer.provide(NotebookVariables.defaultLayer),
     Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provideMerge(LiveSessions.layer),
     Layer.provide(HealthService.layer),

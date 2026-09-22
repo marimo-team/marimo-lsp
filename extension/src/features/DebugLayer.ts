@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 
 declare global {
   // oxlint-disable-next-line eslint/no-var
@@ -24,7 +24,7 @@ export const DebugLayerLive = Layer.effectDiscard(
 
     globalThis.__marimoDebug = {
       cellExecutions: yield* CellExecutions.Service,
-      notebookVariables: yield* NotebookVariables,
+      notebookVariables: yield* NotebookVariables.Service,
       notebookEditorRegistry: yield* NotebookEditorRegistry.Service,
       notebookRuntime: yield* NotebookRuntime.Service,
     };

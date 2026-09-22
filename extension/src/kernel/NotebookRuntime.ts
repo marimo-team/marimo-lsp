@@ -30,7 +30,7 @@ import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -208,7 +208,7 @@ type RuntimeWorkRequirements =
   | OutputChannel.Service
   | PythonEnvInvalidation.Service
   | Uv
-  | NotebookVariables
+  | NotebookVariables.Service
   | VsCode;
 
 function hasRunId<T extends { run_id?: string | null }>(
@@ -302,7 +302,7 @@ export const layer = Layer.effect(
     const marimo = yield* MarimoClient.Service;
     const renderer = yield* NotebookRenderer.Service;
     const executions = yield* CellExecutions.Service;
-    const variables = yield* NotebookVariables;
+    const variables = yield* NotebookVariables.Service;
     const datasources = yield* NotebookDatasources.Service;
     const liveSessions = yield* LiveSessions.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
@@ -1180,7 +1180,7 @@ export const defaultLayer = layer.pipe(
     Config.layer,
     Constants.layer,
     OutputChannel.layer,
-    NotebookVariables.layer,
+    NotebookVariables.defaultLayer,
     NotebookRenderer.layer,
     CellExecutions.defaultLayer,
     NotebookDatasources.defaultLayer,
@@ -1212,7 +1212,7 @@ function processOperation(
 ) {
   return Effect.gen(function* () {
     const { notebookUri, notification: operation, sessionId } = message;
-    const variables = yield* NotebookVariables;
+    const variables = yield* NotebookVariables.Service;
     const datasources = yield* NotebookDatasources.Service;
 
     switch (operation.op) {

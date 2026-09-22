@@ -14,7 +14,7 @@ import type {
   VariablesNotification,
   VariableValuesNotification,
 } from "../../../types.ts";
-import { NotebookVariables } from "../NotebookVariables.ts";
+import * as NotebookVariables from "../NotebookVariables.ts";
 
 const withTestCtx = () =>
   Effect.sync(() => {
@@ -29,9 +29,7 @@ const withTestCtx = () =>
         ),
       active: Stream.empty,
     });
-    const layer = Layer.effect(NotebookVariables, NotebookVariables.make).pipe(
-      Layer.provide(documentSessions),
-    );
+    const layer = NotebookVariables.layer.pipe(Layer.provide(documentSessions));
     return { layer };
   });
 
@@ -93,7 +91,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       return {
@@ -113,7 +111,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const variables = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const mockOp = createMockVariablesOp([
@@ -141,7 +139,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const values = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const mockOp = createMockVariableValuesOp([
@@ -169,7 +167,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const allData = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const mockVariables = createMockVariablesOp([
@@ -200,7 +198,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebook1 = notebookId("file:///test/notebook1.py");
       const notebook2 = notebookId("file:///test/notebook2.py");
 
@@ -235,7 +233,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const mockVariables = createMockVariablesOp([
@@ -287,7 +285,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
       const displaced = sessionFor(notebookUri);
 
@@ -329,7 +327,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const count = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const collected = yield* Ref.make(0);
@@ -386,7 +384,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const count = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       const collected = yield* Ref.make(0);
@@ -430,7 +428,7 @@ it.effect(
     const { layer } = yield* withTestCtx();
 
     const values = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
       const notebookUri = NOTEBOOK_URI;
 
       // Set initial variable values

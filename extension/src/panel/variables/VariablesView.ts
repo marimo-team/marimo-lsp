@@ -3,7 +3,7 @@ import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import * as TreeView from "../TreeView.ts";
-import { NotebookVariables } from "./NotebookVariables.ts";
+import * as NotebookVariables from "./NotebookVariables.ts";
 
 interface VariableTreeItem {
   type: "variable";
@@ -23,7 +23,7 @@ interface VariableTreeItem {
 export const VariablesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView.Service;
-    const variables = yield* NotebookVariables;
+    const variables = yield* NotebookVariables.Service;
     const editorRegistry = yield* NotebookEditorRegistry.Service;
 
     // Track the current variable items for the active notebook

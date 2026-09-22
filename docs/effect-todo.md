@@ -55,7 +55,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `panel/TreeView.ts`
 - [x] `panel/datasources/NotebookDatasources.ts`
 - [x] `panel/sessions/LiveSessions.ts`
-- [ ] `panel/variables/NotebookVariables.ts`
+- [x] `panel/variables/NotebookVariables.ts`
 
 ### Platform
 

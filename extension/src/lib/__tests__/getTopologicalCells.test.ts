@@ -5,7 +5,7 @@ import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookDocumentSession } from "../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -65,9 +65,7 @@ const documentSessions = Layer.succeed(NotebookDocumentSessions.Service, {
   active: Stream.empty,
 });
 const withTestLayer = () =>
-  Layer.effect(NotebookVariables, NotebookVariables.make).pipe(
-    Layer.provide(documentSessions),
-  );
+  NotebookVariables.layer.pipe(Layer.provide(documentSessions));
 
 const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
@@ -119,7 +117,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -147,7 +145,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -202,7 +200,7 @@ describe("getTopologicalCells", () => {
       });
       const doc = MarimoNotebookDocument.from(raw);
 
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
 
       yield* service.updateVariables(
         sessionFor(doc),
@@ -229,7 +227,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-c", code: "z = 3" },
       ]);
 
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
 
       // Each cell defines its own variable, no cross-cell dependencies
       yield* service.updateVariables(
@@ -263,7 +261,7 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" },
       ]);
 
-      const service = yield* NotebookVariables;
+      const service = yield* NotebookVariables.Service;
 
       yield* service.updateVariables(
         sessionFor(doc),
