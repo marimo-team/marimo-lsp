@@ -113,7 +113,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `features/ThemeSync.ts`
 - [x] `kernel/NotebookControllers.ts`
 - [x] `panel/datasources/DatasourcesView.ts`
-- [ ] `panel/packages/PackagesView.ts`
+- [x] `panel/packages/PackagesView.ts`
 - [ ] `panel/sessions/SessionFileLifecycle.ts`
 - [ ] `panel/sessions/SessionsView.ts`
 - [ ] `panel/variables/VariablesView.ts`
