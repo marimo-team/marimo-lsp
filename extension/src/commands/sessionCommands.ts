@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
+import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { type NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type { SessionCommandTarget } from "./MarimoCommands.ts";
@@ -55,7 +55,7 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
   const code = yield* VsCode;
-  const sessions = yield* LiveSessions;
+  const sessions = yield* LiveSessions.Service;
   const runtime = yield* NotebookRuntime.Service;
   const session = yield* sessions.find(notebookUri);
   if (Option.isNone(session)) return;
@@ -79,7 +79,7 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
 export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
   function* () {
     const code = yield* VsCode;
-    const sessions = yield* LiveSessions;
+    const sessions = yield* LiveSessions.Service;
     const runtime = yield* NotebookRuntime.Service;
     const live = yield* sessions.get;
     if (live.length === 0) return;

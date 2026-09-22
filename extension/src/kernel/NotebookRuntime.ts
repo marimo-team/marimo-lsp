@@ -29,7 +29,7 @@ import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
-import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
+import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
@@ -64,7 +64,6 @@ import { handleMissingPackageAlert } from "./operations.ts";
 
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
 type CellExecutionsService = CellExecutions.Interface;
-type LiveSessionsShape = Context.Service.Shape<typeof LiveSessions>;
 
 type CommandFields<K extends keyof MarimoClient.Interface> =
   MarimoClient.Interface[K] extends (params: infer Params) => unknown
@@ -155,11 +154,11 @@ export interface NotebookHandle {
   >;
   readonly restart: Effect.Effect<
     void,
-    Effect.Error<ReturnType<LiveSessionsShape["restart"]>>
+    Effect.Error<ReturnType<LiveSessions.Interface["restart"]>>
   >;
   readonly close: Effect.Effect<
     void,
-    Effect.Error<ReturnType<LiveSessionsShape["shutdown"]>>
+    Effect.Error<ReturnType<LiveSessions.Interface["shutdown"]>>
   >;
 }
 
@@ -267,18 +266,21 @@ export interface Interface {
   readonly moveSession: (
     notebookId: NotebookId,
     newNotebookId: NotebookId,
-  ) => Effect.Effect<void, Effect.Error<ReturnType<LiveSessionsShape["move"]>>>;
+  ) => Effect.Effect<
+    void,
+    Effect.Error<ReturnType<LiveSessions.Interface["move"]>>
+  >;
   readonly restoreSession: (
     notebookId: NotebookId,
     executable: string,
     workingDirectory: string,
   ) => Effect.Effect<
     void,
-    Effect.Error<ReturnType<LiveSessionsShape["restore"]>>
+    Effect.Error<ReturnType<LiveSessions.Interface["restore"]>>
   >;
   readonly shutdownAll: Effect.Effect<
     void,
-    Effect.Error<ReturnType<LiveSessionsShape["shutdown"]>>
+    Effect.Error<ReturnType<LiveSessions.Interface["shutdown"]>>
   >;
   readonly forDocument: (
     document: vscode.NotebookDocument,
@@ -302,7 +304,7 @@ export const layer = Layer.effect(
     const executions = yield* CellExecutions.Service;
     const variables = yield* NotebookVariables;
     const datasources = yield* NotebookDatasources.Service;
-    const liveSessions = yield* LiveSessions;
+    const liveSessions = yield* LiveSessions.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const operations = yield* PubSub.unbounded<SessionNotification>();
     const notebookStates = new Map<
@@ -347,9 +349,9 @@ export const layer = Layer.effect(
     const refreshKernelSession = Effect.fn(
       "NotebookRuntime.refreshKernelSession",
     )((notebookId: NotebookId) =>
-      liveSessions
-        .refresh()
-        .pipe(Effect.andThen(reconcileKernelSession(notebookId))),
+      liveSessions.refresh.pipe(
+        Effect.andThen(reconcileKernelSession(notebookId)),
+      ),
     );
 
     const runInNotebook = executor.submit;

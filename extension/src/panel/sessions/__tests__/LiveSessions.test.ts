@@ -16,7 +16,7 @@ import {
 } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
 import type { ListSessionsResponse } from "../../../schemas/Models.gen.ts";
-import { SessionNotFoundError, LiveSessions } from "../LiveSessions.ts";
+import * as LiveSessions from "../LiveSessions.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
 const SNAPSHOT = {
@@ -58,8 +58,8 @@ it.effect(
         }),
     });
     yield* Effect.gen(function* () {
-      const live = yield* LiveSessions;
-      const refresh = yield* live.refresh().pipe(Effect.forkChild);
+      const live = yield* LiveSessions.Service;
+      const refresh = yield* live.refresh.pipe(Effect.forkChild);
       yield* Deferred.await(queryStarted);
       const closed = yield* live.changes.pipe(
         Stream.filter((items) => items.length === 0),
@@ -86,7 +86,7 @@ it.effect.each([
 ])("ignores older or duplicate state after a server restart (%j)", (version) =>
   Effect.gen(function* () {
     yield* Effect.gen(function* () {
-      const live = yield* LiveSessions;
+      const live = yield* LiveSessions.Service;
       yield* live.accept({ ...SNAPSHOT, revision: 50 });
       yield* live.accept({ generation: 2, revision: 1, sessions: [] });
       yield* live.accept({ ...SNAPSHOT, ...version });
@@ -123,7 +123,7 @@ it.effect(
           : Effect.succeed(SNAPSHOT),
     });
     yield* Effect.gen(function* () {
-      const live = yield* LiveSessions;
+      const live = yield* LiveSessions.Service;
       const restart = yield* live.restart(NOTEBOOK_URI).pipe(Effect.forkChild);
       yield* Deferred.await(started);
       yield* live.accept(replacement);
@@ -151,7 +151,7 @@ it.effect(
           : Effect.succeed(SNAPSHOT),
     });
     yield* Effect.gen(function* () {
-      const live = yield* LiveSessions;
+      const live = yield* LiveSessions.Service;
       const restart = yield* live.restart(NOTEBOOK_URI).pipe(Effect.forkChild);
       yield* Deferred.await(started);
       yield* live.accept({ ...SNAPSHOT, revision: 2, sessions: [] });
@@ -167,8 +167,10 @@ it.effect.each(["shutdown", "shutdownAll"] as const)(
     Effect.gen(function* () {
       const recorded: TestCommand[] = [];
       yield* Effect.gen(function* () {
-        const live = yield* LiveSessions;
-        yield* live[method](NOTEBOOK_URI);
+        const live = yield* LiveSessions.Service;
+        yield* method === "shutdown"
+          ? live.shutdown(NOTEBOOK_URI)
+          : live.shutdownAll;
         expect(yield* live.get).toEqual([]);
       }).pipe(
         Effect.provide(
@@ -196,7 +198,7 @@ it.effect(
   "fails when a session disappears before restart",
   Effect.fn(function* () {
     const result = yield* Effect.gen(function* () {
-      const live = yield* LiveSessions;
+      const live = yield* LiveSessions.Service;
       return yield* Effect.result(live.restart(NOTEBOOK_URI));
     }).pipe(
       Effect.provide(
@@ -208,7 +210,7 @@ it.effect(
     expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {
       expect(result.failure).toEqual(
-        new SessionNotFoundError({ notebookUri: NOTEBOOK_URI }),
+        new LiveSessions.NotFoundError({ notebookUri: NOTEBOOK_URI }),
       );
     }
   }),

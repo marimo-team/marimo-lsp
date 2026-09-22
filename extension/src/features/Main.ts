@@ -18,7 +18,7 @@ import * as NotebookSessionResources from "../notebook/NotebookSessionResources.
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
-import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
+import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";

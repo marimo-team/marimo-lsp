@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import { defineCommand } from "../commands.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
+import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { NotebookTarget } from "./Invocation.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
@@ -12,7 +12,7 @@ const handler = Effect.fn("command.restartKernel")(function* (
   target: Option.Option<NotebookTarget>,
 ) {
   const code = yield* VsCode;
-  const sessions = yield* LiveSessions;
+  const sessions = yield* LiveSessions.Service;
   const runtime = yield* NotebookRuntime.Service;
 
   if (Option.isNone(target)) {
