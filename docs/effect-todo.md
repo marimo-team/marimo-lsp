@@ -81,7 +81,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ### Status and telemetry
 
-- [ ] `statusbar/StatusBar.ts`
+- [x] `statusbar/StatusBar.ts`
 - [ ] `telemetry/HealthService.ts`
 - [ ] `telemetry/Telemetry.ts`
 

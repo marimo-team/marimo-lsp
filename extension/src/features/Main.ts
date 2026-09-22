@@ -36,7 +36,7 @@ import type * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
 import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
-import { StatusBar } from "../statusbar/StatusBar.ts";
+import * as StatusBar from "../statusbar/StatusBar.ts";
 import { HealthService } from "../telemetry/HealthService.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { AutoExportLive } from "./AutoExport.ts";

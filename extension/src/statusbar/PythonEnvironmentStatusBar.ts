@@ -26,7 +26,7 @@ import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { StatusBar, type StatusBarItem } from "./StatusBar.ts";
+import * as StatusBar from "./StatusBar.ts";
 
 /**
  * Based on https://github.com/microsoft/vscode-python/issues/18040#issuecomment-992567670.
@@ -44,7 +44,7 @@ const STATUS_BAR_ITEM_PRIORITY = 100.09999;
 export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
-    const statusBar = yield* StatusBar;
+    const statusBar = yield* StatusBar.Service;
     const pythonExtension = yield* PythonExtension.Service;
 
     const item = yield* statusBar.createStatusBarItem(
@@ -116,7 +116,7 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
  * Follows the same logic as the Python extension's updateDisplay method.
  */
 const updateDisplay = Effect.fn(function* (
-  item: StatusBarItem,
+  item: StatusBar.StatusBarItem,
   environmentPath: Option.Option<string>,
 ) {
   const code = yield* VsCode.Service;
@@ -155,7 +155,7 @@ const updateDisplay = Effect.fn(function* (
 /**
  * Determines if the status bar should be shown.
  */
-const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
+const updateVisibility = Effect.fn(function* (item: StatusBar.StatusBarItem) {
   const code = yield* VsCode.Service;
 
   const config = yield* code.workspace.getConfiguration("python");
@@ -163,7 +163,7 @@ const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
 
   // Respect user's explicit preference for Python extension's status bar
   if (visibility === "always" || visibility === "never") {
-    yield* item.hide();
+    yield* item.hide;
     return;
   }
 
@@ -174,9 +174,9 @@ const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
   );
 
   if (Option.isSome(marimoNotebook)) {
-    yield* item.show();
+    yield* item.show;
     return;
   }
 
-  yield* item.hide();
+  yield* item.hide;
 });

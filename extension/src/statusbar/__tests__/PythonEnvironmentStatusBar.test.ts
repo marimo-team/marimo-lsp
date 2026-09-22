@@ -4,7 +4,7 @@ import { Effect, Layer, Option, Ref } from "effect";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { PythonEnvironmentStatusBarLive } from "../PythonEnvironmentStatusBar.ts";
-import { StatusBar } from "../StatusBar.ts";
+import * as StatusBar from "../StatusBar.ts";
 
 /**
  * Integration tests for PythonEnvironmentStatusBar.
@@ -22,7 +22,7 @@ const withTestCtx = Effect.gen(function* () {
   ]);
 
   const visible = yield* Ref.make(false);
-  const statusBarLayer = Layer.succeed(StatusBar, {
+  const statusBarLayer = Layer.succeed(StatusBar.Service, {
     createSimpleStatusBarItem() {
       return Effect.die("Not implemented in test");
     },
@@ -33,8 +33,8 @@ const withTestCtx = Effect.gen(function* () {
         setColor: () => Effect.void,
         setBackgroundColor: () => Effect.void,
         setCommand: () => Effect.void,
-        show: () => Ref.set(visible, true),
-        hide: () => Ref.set(visible, false),
+        show: Ref.set(visible, true),
+        hide: Ref.set(visible, false),
       }),
   });
 
