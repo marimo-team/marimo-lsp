@@ -34,7 +34,7 @@ import type * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
-import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
+import * as MarimoStatusBar from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../statusbar/StatusBar.ts";
 import * as HealthService from "../telemetry/HealthService.ts";
@@ -59,7 +59,7 @@ const MainLive = Layer.empty
   .pipe(
     Layer.merge(RegisterCommands.layer),
     Layer.merge(RegisterLanguageModelTools.layer),
-    Layer.merge(MarimoStatusBarLive),
+    Layer.merge(MarimoStatusBar.layer),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetector.layer),
     Layer.merge(MarimoCodeLensProvider.layer),
