@@ -1649,7 +1649,7 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
       kind: "execute",
       ...params,
     } satisfies typeof Execute.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, SessionInfo);
   },
   updateUiElement: (params: Omit<typeof UpdateUiElement.Encoded, "kind">) => {
     const command = {

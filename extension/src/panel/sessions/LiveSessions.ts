@@ -1,4 +1,5 @@
 import {
+  Cause,
   Context,
   Data,
   Effect,
@@ -11,7 +12,10 @@ import {
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import { type SessionInfo, SessionsSnapshot } from "./schemas.ts";
+import {
+  type SessionInfo,
+  ListSessionsResponse,
+} from "../../schemas/Models.gen.ts";
 
 export class SessionNotFoundError extends Data.TaggedError(
   "SessionNotFoundError",
@@ -33,21 +37,36 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
       >([]);
 
       const applySnapshot = Effect.fn("LiveSessions.applySnapshot")(function* (
-        snapshot: unknown,
+        snapshot: ReadonlyArray<SessionInfo>,
       ) {
-        const decoded =
-          yield* Schema.decodeUnknownEffect(SessionsSnapshot)(snapshot);
-        yield* SubscriptionRef.set(sessions, decoded.sessions);
+        yield* SubscriptionRef.set(sessions, snapshot);
+        return snapshot;
       });
 
       const refresh = Effect.fn("LiveSessions.refresh")(function* () {
-        yield* applySnapshot(yield* marimo.listSessions({}));
+        return yield* applySnapshot((yield* marimo.listSessions({})).sessions);
       });
+
+      // A failed follow-up query must not turn a successful mutation into an error.
+      const refreshAfterMutation = refresh().pipe(
+        Effect.map(Option.some),
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning(
+                "Failed to refresh sessions after kernel mutation",
+              ).pipe(
+                Effect.annotateLogs({ cause }),
+                Effect.as(Option.none<ReadonlyArray<SessionInfo>>()),
+              ),
+        ),
+      );
 
       yield* Effect.forkScoped(
         marimo.sessionChanges.pipe(
           Stream.runForEach((snapshot) =>
-            applySnapshot(snapshot).pipe(
+            Schema.decodeUnknownEffect(ListSessionsResponse)(snapshot).pipe(
+              Effect.flatMap((decoded) => applySnapshot(decoded.sessions)),
               Effect.catchCause((cause) =>
                 Effect.logWarning("Ignored invalid live-session snapshot").pipe(
                   Effect.annotateLogs({ cause }),
@@ -58,11 +77,9 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         ),
       );
 
-      // The forked consumer's subscription attaches within microseconds,
-      // while the list request's round trip is still in flight. LSP delivers
-      // messages in order, so any change notification that could slip in
-      // before the subscription is live was emitted before the server built
-      // the snapshot — the snapshot below supersedes whatever was missed.
+      // Subscribe before querying for sessions that are already running. The
+      // server constructs this response after earlier notifications on the wire;
+      // consumers still need to account for independent stream scheduling.
       yield* refresh().pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to load initial live sessions").pipe(
@@ -114,21 +131,14 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
               : item,
           ),
         );
-        yield* refresh().pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(
-              "Failed to reconcile live sessions after restart",
-            ).pipe(Effect.annotateLogs({ cause, notebookUri })),
-          ),
-        );
-        return undefined;
+        return yield* refreshAfterMutation;
       });
 
       const shutdown = Effect.fn("LiveSessions.shutdown")(function* (
         notebookUri: NotebookId,
       ) {
         yield* marimo.closeSession({ notebookUri });
-        yield* refresh();
+        return yield* refreshAfterMutation;
       });
 
       const move = Effect.fn("LiveSessions.move")(function* (
@@ -139,7 +149,7 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
           notebookUri,
           newNotebookUri,
         });
-        yield* refresh();
+        return yield* refreshAfterMutation;
       });
 
       return {
@@ -147,6 +157,25 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         changes: SubscriptionRef.changes(sessions),
         find,
         refresh,
+        record: Effect.fn("LiveSessions.record")(function* (
+          session: SessionInfo,
+        ) {
+          yield* SubscriptionRef.update(sessions, (items) => {
+            const current = items.find(
+              (item) => item.notebookUri === session.notebookUri,
+            );
+            const next: SessionViewItem =
+              current?.status === "restarting"
+                ? { ...session, status: "restarting" }
+                : session;
+            return [
+              ...items.filter(
+                (item) => item.notebookUri !== session.notebookUri,
+              ),
+              next,
+            ].sort((a, b) => b.startedAt - a.startedAt);
+          });
+        }),
         restart,
         shutdown,
         restore: Effect.fn("LiveSessions.restore")(function* (
@@ -160,11 +189,11 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
             workingDirectory,
             createIfMissing: true,
           });
-          yield* refresh();
+          return yield* refreshAfterMutation;
         }),
         shutdownAll: Effect.fn("LiveSessions.shutdownAll")(function* () {
           yield* marimo.shutdownAllSessions({});
-          yield* refresh();
+          return yield* refreshAfterMutation;
         }),
         move,
       };

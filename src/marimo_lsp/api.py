@@ -58,6 +58,7 @@ from marimo_lsp.models import (
     ListSQLTablesRequest,
     ModelRequest,
     ReadNotebookOutputsResponse,
+    SessionInfo,
     SetDisplayThemeResponse,
     UpdateUIElementRequest,
 )
@@ -240,7 +241,8 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
 
 
 @command(protocol.Execute)
-async def run(ctx: ApiContext, args: protocol.Execute) -> None:
+async def run(ctx: ApiContext, args: protocol.Execute) -> SessionInfo:
+    """Dispatch execution and return the session that accepted it."""
     logger.info(f"run for {args.notebook_uri}")
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
@@ -261,6 +263,7 @@ async def run(ctx: ApiContext, args: protocol.Execute) -> None:
     )
     session.put_control_request(request.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
+    return session.describe()
 
 
 @command(protocol.UpdateUiElement)

@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Result } from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Result } from "effect";
 
 import {
   makeTestMarimoClient,
@@ -55,6 +55,72 @@ it.effect(
 );
 
 it.effect(
+  "orders recorded sessions by start time, including re-execution of an older session",
+  Effect.fn(function* () {
+    const middle = SNAPSHOT.sessions[0];
+    const older = {
+      ...middle,
+      notebookUri: notebookId("file:///older.py"),
+      startedAt: 10,
+    };
+    const newer = {
+      ...middle,
+      notebookUri: notebookId("file:///newer.py"),
+      startedAt: 100,
+    };
+    yield* Effect.gen(function* () {
+      const sessions = yield* LiveSessions;
+      yield* sessions.record(newer);
+      yield* sessions.record({ ...older, status: "running" });
+      const items = yield* sessions.get;
+      expect(items.map((item) => item.notebookUri)).toEqual([
+        newer.notebookUri,
+        middle.notebookUri,
+        older.notebookUri,
+      ]);
+      expect(items.at(-1)?.status).toBe("running");
+    }).pipe(Effect.provide(makeLayer([], { sessions: [middle, older] })));
+  }),
+);
+
+it.effect(
+  "preserves the restarting status when recording an execution response",
+  Effect.fn(function* () {
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const layer = LiveSessions.layer.pipe(
+      Layer.provide(
+        makeTestMarimoClient({
+          send: (request) =>
+            request.kind === "restart-session"
+              ? Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Deferred.await(release)),
+                  Effect.as(null),
+                )
+              : Effect.succeed(SNAPSHOT),
+        }),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const sessions = yield* LiveSessions;
+      const restart = yield* sessions
+        .restart(NOTEBOOK_URI)
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* sessions.record({ ...SNAPSHOT.sessions[0], status: "running" });
+      expect(Option.getOrThrow(yield* sessions.find(NOTEBOOK_URI)).status).toBe(
+        "restarting",
+      );
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(restart);
+      expect(Option.getOrThrow(yield* sessions.find(NOTEBOOK_URI)).status).toBe(
+        "idle",
+      );
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
   "shuts down every session and reconciles once",
   Effect.fn(function* () {
     const recorded: TestCommand[] = [];
@@ -81,6 +147,32 @@ it.effect(
       { kind: "shutdown-all-sessions" },
       { kind: "list-sessions" },
     ]);
+  }),
+);
+
+it.effect(
+  "returns no snapshot when a successful shutdown's follow-up query fails",
+  Effect.fn(function* () {
+    let closed = false;
+    const layer = LiveSessions.layer.pipe(
+      Layer.provide(
+        makeTestMarimoClient({
+          send: (request) =>
+            Effect.sync(() => {
+              if (request.kind === "close-session") closed = true;
+              return request.kind === "list-sessions" && !closed
+                ? SNAPSHOT
+                : null;
+            }),
+        }),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const sessions = yield* LiveSessions;
+      const result = yield* sessions.shutdown(NOTEBOOK_URI);
+      expect(closed).toBe(true);
+      expect(Option.isNone(result)).toBe(true);
+    }).pipe(Effect.provide(layer));
   }),
 );
 

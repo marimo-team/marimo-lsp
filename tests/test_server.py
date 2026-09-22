@@ -523,6 +523,76 @@ async def test_marimo_get_package_list_venv_no_session(
     assert "marimo-base" in names, f"expected marimo-base in package list, got {names}"
 
 
+async def test_execute_returns_the_session_before_execution_finishes(
+    client: LanguageClient, tmp_path: Path
+) -> None:
+    uri = (tmp_path / "binding.py").as_uri()
+    release = tmp_path / "release"
+    source = (
+        "import time\nfrom pathlib import Path\n"
+        "print('started', flush=True)\n"
+        f"while not Path({str(release)!r}).exists():\n    time.sleep(0.01)"
+    )
+    started: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    completed = asyncio.Event()
+
+    @client.feature("marimo/kernelNotification")
+    def _(params: Any) -> None:  # noqa: ANN401
+        if params.notebookUri != uri:
+            return
+        operation = params.notification
+        if operation.op == "completed-run" and started.done():
+            completed.set()
+        console = getattr(operation, "console", None)
+        if console is not None and "started" in str(console) and not started.done():
+            started.set_result(params.sessionId)
+
+    client.notebook_document_did_open(
+        lsp.DidOpenNotebookDocumentParams(
+            notebook_document=lsp.NotebookDocument(
+                uri=uri,
+                notebook_type="marimo-notebook",
+                version=1,
+                cells=[NotebookCell(lsp.NotebookCellKind.Code, f"{uri}#cell1")],
+            ),
+            cell_text_documents=[
+                lsp.TextDocumentItem(
+                    uri=f"{uri}#cell1", language_id="python", version=1, text=source
+                )
+            ],
+        )
+    )
+    try:
+        session = await asyncio.wait_for(
+            send_command(
+                client,
+                {
+                    "kind": "execute",
+                    "notebookUri": uri,
+                    "executable": sys.executable,
+                    "workingDirectory": str(tmp_path),
+                    "cells": [{"cellId": "cell1", "code": source}],
+                },
+            ),
+            timeout=10,
+        )
+        assert session["notebookUri"] == uri
+        assert session["workingDirectory"] == str(tmp_path)
+        assert session["sessionId"] == await asyncio.wait_for(started, timeout=10)
+        assert not completed.is_set()
+        await send_command(
+            client,
+            {
+                "kind": "interrupt",
+                "notebookUri": uri,
+                "kernelSessionId": session["sessionId"],
+            },
+        )
+        await asyncio.wait_for(completed.wait(), timeout=10)
+    finally:
+        release.touch()
+
+
 async def test_marimo_get_package_list_with_session(client: LanguageClient) -> None:
     """Test the marimo.get_package_list command with an active session."""
     # First create a session by opening a notebook and running a cell

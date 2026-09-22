@@ -134,13 +134,15 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           const notebookId = MarimoNotebookDocument.from(document).id;
           return Effect.succeed({
             execute: (request, executable) =>
-              client.execute({
-                notebookUri: notebookId,
-                executable,
-                workingDirectory:
-                  options.runtimeSession?.workingDirectory ?? process.cwd(),
-                cells: request.cells,
-              }),
+              client
+                .execute({
+                  notebookUri: notebookId,
+                  executable,
+                  workingDirectory:
+                    options.runtimeSession?.workingDirectory ?? process.cwd(),
+                  cells: request.cells,
+                })
+                .pipe(Effect.as(null)),
           });
         };
 
@@ -204,7 +206,18 @@ function makeTestMarimoClientValue(
               ? { sessions: [] }
               : request.kind === "read-notebook-outputs"
                 ? { cells: [] }
-                : null,
+                : request.kind === "execute"
+                  ? {
+                      sessionId: TEST_KERNEL_SESSION_ID,
+                      notebookUri: request.notebookUri,
+                      filename: null,
+                      executable: request.executable,
+                      workingDirectory: request.workingDirectory,
+                      startedAt: 1,
+                      status: "running",
+                      attached: true,
+                    }
+                  : null,
           )),
       kernelNotifications: options.kernelNotifications ?? Stream.never,
       documentAnalysis: options.documentAnalysis ?? Stream.never,
