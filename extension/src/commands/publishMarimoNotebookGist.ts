@@ -3,7 +3,7 @@ import * as NodePath from "node:path";
 import { Cause, Effect, flow, Option, Result, Schema } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -15,7 +15,7 @@ export const publishMarimoNotebookGist = Effect.fn(
   function* (notebook: MarimoNotebookDocument) {
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
-    const marimo = yield* MarimoClient;
+    const marimo = yield* MarimoClient.Service;
     const serializer = yield* NotebookSerializer;
 
     const choice = yield* code.window.showQuickPick(["Public", "Secret"], {

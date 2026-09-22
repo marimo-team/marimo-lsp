@@ -14,10 +14,7 @@ import {
 
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import {
-  MarimoClientStartError,
-  MarimoCommandError,
-} from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import {
   DebugSessionStartError,
@@ -123,8 +120,8 @@ export type Error =
   | DebugSourceWriteError
   | DebugSessionStartError
   | NotebookRuntime.ExecutableResolutionError
-  | MarimoClientStartError
-  | MarimoCommandError
+  | MarimoClient.StartError
+  | MarimoClient.CommandError
   | NotebookFileRootError
   | Schema.SchemaError
   | VsCodeError;

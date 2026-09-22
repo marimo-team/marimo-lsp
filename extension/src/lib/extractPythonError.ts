@@ -3,7 +3,7 @@ import { Option } from "effect";
 import { hasExceptionClassPrefix } from "./errorClassification.ts";
 
 /**
- * Extract the last Python exception line from a MarimoCommandError cause.
+ * Extract the last Python exception line from a MarimoClient.CommandError cause.
  *
  * The cause is typically a ResponseError from vscode-languageclient with:
  * - `.message`: often generic ("An error has occurred")

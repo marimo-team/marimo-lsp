@@ -22,11 +22,7 @@ import { unreachable } from "../assert.ts";
 import * as Config from "../config/Config.ts";
 import { SCRATCH_CELL_ID, SETUP_CELL_NAME } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import {
-  MarimoClient,
-  type MarimoClientStartError,
-  type MarimoCommandError,
-} from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
 import {
   type NotebookDocumentSession,
@@ -69,17 +65,12 @@ import {
 } from "./NotebookFileRoot.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
-/**
- * Service shapes. A `Context.Service` class is the context key. Use
- * `Context.Service.Shape` to get the type of the service value.
- */
-type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
 type CellExecutionsService = CellExecutions.Interface;
 type LiveSessionsShape = Context.Service.Shape<typeof LiveSessions>;
 
-type CommandFields<K extends keyof MarimoClientService> =
-  MarimoClientService[K] extends (params: infer Params) => unknown
+type CommandFields<K extends keyof MarimoClient.Interface> =
+  MarimoClient.Interface[K] extends (params: infer Params) => unknown
     ? Omit<Params, "notebookUri" | "kernelSessionId">
     : never;
 
@@ -92,7 +83,7 @@ type RespondToStdin = (
   notebookId: NotebookId,
   sessionId: KernelSessionId,
   result: Option.Option<string>,
-) => WithNoActiveKernel<ReturnType<MarimoClientService["sendStdin"]>>;
+) => WithNoActiveKernel<ReturnType<MarimoClient.Interface["sendStdin"]>>;
 
 export interface NotebookController {
   readonly id: string;
@@ -141,8 +132,8 @@ export interface NotebookHandle {
   ) => Stream.Stream<
     CellOperationNotification,
     | ExecutableResolutionError
-    | MarimoClientStartError
-    | MarimoCommandError
+    | MarimoClient.StartError
+    | MarimoClient.CommandError
     | NoActiveKernelError
     | NotebookFileRootError
     | Schema.SchemaError
@@ -150,18 +141,20 @@ export interface NotebookHandle {
   >;
   readonly updateUIElements: (
     request: CommandFields<"updateUiElement">,
-  ) => WithNoActiveKernel<ReturnType<MarimoClientService["updateUiElement"]>>;
+  ) => WithNoActiveKernel<
+    ReturnType<MarimoClient.Interface["updateUiElement"]>
+  >;
   readonly updateModel: (
     request: CommandFields<"setModelValue">,
-  ) => WithNoActiveKernel<ReturnType<MarimoClientService["setModelValue"]>>;
+  ) => WithNoActiveKernel<ReturnType<MarimoClient.Interface["setModelValue"]>>;
   readonly invokeFunction: (
     request: CommandFields<"invokeFunction">,
-  ) => WithNoActiveKernel<ReturnType<MarimoClientService["invokeFunction"]>>;
+  ) => WithNoActiveKernel<ReturnType<MarimoClient.Interface["invokeFunction"]>>;
   readonly deleteCell: (
     request: CommandFields<"deleteCell">,
-  ) => WithNoActiveKernel<ReturnType<MarimoClientService["deleteCell"]>>;
+  ) => WithNoActiveKernel<ReturnType<MarimoClient.Interface["deleteCell"]>>;
   readonly interrupt: WithNoActiveKernel<
-    ReturnType<MarimoClientService["interrupt"]>
+    ReturnType<MarimoClient.Interface["interrupt"]>
   >;
   readonly restart: Effect.Effect<
     void,
@@ -181,8 +174,8 @@ export interface NotebookDocumentHandle {
     executable: string,
   ) => Effect.Effect<
     null,
-    | MarimoClientStartError
-    | MarimoCommandError
+    | MarimoClient.StartError
+    | MarimoClient.CommandError
     | NoActiveKernelError
     | NotebookFileRootError
     | Schema.SchemaError
@@ -307,7 +300,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const config = yield* Config.Service;
-    const marimo = yield* MarimoClient;
+    const marimo = yield* MarimoClient.Service;
     const renderer = yield* NotebookRenderer.Service;
     const executions = yield* CellExecutions.Service;
     const variables = yield* NotebookVariables;

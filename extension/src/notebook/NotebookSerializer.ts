@@ -14,7 +14,7 @@ import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -72,7 +72,7 @@ export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
   "NotebookSerializer",
   {
     make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient;
+      const marimo = yield* MarimoClient.Service;
       const constants = yield* Constants;
       const code = yield* Effect.serviceOption(VsCode);
 

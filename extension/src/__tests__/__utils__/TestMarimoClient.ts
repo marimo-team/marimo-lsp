@@ -1,16 +1,8 @@
-import {
-  type Context,
-  Effect,
-  Layer,
-  Option,
-  PubSub,
-  Schema,
-  Stream,
-} from "effect";
+import { Effect, Layer, Option, PubSub, Schema, Stream } from "effect";
 
 import { MarimoLspServer } from "../../config/Config.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import { makeMarimoCommands, MarimoClient } from "../../lsp/MarimoClient.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import {
   MarimoNotebookDocument,
   type NotebookId,
@@ -44,13 +36,16 @@ const TEST_KERNEL_SESSION_ID = Schema.decodeUnknownSync(
 )("00000000-0000-4000-8000-000000000001");
 
 export function makeTestMarimoClient(options: Options = {}) {
-  return Layer.succeed(MarimoClient, makeTestMarimoClientValue(options));
+  return Layer.succeed(
+    MarimoClient.Service,
+    makeTestMarimoClientValue(options),
+  );
 }
 
 export function makeTestNotebookRuntime(options: Options = {}) {
   const client = makeTestMarimoClientValue(options);
   return Layer.merge(
-    Layer.succeed(MarimoClient, client),
+    Layer.succeed(MarimoClient.Service, client),
     Layer.effect(
       NotebookRuntime.Service,
       Effect.gen(function* () {
@@ -185,14 +180,12 @@ export function makeTestNotebookRuntime(options: Options = {}) {
   );
 }
 
-function makeTestMarimoClientValue(
-  options: Options,
-): Context.Service.Shape<typeof MarimoClient> {
+function makeTestMarimoClientValue(options: Options): MarimoClient.Interface {
   return {
     server: MarimoLspServer.Python(),
     channel: { name: "marimo-lsp-test", show() {} },
     restart: Effect.void,
-    ...makeMarimoCommands({
+    ...MarimoClient.makeCommands({
       send:
         options.send ??
         ((request) =>

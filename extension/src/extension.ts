@@ -2,7 +2,7 @@ import { Layer } from "effect";
 
 import { LoggerLive } from "./features/Logger.ts";
 import { makeExtension } from "./features/Main.ts";
-import { MarimoClient } from "./lsp/MarimoClient.ts";
+import * as MarimoClient from "./lsp/MarimoClient.ts";
 import { RuffLanguageServer } from "./lsp/RuffLanguageServer.ts";
 import { TyLanguageServer } from "./lsp/TyLanguageServer.ts";
 import * as OutputChannel from "./platform/OutputChannel.ts";
@@ -15,7 +15,7 @@ export const { activate, deactivate } = makeExtension(
     Layer.provideMerge(TyLanguageServer.layer),
     Layer.provideMerge(RuffLanguageServer.layer),
     Layer.provideMerge(PythonExtension.layer),
-    Layer.provideMerge(MarimoClient.layer),
+    Layer.provideMerge(MarimoClient.defaultLayer),
     Layer.provide(LoggerLive),
     Layer.provide(OutputChannel.layer),
     // Below LoggerLive so the logger's error sink can come from Telemetry;

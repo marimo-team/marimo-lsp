@@ -1,6 +1,6 @@
 import { Data, Effect, Layer, Option, Queue, Stream } from "effect";
 
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
@@ -21,7 +21,7 @@ const ThemeSyncUpdate = Data.taggedEnum<ThemeSyncUpdate>();
 export const ThemeSyncLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const marimo = yield* MarimoClient;
+    const marimo = yield* MarimoClient.Service;
     const editorRegistry = yield* NotebookEditorRegistry;
 
     // Each source has its own fiber that writes to one queue. A

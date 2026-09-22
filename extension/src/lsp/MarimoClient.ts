@@ -24,6 +24,7 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
@@ -80,9 +81,7 @@ export interface LspProcessExit {
   readonly signal: NodeJS.Signals | null;
 }
 
-export class MarimoClientStartError extends Data.TaggedError(
-  "MarimoClientStartError",
-)<{
+export class StartError extends Data.TaggedError("MarimoClient.StartError")<{
   exec: lsp.Executable;
   cause: unknown;
   /** Tail of the marimo-lsp stderr captured up to the failure, if any. */
@@ -92,7 +91,9 @@ export class MarimoClientStartError extends Data.TaggedError(
   mode: MarimoLspMode;
 }> {}
 
-export class MarimoCommandError extends Data.TaggedError("MarimoCommandError")<{
+export class CommandError extends Data.TaggedError(
+  "MarimoClient.CommandError",
+)<{
   readonly command: Redacted.Redacted<typeof Api.Command.Encoded>;
   readonly cause: unknown;
   readonly mode: MarimoLspMode;
@@ -113,13 +114,26 @@ interface MarimoTransport<Error = never> {
   readonly sessionChanges?: Stream.Stream<MarimoSessionsChanged>;
 }
 
-export function makeMarimoCommands<Error>(transport: MarimoTransport<Error>) {
+export function makeCommands<Error>(transport: MarimoTransport<Error>) {
   return {
     kernelNotifications: transport.kernelNotifications,
     documentAnalysis: transport.documentAnalysis ?? Stream.never,
     sessionChanges: transport.sessionChanges ?? Stream.never,
     ...Api.makeCommandClient(transport.send),
   };
+}
+
+export type Error = StartError | CommandError;
+
+type Commands = ReturnType<typeof makeCommands<Error>>;
+
+export interface Interface extends Commands {
+  readonly server: Config.MarimoLspServer;
+  readonly channel: {
+    readonly name: string;
+    readonly show: () => void;
+  };
+  readonly restart: Effect.Effect<void, never, OutputChannel.Service | VsCode>;
 }
 
 interface NotificationChannel<A> {
@@ -185,279 +199,276 @@ export const makeDocumentAnalysisStream = (
  * This module owns the marimo-lsp process, LSP transport, named commands,
  * and operation stream.
  */
-export class MarimoClient extends Context.Service<MarimoClient>()(
-  "MarimoClient",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      const config = yield* Config.Service;
-      const telemetry = yield* Telemetry;
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/MarimoClient",
+) {}
 
-      const lspServer = yield* config.lsp.server.pipe(
-        Effect.catchTag(
-          "InvalidMarimoLspConfiguration",
-          Effect.fn(function* (error) {
-            yield* Effect.logError("Invalid marimo-lsp configuration").pipe(
-              Effect.annotateLogs({
-                cause: Cause.fail(error),
-                setting: error.setting,
-              }),
-            );
-            yield* code.window.showErrorMessage(
-              `${error.message} Falling back to the WASM language server.`,
-            );
-            return Config.MarimoLspServer.Wasm();
-          }),
-        ),
-      );
-      const uv = yield* Uv;
-      const selection = yield* selectMarimoLspExecutable({
-        server: lspServer,
-        resolveUvBinary: Effect.map(uv.bin, ({ executable }) => executable),
-      });
-      const { exec } = selection;
-      const mode = marimoLspMode(selection);
-      yield* telemetry.lspModeSelected(mode);
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode;
+    const config = yield* Config.Service;
+    const telemetry = yield* Telemetry;
 
-      yield* Effect.logInfo("Starting marimo-lsp").pipe(
-        Effect.annotateLogs(
-          MarimoLspExecutable.$match(selection, {
-            Configured: ({ exec }) => ({
-              mode: "configured",
-              command: exec.command,
-              args: (exec.args ?? []).join(" "),
+    const lspServer = yield* config.lsp.server.pipe(
+      Effect.catchTag(
+        "InvalidMarimoLspConfiguration",
+        Effect.fn(function* (error) {
+          yield* Effect.logError("Invalid marimo-lsp configuration").pipe(
+            Effect.annotateLogs({
+              cause: Cause.fail(error),
+              setting: error.setting,
             }),
-            Wasm: () => ({ mode: "wasm" }),
-            Uv: () => ({ mode: "uv" }),
-          }),
-        ),
-      );
-
-      const outputChannel =
-        yield* code.window.createLogOutputChannel("marimo-lsp");
-      const notifyCustomLspFailure = yield* makeCustomLspFailureNotifier({
-        mode,
-        channel: outputChannel,
-      });
-
-      interface SpawnState {
-        readonly stderrTail: string[];
-        pending: string;
-        exit?: LspProcessExit;
-      }
-
-      // vscode-languageclient may start a replacement process before its
-      // start promise rejects. Keep both references so startup errors report
-      // stderr from the process that actually exited.
-      let currentSpawn: SpawnState | undefined;
-      let lastExitedSpawn: SpawnState | undefined;
-
-      const serverOptions: lsp.ServerOptions = () =>
-        new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
-          const spawn: SpawnState = { stderrTail: [], pending: "" };
-          currentSpawn = spawn;
-
-          const child = NodeChildProcess.spawn(
-            exec.command,
-            exec.args ?? [],
-            exec.options,
           );
-          child.once("error", reject);
-          if (child.pid === undefined) return;
+          yield* code.window.showErrorMessage(
+            `${error.message} Falling back to the WASM language server.`,
+          );
+          return Config.MarimoLspServer.Wasm();
+        }),
+      ),
+    );
+    const uv = yield* Uv;
+    const selection = yield* selectMarimoLspExecutable({
+      server: lspServer,
+      resolveUvBinary: Effect.map(uv.bin, ({ executable }) => executable),
+    });
+    const { exec } = selection;
+    const mode = marimoLspMode(selection);
+    yield* telemetry.lspModeSelected(mode);
 
-          child.stderr?.setEncoding("utf8");
-          child.stderr?.on("data", (chunk: string) => {
-            spawn.pending += chunk;
-            let newline: number;
-            while ((newline = spawn.pending.indexOf("\n")) !== -1) {
-              let line = spawn.pending.slice(0, newline);
-              spawn.pending = spawn.pending.slice(newline + 1);
-              if (line.endsWith("\r")) line = line.slice(0, -1);
-              if (line.length === 0) continue;
-              spawn.stderrTail.push(line);
-              if (spawn.stderrTail.length > MAX_STDERR_LINES) {
-                spawn.stderrTail.shift();
-              }
-            }
-          });
-          child.once("exit", (code, signal) => {
-            if (spawn.pending.length > 0) {
-              spawn.stderrTail.push(spawn.pending);
-              spawn.pending = "";
-            }
-            spawn.exit = { code, signal };
-            lastExitedSpawn = spawn;
-          });
-          resolve(child);
-        });
-
-      let sessionGeneration = 0;
-      const client = new lsp.LanguageClient(
-        "marimo-lsp",
-        "Marimo Language Server",
-        serverOptions,
-        {
-          outputChannel,
-          // A restarted server begins its snapshot revisions at zero again.
-          initializationOptions: () => ({
-            sessionGeneration: ++sessionGeneration,
+    yield* Effect.logInfo("Starting marimo-lsp").pipe(
+      Effect.annotateLogs(
+        MarimoLspExecutable.$match(selection, {
+          Configured: ({ exec }) => ({
+            mode: "configured",
+            command: exec.command,
+            args: (exec.args ?? []).join(" "),
           }),
-          revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
-          documentSelector: [
-            { notebook: NOTEBOOK_TYPE, language: "sql" },
-            { notebook: NOTEBOOK_TYPE, language: "python" },
-            { notebook: NOTEBOOK_TYPE, language: "mo-python" },
-            { notebook: NOTEBOOK_TYPE, language: "markdown" },
-          ],
-        },
-      );
+          Wasm: () => ({ mode: "wasm" }),
+          Uv: () => ({ mode: "uv" }),
+        }),
+      ),
+    );
 
-      const stopClient = Effect.fn(function* () {
-        // LanguageClient.needsStop() also returns true while Starting, but
-        // stop() rejects unless the client has an active Running connection.
-        if (!client.isRunning()) return;
-        yield* Effect.tryPromise(() => client.stop()).pipe(
-          Effect.timeout("5 seconds"),
-          Effect.ignore,
+    const outputChannel =
+      yield* code.window.createLogOutputChannel("marimo-lsp");
+    const notifyCustomLspFailure = yield* makeCustomLspFailureNotifier({
+      mode,
+      channel: outputChannel,
+    });
+
+    interface SpawnState {
+      readonly stderrTail: string[];
+      pending: string;
+      exit?: LspProcessExit;
+    }
+
+    // vscode-languageclient may start a replacement process before its
+    // start promise rejects. Keep both references so startup errors report
+    // stderr from the process that actually exited.
+    let currentSpawn: SpawnState | undefined;
+    let lastExitedSpawn: SpawnState | undefined;
+
+    const serverOptions: lsp.ServerOptions = () =>
+      new Promise<NodeChildProcess.ChildProcess>((resolve, reject) => {
+        const spawn: SpawnState = { stderrTail: [], pending: "" };
+        currentSpawn = spawn;
+
+        const child = NodeChildProcess.spawn(
+          exec.command,
+          exec.args ?? [],
+          exec.options,
         );
-        yield* Effect.logDebug("marimo-lsp client stopped");
+        child.once("error", reject);
+        if (child.pid === undefined) return;
+
+        child.stderr?.setEncoding("utf8");
+        child.stderr?.on("data", (chunk: string) => {
+          spawn.pending += chunk;
+          let newline: number;
+          while ((newline = spawn.pending.indexOf("\n")) !== -1) {
+            let line = spawn.pending.slice(0, newline);
+            spawn.pending = spawn.pending.slice(newline + 1);
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (line.length === 0) continue;
+            spawn.stderrTail.push(line);
+            if (spawn.stderrTail.length > MAX_STDERR_LINES) {
+              spawn.stderrTail.shift();
+            }
+          }
+        });
+        child.once("exit", (code, signal) => {
+          if (spawn.pending.length > 0) {
+            spawn.stderrTail.push(spawn.pending);
+            spawn.pending = "";
+          }
+          spawn.exit = { code, signal };
+          lastExitedSpawn = spawn;
+        });
+        resolve(child);
       });
 
-      const startClient = () =>
-        Effect.gen(function* () {
-          // start() is single-flight while the client is Starting, so there is
-          // no need to stop an in-progress start before awaiting it.
-          yield* Effect.tryPromise({
-            try: () => client.start(),
-            catch: (cause) => {
-              const source =
-                currentSpawn?.exit !== undefined
-                  ? currentSpawn
-                  : (lastExitedSpawn ?? currentSpawn);
-              return new MarimoClientStartError({
-                exec,
-                mode,
-                cause,
-                stderr:
-                  source && source.stderrTail.length > 0
-                    ? source.stderrTail.join("\n")
-                    : undefined,
-                exit: source?.exit,
+    let sessionGeneration = 0;
+    const client = new lsp.LanguageClient(
+      "marimo-lsp",
+      "Marimo Language Server",
+      serverOptions,
+      {
+        outputChannel,
+        // A restarted server begins its snapshot revisions at zero again.
+        initializationOptions: () => ({
+          sessionGeneration: ++sessionGeneration,
+        }),
+        revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
+        documentSelector: [
+          { notebook: NOTEBOOK_TYPE, language: "sql" },
+          { notebook: NOTEBOOK_TYPE, language: "python" },
+          { notebook: NOTEBOOK_TYPE, language: "mo-python" },
+          { notebook: NOTEBOOK_TYPE, language: "markdown" },
+        ],
+      },
+    );
+
+    const stopClient = Effect.fn(function* () {
+      // LanguageClient.needsStop() also returns true while Starting, but
+      // stop() rejects unless the client has an active Running connection.
+      if (!client.isRunning()) return;
+      yield* Effect.tryPromise(() => client.stop()).pipe(
+        Effect.timeout("5 seconds"),
+        Effect.ignore,
+      );
+      yield* Effect.logDebug("marimo-lsp client stopped");
+    });
+
+    const startClient = () =>
+      Effect.gen(function* () {
+        // start() is single-flight while the client is Starting, so there is
+        // no need to stop an in-progress start before awaiting it.
+        yield* Effect.tryPromise({
+          try: () => client.start(),
+          catch: (cause) => {
+            const source =
+              currentSpawn?.exit !== undefined
+                ? currentSpawn
+                : (lastExitedSpawn ?? currentSpawn);
+            return new StartError({
+              exec,
+              mode,
+              cause,
+              stderr:
+                source && source.stderrTail.length > 0
+                  ? source.stderrTail.join("\n")
+                  : undefined,
+              exit: source?.exit,
+            });
+          },
+        });
+        yield* telemetry.lspStarted(mode);
+        yield* Effect.logInfo("marimo-lsp client started").pipe(
+          Effect.annotateLogs({ "lsp.mode": mode }),
+        );
+      }).pipe(Effect.withSpan("lsp.start"));
+
+    yield* Effect.addFinalizer(() => disposeLanguageClient(client));
+
+    const kernelNotifications = yield* makeKernelNotificationStream((handler) =>
+      client.onNotification("marimo/kernelNotification", (message) => {
+        handler(message);
+      }),
+    );
+    const documentAnalysis = yield* makeDocumentAnalysisStream((handler) =>
+      client.onNotification("marimo/documentAnalysis", (message) => {
+        handler(message);
+      }),
+    );
+
+    const restart = code.window.withProgress(
+      {
+        location: code.ProgressLocation.Notification,
+        title: "Restarting marimo-lsp",
+        cancellable: true,
+      },
+      Effect.fn(function* (progress) {
+        if (client.isRunning()) {
+          progress.report({ message: "Stopping..." });
+          yield* stopClient();
+        }
+        progress.report({ message: "Starting..." });
+        yield* startClient().pipe(
+          Effect.tap(() =>
+            Effect.sync(() => progress.report({ message: "Done." })),
+          ),
+          Effect.catchTag(
+            "MarimoClient.StartError",
+            Effect.fn(function* (error) {
+              const message = "Failed to restart marimo-lsp.";
+              yield* Effect.logError(message).pipe(
+                Effect.annotateLogs({
+                  cause: Cause.fail(error),
+                  "lsp.mode": mode,
+                }),
+              );
+              yield* showErrorAndPromptLogs(message, {
+                channel: outputChannel,
               });
-            },
-          });
-          yield* telemetry.lspStarted(mode);
-          yield* Effect.logInfo("marimo-lsp client started").pipe(
-            Effect.annotateLogs({ "lsp.mode": mode }),
-          );
-        }).pipe(Effect.withSpan("lsp.start"));
-
-      yield* Effect.addFinalizer(() => disposeLanguageClient(client));
-
-      const kernelNotifications = yield* makeKernelNotificationStream(
-        (handler) =>
-          client.onNotification("marimo/kernelNotification", (message) => {
-            handler(message);
-          }),
-      );
-      const documentAnalysis = yield* makeDocumentAnalysisStream((handler) =>
-        client.onNotification("marimo/documentAnalysis", (message) => {
-          handler(message);
-        }),
-      );
-
-      const restart = code.window.withProgress(
-        {
-          location: code.ProgressLocation.Notification,
-          title: "Restarting marimo-lsp",
-          cancellable: true,
-        },
-        Effect.fn(function* (progress) {
-          if (client.isRunning()) {
-            progress.report({ message: "Stopping..." });
-            yield* stopClient();
-          }
-          progress.report({ message: "Starting..." });
-          yield* startClient().pipe(
-            Effect.tap(() =>
-              Effect.sync(() => progress.report({ message: "Done." })),
-            ),
-            Effect.catchTag(
-              "MarimoClientStartError",
-              Effect.fn(function* (error) {
-                const message = "Failed to restart marimo-lsp.";
-                yield* Effect.logError(message).pipe(
-                  Effect.annotateLogs({
-                    cause: Cause.fail(error),
-                    "lsp.mode": mode,
-                  }),
-                );
-                yield* showErrorAndPromptLogs(message, {
-                  channel: outputChannel,
-                });
-              }),
-            ),
-          );
-        }),
-      );
-
-      const transport: MarimoTransport<
-        MarimoClientStartError | MarimoCommandError
-      > = {
-        send: Effect.fn(function* (command) {
-          if (!client.isRunning()) {
-            yield* startClient();
-          }
-          return yield* Effect.tryPromise({
-            try: (signal) =>
-              client.sendRequest<unknown>(
-                "marimo/command",
-                command,
-                tokenFromSignal(signal),
-              ),
-            catch: (cause) =>
-              new MarimoCommandError({
-                command: Redacted.make(command),
-                cause,
-                mode,
-              }),
-          }).pipe(
-            Effect.tapError(() => Effect.forkDetach(notifyCustomLspFailure)),
-            Effect.withSpan("lsp.executeCommand", {
-              attributes: {
-                command: "marimo/command",
-                kind: command.kind,
-              },
-            }),
-          );
-        }),
-        kernelNotifications,
-        documentAnalysis,
-        sessionChanges: Stream.callback<MarimoSessionsChanged>((queue) =>
-          acquireDisposable(() =>
-            client.onNotification("marimo/sessionsChanged", (message) => {
-              Queue.offerUnsafe(queue, message);
             }),
           ),
-        ),
-      };
+        );
+      }),
+    );
 
-      return {
-        server: lspServer,
-        channel: {
-          name: outputChannel.name,
-          show: outputChannel.show.bind(outputChannel),
-        },
-        restart,
-        ...makeMarimoCommands(transport),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([Config.layer, Uv.layer]),
-  );
-}
+    const transport: MarimoTransport<StartError | CommandError> = {
+      send: Effect.fn(function* (command) {
+        if (!client.isRunning()) {
+          yield* startClient();
+        }
+        return yield* Effect.tryPromise({
+          try: (signal) =>
+            client.sendRequest<unknown>(
+              "marimo/command",
+              command,
+              tokenFromSignal(signal),
+            ),
+          catch: (cause) =>
+            new CommandError({
+              command: Redacted.make(command),
+              cause,
+              mode,
+            }),
+        }).pipe(
+          Effect.tapError(() => Effect.forkDetach(notifyCustomLspFailure)),
+          Effect.withSpan("lsp.executeCommand", {
+            attributes: {
+              command: "marimo/command",
+              kind: command.kind,
+            },
+          }),
+        );
+      }),
+      kernelNotifications,
+      documentAnalysis,
+      sessionChanges: Stream.callback<MarimoSessionsChanged>((queue) =>
+        acquireDisposable(() =>
+          client.onNotification("marimo/sessionsChanged", (message) => {
+            Queue.offerUnsafe(queue, message);
+          }),
+        ),
+      ),
+    };
+
+    return Service.of({
+      server: lspServer,
+      channel: {
+        name: outputChannel.name,
+        show: outputChannel.show.bind(outputChannel),
+      },
+      restart,
+      ...makeCommands(transport),
+    });
+  }),
+);
+
+export const defaultLayer = layer.pipe(Layer.provide([Config.layer, Uv.layer]));
 
 export const makeCustomLspFailureNotifier = Effect.fn(
   "MarimoClient.makeCustomLspFailureNotifier",

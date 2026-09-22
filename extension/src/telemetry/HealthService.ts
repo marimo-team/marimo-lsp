@@ -7,7 +7,7 @@ import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import {
   RuffLanguageServer,
   RuffLanguageServerStatus,
@@ -30,7 +30,7 @@ export class HealthService extends Context.Service<HealthService>()(
       const uv = yield* Uv;
       const code = yield* VsCode;
       const config = yield* Config.Service;
-      const marimo = yield* MarimoClient;
+      const marimo = yield* MarimoClient.Service;
       const notebooks = yield* NotebookRuntime.Service;
       const pyExt = yield* PythonExtension;
       const tyLsp = yield* TyLanguageServer;

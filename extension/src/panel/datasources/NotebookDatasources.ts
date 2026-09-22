@@ -12,7 +12,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import { MarimoClient } from "../../lsp/MarimoClient.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import {
   type NotebookDocumentSession,
   NotebookDocumentSessions,
@@ -111,7 +111,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
   "NotebookDatasources",
   {
     make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient;
+      const marimo = yield* MarimoClient.Service;
       const documentSessions = yield* NotebookDocumentSessions;
 
       // One state entry per exact document opening. Kernel identity remains in

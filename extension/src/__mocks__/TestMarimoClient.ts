@@ -1,16 +1,11 @@
 import * as NodeChildProcess from "node:child_process";
 
-import { type Context, Effect, Layer, Queue, Redacted, Stream } from "effect";
+import { Effect, Layer, Queue, Redacted, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
 import { MarimoLspServer } from "../config/Config.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import {
-  findMarimoLspExecutable,
-  makeMarimoCommands,
-  MarimoClient,
-  MarimoCommandError,
-} from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 
 /**
  * Process-backed Adapter for tests that intentionally verify the
@@ -20,11 +15,11 @@ import {
  * Layer starts a real `marimo-lsp` process and performs an LSP handshake.
  */
 export const TestMarimoClientProcess = Layer.effect(
-  MarimoClient,
+  MarimoClient.Service,
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(
       Effect.gen(function* () {
-        const exec = yield* findMarimoLspExecutable("uv");
+        const exec = yield* MarimoClient.findMarimoLspExecutable("uv");
         const proc = NodeChildProcess.spawn(exec.command, exec.args, {
           stdio: ["pipe", "pipe", "inherit"],
         });
@@ -48,19 +43,19 @@ export const TestMarimoClientProcess = Layer.effect(
           proc.kill();
         }),
     );
-    const service: Context.Service.Shape<typeof MarimoClient> = {
+    const service: MarimoClient.Interface = {
       server: MarimoLspServer.Python(),
       channel: {
         name: "marimo-lsp",
         show() {},
       },
       restart: Effect.void,
-      ...makeMarimoCommands({
+      ...MarimoClient.makeCommands({
         send(command) {
           return Effect.tryPromise({
             try: () => conn.sendRequest("marimo/command", command),
             catch: (cause) =>
-              new MarimoCommandError({
+              new MarimoClient.CommandError({
                 command: Redacted.make(command),
                 cause,
                 mode: "uv",

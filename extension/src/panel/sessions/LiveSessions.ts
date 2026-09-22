@@ -10,7 +10,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import { MarimoClient } from "../../lsp/MarimoClient.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import {
   type SessionInfo,
@@ -46,7 +46,7 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
   "LiveSessions",
   {
     make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient;
+      const marimo = yield* MarimoClient.Service;
       const state = yield* SubscriptionRef.make<SessionState>({
         snapshot: { generation: -1, revision: 0, sessions: [] },
         restarting: new Set(),

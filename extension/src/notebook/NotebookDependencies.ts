@@ -13,7 +13,7 @@ import {
 } from "effect";
 
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import type {
   DependencyTreeNode,
   ScriptSource,
@@ -45,7 +45,7 @@ export class NotebookDependencies extends Context.Service<NotebookDependencies>(
   "NotebookDependencies",
   {
     make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient;
+      const marimo = yield* MarimoClient.Service;
       const notebooks = yield* NotebookRuntime.Service;
       const session = yield* NotebookSession;
       const generation = yield* Ref.make(0);

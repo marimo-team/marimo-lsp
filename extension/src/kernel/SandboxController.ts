@@ -9,7 +9,7 @@ import { uvAddScriptSafe } from "../lib/installPackages.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
 import { Version } from "../lib/Version.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { Constants } from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -28,7 +28,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
-    const marimo = yield* MarimoClient;
+    const marimo = yield* MarimoClient.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const python = yield* PythonExtension;
     const { LanguageId } = yield* Constants;
@@ -157,7 +157,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               { channel: uv.channel },
             ),
           ),
-          Effect.catchTag("MarimoCommandError", (error) => {
+          Effect.catchTag("MarimoClient.CommandError", (error) => {
             const detail = extractPythonError(error.cause);
             return showErrorAndPromptLogs(
               Option.isSome(detail)
@@ -166,7 +166,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
               { channel: marimo.channel },
             );
           }),
-          Effect.catchTag("MarimoClientStartError", () =>
+          Effect.catchTag("MarimoClient.StartError", () =>
             showErrorAndPromptLogs(
               "Failed to start marimo language server (marimo-lsp).",
             ),

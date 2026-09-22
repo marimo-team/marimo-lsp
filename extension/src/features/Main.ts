@@ -6,7 +6,7 @@ import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
-import type { MarimoClient } from "../lsp/MarimoClient.ts";
+import type * as MarimoClient from "../lsp/MarimoClient.ts";
 import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
 import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
@@ -107,7 +107,7 @@ const MainLive = Layer.empty
 
 export function makeExtension(
   layer: Layer.Layer<
-    | MarimoClient
+    | MarimoClient.Service
     | VsCode
     | PythonExtension
     | Telemetry

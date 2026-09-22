@@ -13,19 +13,15 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import {
-  MarimoClient,
-  MarimoClientStartError,
-  MarimoCommandError,
-} from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { NotebookSession } from "../notebook/NotebookSession.ts";
 import type { MarimoConfig } from "../types.ts";
 
 const cacheKey = "configuration" as const;
 
 export type Error =
-  | MarimoClientStartError
-  | MarimoCommandError
+  | MarimoClient.StartError
+  | MarimoClient.CommandError
   | Schema.SchemaError;
 
 export interface Interface {
@@ -45,7 +41,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const marimo = yield* MarimoClient;
+    const marimo = yield* MarimoClient.Service;
     const session = yield* NotebookSession;
     const current = yield* SubscriptionRef.make(Option.none<MarimoConfig>());
     const generation = yield* Ref.make(0);

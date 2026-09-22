@@ -100,7 +100,7 @@ export const createPythonController = Effect.fn("createPythonController")(
                 { modal: true },
               );
             }),
-            MarimoCommandError: Effect.fn(function* (error) {
+            "MarimoClient.CommandError": Effect.fn(function* (error) {
               yield* Effect.logError("Failed to execute command").pipe(
                 Effect.annotateLogs({
                   cause: Cause.fail(error),

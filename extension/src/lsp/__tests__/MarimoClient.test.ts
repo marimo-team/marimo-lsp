@@ -11,16 +11,7 @@ import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts"
 import { MarimoLspServer } from "../../config/Config.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
-import {
-  disposeLanguageClient,
-  findMarimoLspExecutable,
-  findWasmMarimoLspExecutable,
-  makeMarimoCommands,
-  makeCustomLspFailureNotifier,
-  makeDocumentAnalysisStream,
-  makeKernelNotificationStream,
-  selectMarimoLspExecutable,
-} from "../MarimoClient.ts";
+import * as MarimoClient from "../MarimoClient.ts";
 
 const notebook = notebookId("notebook-a");
 
@@ -46,7 +37,7 @@ describe("custom language-server failures", () => {
           },
         },
       });
-      const notify = yield* makeCustomLspFailureNotifier({
+      const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
         mode: "configured",
         channel: {
           name: "marimo-lsp",
@@ -81,7 +72,7 @@ describe("custom language-server failures", () => {
             ),
         },
       });
-      const notify = yield* makeCustomLspFailureNotifier({
+      const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
         mode: "configured",
         channel: {
           name: "marimo-lsp",
@@ -111,7 +102,7 @@ describe("custom language-server failures", () => {
         },
       });
       for (const mode of ["wasm", "uv"] as const) {
-        const notify = yield* makeCustomLspFailureNotifier({
+        const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
           mode,
           channel: { name: "marimo-lsp", show() {} },
         }).pipe(Effect.provide(vscode.layer));
@@ -130,7 +121,7 @@ it.effect(
       Promise.reject(new Error("client is startFailed")),
     );
 
-    yield* disposeLanguageClient({ dispose });
+    yield* MarimoClient.disposeLanguageClient({ dispose });
 
     expect(dispose).toHaveBeenCalledOnce();
   }),
@@ -148,7 +139,7 @@ it.effect(
       },
       "set-display-theme": { success: true },
     };
-    const marimo = makeMarimoCommands({
+    const marimo = MarimoClient.makeCommands({
       send: (request) =>
         Ref.update(calls, (current) => [...current, request]).pipe(
           Effect.as(responses[request.kind]),
@@ -184,7 +175,7 @@ describe("generated command client", () => {
   it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
-      const marimo = makeMarimoCommands({
+      const marimo = MarimoClient.makeCommands({
         send: () =>
           Effect.succeed({
             tree: { name: "root", version: null, tags: [], dependencies: [] },
@@ -205,7 +196,7 @@ describe("generated command client", () => {
   it.effect(
     "fails with ParseError when the server response violates the contract",
     Effect.fn(function* () {
-      const marimo = makeMarimoCommands({
+      const marimo = MarimoClient.makeCommands({
         send: () => Effect.succeed({ tree: "not-a-tree" }),
         kernelNotifications: Stream.empty,
       });
@@ -229,7 +220,7 @@ describe("generated command client", () => {
   it.effect(
     "rejects params the server would reject, before hitting the wire",
     Effect.fn(function* () {
-      const marimo = makeMarimoCommands({
+      const marimo = MarimoClient.makeCommands({
         send: () => Effect.die("should not reach the transport"),
         kernelNotifications: Stream.empty,
       });
@@ -252,7 +243,7 @@ describe("generated command client", () => {
   it.effect(
     "requires tagged-union discriminators before hitting the wire",
     Effect.fn(function* () {
-      const marimo = makeMarimoCommands({
+      const marimo = MarimoClient.makeCommands({
         send: () => Effect.die("should not reach the transport"),
         kernelNotifications: Stream.empty,
       });
@@ -286,7 +277,7 @@ describe("findMarimoLspExecutable", () => {
           const sdist = NodePath.join(directory.path, "marimo_lsp-0.1.0");
           NodeFs.mkdirSync(sdist);
 
-          const executable = yield* findMarimoLspExecutable(
+          const executable = yield* MarimoClient.findMarimoLspExecutable(
             "bundled-uv",
             directory.path,
           );
@@ -311,7 +302,8 @@ describe("findMarimoLspExecutable", () => {
 
 describe("findWasmMarimoLspExecutable", () => {
   it("launches the bundled server with VS Code's Node runtime", () => {
-    const executable = findWasmMarimoLspExecutable("/extension/dist");
+    const executable =
+      MarimoClient.findWasmMarimoLspExecutable("/extension/dist");
 
     expect(executable.command).toBe(process.execPath);
     expect(executable.args).toEqual([
@@ -325,7 +317,7 @@ describe("selectMarimoLspExecutable", () => {
   it.effect(
     "uses the command carried by the custom server variant",
     Effect.fn(function* () {
-      const selection = yield* selectMarimoLspExecutable({
+      const selection = yield* MarimoClient.selectMarimoLspExecutable({
         server: MarimoLspServer.Custom({
           command: ["/custom/marimo-lsp", "--stdio"],
         }),
@@ -343,7 +335,7 @@ describe("selectMarimoLspExecutable", () => {
   it.effect(
     "uses WASM without resolving uv",
     Effect.fn(function* () {
-      const selection = yield* selectMarimoLspExecutable({
+      const selection = yield* MarimoClient.selectMarimoLspExecutable({
         server: MarimoLspServer.Wasm(),
         resolveUvBinary: Effect.die("WASM mode must not resolve uv"),
         searchDirectory: "/extension/dist",
@@ -365,7 +357,7 @@ describe("selectMarimoLspExecutable", () => {
       ),
       (directory) =>
         Effect.gen(function* () {
-          const selection = yield* selectMarimoLspExecutable({
+          const selection = yield* MarimoClient.selectMarimoLspExecutable({
             server: MarimoLspServer.Python(),
             resolveUvBinary: Effect.succeed("bundled-uv"),
             searchDirectory: directory.path,
@@ -388,7 +380,7 @@ it.effect(
   "subscribes to kernel notifications",
   Effect.fn(function* () {
     let requestedNotification: string | undefined;
-    const marimo = makeMarimoCommands({
+    const marimo = MarimoClient.makeCommands({
       send: () => Effect.void,
       // Stream.suspend defers to subscription time, so the assertion below
       // still observes that draining `kernelNotifications` evaluated the
@@ -410,11 +402,13 @@ it.effect(
   Effect.fn(function* () {
     let registrations = 0;
     let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* makeKernelNotificationStream((handler) => {
-      registrations += 1;
-      notify = handler;
-      return { dispose() {} };
-    });
+    const operations = yield* MarimoClient.makeKernelNotificationStream(
+      (handler) => {
+        registrations += 1;
+        notify = handler;
+        return { dispose() {} };
+      },
+    );
 
     const message = {
       notebookUri: notebook,
@@ -446,7 +440,7 @@ it.effect(
     let disposals = 0;
 
     yield* Effect.scoped(
-      makeKernelNotificationStream(() => ({
+      MarimoClient.makeKernelNotificationStream(() => ({
         dispose() {
           disposals += 1;
         },
@@ -461,10 +455,12 @@ it.effect(
   "decodes document analysis on its own channel",
   Effect.fn(function* () {
     let notify: ((message: unknown) => void) | undefined;
-    const analyses = yield* makeDocumentAnalysisStream((handler) => {
-      notify = handler;
-      return { dispose() {} };
-    });
+    const analyses = yield* MarimoClient.makeDocumentAnalysisStream(
+      (handler) => {
+        notify = handler;
+        return { dispose() {} };
+      },
+    );
     const snapshot: DocumentAnalysis = {
       notebookUri: notebook,
       analysis: { op: "variables", variables: [] },
@@ -491,10 +487,12 @@ it.effect(
   "requires a kernel session ID even for kernel variable snapshots",
   Effect.fn(function* () {
     let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* makeKernelNotificationStream((handler) => {
-      notify = handler;
-      return { dispose() {} };
-    });
+    const operations = yield* MarimoClient.makeKernelNotificationStream(
+      (handler) => {
+        notify = handler;
+        return { dispose() {} };
+      },
+    );
     const kernelSnapshot: KernelNotification = {
       notebookUri: notebook,
       sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
