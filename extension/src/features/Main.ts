@@ -40,7 +40,7 @@ import * as StatusBar from "../statusbar/StatusBar.ts";
 import * as HealthService from "../telemetry/HealthService.ts";
 import type * as Telemetry from "../telemetry/Telemetry.ts";
 import * as AutoExport from "./AutoExport.ts";
-import { CellInputVisibilitySyncLive } from "./CellInputVisibilitySync.ts";
+import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
@@ -74,7 +74,7 @@ const MainLive = Layer.empty
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ConfigContextManager.layer),
     Layer.merge(ThemeSyncLive),
-    Layer.merge(CellInputVisibilitySyncLive),
+    Layer.merge(CellInputVisibilitySync.layer),
     Layer.merge(DebugLayerLive),
     Layer.merge(NotebookControllersLive),
   )

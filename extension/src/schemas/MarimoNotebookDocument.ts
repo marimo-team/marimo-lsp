@@ -240,7 +240,7 @@ export class MarimoNotebookCell {
    * projected away; explicit metadata always wins. VS Code
    * has no API to read or set the input-collapsed state, so this is the source
    * of truth for the one-way synchronization performed by
-   * {@link CellInputVisibilitySyncLive} (issue #326).
+   * the cell-input visibility sync layer (issue #326).
    */
   get isCodeHidden() {
     return this.metadata.pipe(

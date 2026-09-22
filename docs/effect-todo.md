@@ -101,7 +101,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 
 - [x] `config/ConfigContextManager.ts`
 - [x] `features/AutoExport.ts`
-- [ ] `features/CellInputVisibilitySync.ts`
+- [x] `features/CellInputVisibilitySync.ts`
 - [ ] `features/CellMetadataBindings.ts`
 - [ ] `features/CellStatusBarProvider.ts`
 - [ ] `features/DebugLayer.ts`
