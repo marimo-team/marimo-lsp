@@ -49,59 +49,63 @@ const GitHubApi = HttpApi.make("GitHubApi").add(
   ),
 );
 
-export class GitHubClient extends Context.Service<GitHubClient>()(
-  "GitHubClient",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-
-      const client = yield* HttpApiClient.make(GitHubApi, {
-        baseUrl: "https://api.github.com",
-        transformClient: flow(
-          HttpClient.mapRequest(HttpClientRequest.acceptJson),
-          HttpClient.mapRequestEffect(
-            Effect.fn(function* (request) {
-              // lazily try to get session when making requests
-              const session = yield* code.auth
-                .getSession("github", ["gist"], { createIfNone: true })
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new HttpClientError.HttpClientError({
-                        reason: new HttpClientError.TransportError({
-                          request,
-                          cause,
-                          description:
-                            "Failed to get GitHub authentication session",
-                        }),
-                      }),
-                  ),
-                );
-
-              if (Option.isNone(session)) {
-                return yield* new HttpClientError.HttpClientError({
-                  reason: new HttpClientError.TransportError({
-                    request,
-                    description:
-                      "GitHub authentication required. Please sign in to publish gists.",
-                  }),
-                });
-              }
-
-              return HttpClientRequest.bearerToken(
-                request,
-                session.value.accessToken,
-              );
-            }),
-          ),
-        ),
-      });
-
-      return client;
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(FetchHttpClient.layer),
-  );
+export interface Interface {
+  readonly Gists: HttpApiClient.ForApi<typeof GitHubApi>["Gists"];
 }
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/GitHubClient",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode;
+
+    const client = yield* HttpApiClient.make(GitHubApi, {
+      baseUrl: "https://api.github.com",
+      transformClient: flow(
+        HttpClient.mapRequest(HttpClientRequest.acceptJson),
+        HttpClient.mapRequestEffect(
+          Effect.fn("GitHubClient.authenticate")(function* (request) {
+            // lazily try to get session when making requests
+            const session = yield* code.auth
+              .getSession("github", ["gist"], { createIfNone: true })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new HttpClientError.HttpClientError({
+                      reason: new HttpClientError.TransportError({
+                        request,
+                        cause,
+                        description:
+                          "Failed to get GitHub authentication session",
+                      }),
+                    }),
+                ),
+              );
+
+            if (Option.isNone(session)) {
+              return yield* new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({
+                  request,
+                  description:
+                    "GitHub authentication required. Please sign in to publish gists.",
+                }),
+              });
+            }
+
+            return HttpClientRequest.bearerToken(
+              request,
+              session.value.accessToken,
+            );
+          }),
+        ),
+      ),
+    });
+
+    return Service.of(client);
+  }),
+);
+
+export const defaultLayer = layer.pipe(Layer.provide(FetchHttpClient.layer));

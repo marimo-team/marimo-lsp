@@ -26,7 +26,7 @@ import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import * as Api from "../platform/Api.ts";
 import * as Constants from "../platform/Constants.ts";
-import { GitHubClient } from "../platform/GitHubClient.ts";
+import * as GitHubClient from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import type { VsCode } from "../platform/VsCode.ts";
@@ -80,7 +80,7 @@ const MainLive = Layer.empty
   .pipe(
     Layer.provideMerge(Api.layer),
     Layer.provide(DebugAdapter.layer),
-    Layer.provide(GitHubClient.layer),
+    Layer.provide(GitHubClient.defaultLayer),
     Layer.provide(NotebookRenderer.layer),
     Layer.provide(NotebookSerializer.layer),
     Layer.provide(CellExecutions.layer),

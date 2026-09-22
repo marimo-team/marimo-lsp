@@ -9,7 +9,7 @@ import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessio
 import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import * as Constants from "../../platform/Constants.ts";
-import { GitHubClient } from "../../platform/GitHubClient.ts";
+import * as GitHubClient from "../../platform/GitHubClient.ts";
 import * as OutputChannel from "../../platform/OutputChannel.ts";
 import {
   MarimoNotebookDocument,
@@ -53,8 +53,8 @@ const serializerLayer = Layer.succeed(
 );
 
 const githubLayer = Layer.succeed(
-  GitHubClient,
-  GitHubClient.of({
+  GitHubClient.Service,
+  GitHubClient.Service.of({
     Gists: {
       create: () => Effect.die("not implemented"),
       update: () => Effect.die("not implemented"),
