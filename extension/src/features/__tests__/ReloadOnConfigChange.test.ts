@@ -16,10 +16,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import restartKernel from "../../commands/restartKernel.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import {
-  promptToRestartKernelForFileRootChange,
-  watchForConfigurationChanges,
-} from "../ReloadOnConfigChange.ts";
+import * as ReloadOnConfigChange from "../ReloadOnConfigChange.ts";
 
 it.effect(
   "runs the restart command only when selected",
@@ -37,7 +34,7 @@ it.effect(
           ),
       },
     });
-    yield* promptToRestartKernelForFileRootChange().pipe(
+    yield* ReloadOnConfigChange.promptForFileRootChange.pipe(
       Effect.provide(vscode.layer),
     );
     expect(yield* Ref.get(vscode.executions)).toContainEqual({
@@ -46,7 +43,7 @@ it.effect(
     });
 
     acceptRestart = false;
-    yield* promptToRestartKernelForFileRootChange().pipe(
+    yield* ReloadOnConfigChange.promptForFileRootChange.pipe(
       Effect.provide(vscode.layer),
     );
     expect(yield* Ref.get(vscode.executions)).toHaveLength(1);
@@ -88,7 +85,7 @@ it.effect(
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
 
-    yield* watchForConfigurationChanges().pipe(Effect.provide(services));
+    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
     yield* Queue.take(prompted);
     yield* Queue.take(prompted);
 
@@ -127,7 +124,7 @@ it.live(
     });
     const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
 
-    yield* watchForConfigurationChanges().pipe(Effect.provide(services));
+    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
     yield* Deferred.await(prompted);
     const executions = yield* Ref.get(vscode.executions).pipe(
       Effect.filterOrFail(
@@ -210,7 +207,7 @@ it.effect(
         runtimeSessions: [{ notebookId: id, session }],
       }),
     );
-    yield* watchForConfigurationChanges().pipe(Effect.provide(services));
+    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
 
     yield* Deferred.await(prompted);
     expect(yield* Ref.get(prompts)).toBe(1);

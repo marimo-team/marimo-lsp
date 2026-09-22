@@ -48,7 +48,7 @@ import * as MarimoCodeLensProvider from "./MarimoCodeLensProvider.ts";
 import * as MarimoFileDetector from "./MarimoFileDetector.ts";
 import * as RegisterCommands from "./RegisterCommands.ts";
 import * as RegisterLanguageModelTools from "./RegisterLanguageModelTools.ts";
-import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
+import * as ReloadOnConfigChange from "./ReloadOnConfigChange.ts";
 import { ThemeSyncLive } from "./ThemeSync.ts";
 
 /**
@@ -71,7 +71,7 @@ const MainLive = Layer.empty
     Layer.merge(CellStatusBarProvider.layer),
     Layer.merge(CellMetadataBindings.layer),
     Layer.merge(AutoExport.layer),
-    Layer.merge(ReloadOnConfigChangeLive),
+    Layer.merge(ReloadOnConfigChange.layer),
     Layer.merge(ConfigContextManager.layer),
     Layer.merge(ThemeSyncLive),
     Layer.merge(CellInputVisibilitySync.layer),
