@@ -38,7 +38,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 ### Language servers
 
 - [x] `lsp/MarimoClient.ts`
-- [ ] `lsp/RuffLanguageServer.ts`
+- [x] `lsp/RuffLanguageServer.ts`
 - [ ] `lsp/TyLanguageServer.ts`
 
 ### Notebook

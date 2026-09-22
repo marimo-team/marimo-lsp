@@ -8,10 +8,7 @@ import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import {
-  RuffLanguageServer,
-  RuffLanguageServerStatus,
-} from "../lsp/RuffLanguageServer.ts";
+import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
 import {
   TyLanguageServer,
   TyLanguageServerStatus,
@@ -34,7 +31,7 @@ export class HealthService extends Context.Service<HealthService>()(
       const notebooks = yield* NotebookRuntime.Service;
       const pyExt = yield* PythonExtension;
       const tyLsp = yield* TyLanguageServer;
-      const ruffLsp = yield* RuffLanguageServer;
+      const ruffLsp = yield* RuffLanguageServer.Service;
 
       const formatDiagnostics = () =>
         Effect.gen(function* () {
@@ -138,7 +135,7 @@ export class HealthService extends Context.Service<HealthService>()(
 
             // Ruff Language Server
             lines.push("Ruff Language Server:");
-            RuffLanguageServerStatus.$match(yield* ruffLsp.getHealthStatus, {
+            RuffLanguageServer.Status.$match(yield* ruffLsp.getHealthStatus, {
               Disabled: ({ reason }) => {
                 lines.push("\tStatus: disabled");
                 lines.push(`\tReason: ${reason}`);
