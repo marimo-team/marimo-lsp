@@ -9,7 +9,7 @@ import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import type * as MarimoClient from "../lsp/MarimoClient.ts";
 import type * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
 import type * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
-import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
+import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
@@ -88,7 +88,7 @@ const MainLive = Layer.empty
     Layer.provide(NotebookDatasources.layer),
     Layer.provideMerge(LiveSessions.layer),
     Layer.provide(HealthService.layer),
-    Layer.provide(CellMetadataUIBindingService.layer),
+    Layer.provide(CellMetadataUIBinding.layer),
   )
   .pipe(
     Layer.provide(NotebookSessionResources.layer),

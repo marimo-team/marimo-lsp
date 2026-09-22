@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
+import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import {
   type CellMetadataBindingId,
@@ -12,7 +12,7 @@ const handler = Effect.fn("command.updateCellMetadata")(function* (
   cell: Option.Option<MarimoNotebookCell>,
   bindingId: CellMetadataBindingId,
 ) {
-  const bindings = yield* CellMetadataUIBindingService;
+  const bindings = yield* CellMetadataUIBinding.Service;
   yield* bindings.updateBinding(cell, bindingId);
 });
 

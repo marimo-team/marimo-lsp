@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Schema } from "effect";
 
-import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
+import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { Constants } from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -47,7 +47,7 @@ function updateSqlMetadata(
 export const CellMetadataBindingsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const { LanguageId } = yield* Constants;
-    const bindingService = yield* CellMetadataUIBindingService;
+    const bindingService = yield* CellMetadataUIBinding.Service;
     const code = yield* VsCode;
     const datasources = yield* NotebookDatasources;
 

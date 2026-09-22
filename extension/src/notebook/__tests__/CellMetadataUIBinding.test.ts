@@ -11,17 +11,14 @@ import {
 import { commandId } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import { DEFAULT_SQL_ENGINE } from "../../features/CellMetadataBindings.ts";
-import {
-  CellMetadataUIBindingService,
-  type MetadataBinding,
-} from "../../notebook/CellMetadataUIBindingService.ts";
+import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
-  const layer = CellMetadataUIBindingService.layer.pipe(
+  const layer = CellMetadataUIBinding.layer.pipe(
     Layer.provideMerge(Constants.layer),
     Layer.provide(vscode.layer),
   );
@@ -53,9 +50,9 @@ it.effect("should register a binding and create status bar provider", () =>
     Effect.gen(function* () {
       const ctx = yield* withTestCtx;
       yield* Effect.gen(function* () {
-        const service = yield* CellMetadataUIBindingService;
+        const service = yield* CellMetadataUIBinding.Service;
 
-        const binding: MetadataBinding = {
+        const binding: CellMetadataUIBinding.MetadataBinding = {
           id: "test.field",
           type: "text",
           alignment: 1, // Left
@@ -81,10 +78,10 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
-      const service = yield* CellMetadataUIBindingService;
+      const service = yield* CellMetadataUIBinding.Service;
       const { LanguageId } = yield* Constants;
 
-      const binding: MetadataBinding = {
+      const binding: CellMetadataUIBinding.MetadataBinding = {
         id: "test.sql",
         type: "text",
         alignment: 1,
@@ -123,9 +120,9 @@ it.effect("should display value from cell metadata", () =>
     Effect.gen(function* () {
       const ctx = yield* withTestCtx;
       yield* Effect.gen(function* () {
-        const service = yield* CellMetadataUIBindingService;
+        const service = yield* CellMetadataUIBinding.Service;
 
-        const binding: MetadataBinding = {
+        const binding: CellMetadataUIBinding.MetadataBinding = {
           id: "test.metadata",
           type: "text",
           alignment: 1,
