@@ -23,7 +23,7 @@ import * as SessionFileLifecycle from "../panel/sessions/SessionFileLifecycle.ts
 import * as SessionsView from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
-import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
+import * as VariablesView from "../panel/variables/VariablesView.ts";
 import * as Api from "../platform/Api.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as ExtensionContext from "../platform/ExtensionContext.ts";
@@ -65,7 +65,7 @@ const MainLive = Layer.empty
     Layer.merge(MarimoCodeLensProvider.layer),
     Layer.merge(SessionsView.layer),
     Layer.merge(SessionFileLifecycle.layer),
-    Layer.merge(VariablesViewLive),
+    Layer.merge(VariablesView.layer),
     Layer.merge(DatasourcesView.layer),
     Layer.merge(PackagesView.layer),
     Layer.merge(CellStatusBarProvider.layer),
