@@ -60,7 +60,7 @@ import type {
   KernelNotification,
   NotificationOf,
 } from "../types.ts";
-import { CellExecutions, type Drive } from "./CellExecutions.ts";
+import * as CellExecutions from "./CellExecutions.ts";
 import { resolveImageDataUri, saveImageToDisk } from "./imageResolver.ts";
 import { makeNotebookExecutor } from "./NotebookExecutor.ts";
 import {
@@ -75,7 +75,7 @@ import { handleMissingPackageAlert } from "./operations.ts";
  */
 type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 type VsCodeService = Context.Service.Shape<typeof VsCode>;
-type CellExecutionsService = Context.Service.Shape<typeof CellExecutions>;
+type CellExecutionsService = CellExecutions.Interface;
 type LiveSessionsShape = Context.Service.Shape<typeof LiveSessions>;
 
 type CommandFields<K extends keyof MarimoClientService> =
@@ -97,7 +97,7 @@ type RespondToStdin = (
 export interface NotebookController {
   readonly id: string;
   readonly executable?: string;
-  readonly drive: (notebook: MarimoNotebookDocument) => Drive;
+  readonly drive: (notebook: MarimoNotebookDocument) => CellExecutions.Drive;
   readonly presentOutputs: (
     notebook: MarimoNotebookDocument,
     replays: ReadonlyArray<CellOutputReplay>,
@@ -209,7 +209,7 @@ export interface RuntimeSessionEntry {
 }
 
 type RuntimeWorkRequirements =
-  | CellExecutions
+  | CellExecutions.Service
   | Config.Service
   | Constants
   | NotebookDatasources
@@ -269,7 +269,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const config = yield* Config.Service;
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer.Service;
-      const executions = yield* CellExecutions;
+      const executions = yield* CellExecutions.Service;
       const variables = yield* NotebookVariables;
       const datasources = yield* NotebookDatasources;
       const liveSessions = yield* LiveSessions;
@@ -1149,7 +1149,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       OutputChannel.layer,
       NotebookVariables.layer,
       NotebookRenderer.layer,
-      CellExecutions.layer,
+      CellExecutions.defaultLayer,
       NotebookDatasources.layer,
       NotebookEditorRegistry.layer,
       PythonEnvInvalidation.layer,
@@ -1313,7 +1313,7 @@ function processNotebookOperation(
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
     const renderer = yield* NotebookRenderer.Service;
-    const executions = yield* CellExecutions;
+    const executions = yield* CellExecutions.Service;
     const sessionNotebook = MarimoNotebookDocument.from(
       options.session.document,
     );

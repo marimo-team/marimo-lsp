@@ -2,7 +2,7 @@ import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
 import * as Config from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import * as CellExecutions from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
 import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";

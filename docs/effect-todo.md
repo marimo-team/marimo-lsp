@@ -28,7 +28,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ### Kernel
 
-- [ ] `kernel/CellExecutions.ts`
+- [x] `kernel/CellExecutions.ts`
 - [ ] `kernel/CellOutputProjections.ts`
 - [ ] `kernel/DebugAdapter.ts`
 - [ ] `kernel/NotebookRuntime.ts`

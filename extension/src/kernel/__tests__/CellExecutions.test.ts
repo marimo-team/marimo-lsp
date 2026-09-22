@@ -20,11 +20,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import {
-  CellExecutions,
-  type Drive,
-  type NotebookExecutions,
-} from "../../kernel/CellExecutions.ts";
+import * as CellExecutionsModule from "../../kernel/CellExecutions.ts";
 import { CellCommand } from "../../kernel/CellRunReducer.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
@@ -43,13 +39,16 @@ import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
 
 const TestNotebookRuntime = makeTestNotebookRuntime();
+const CellExecutions = CellExecutionsModule.Service;
+type Drive = CellExecutionsModule.Drive;
+type NotebookExecutions = CellExecutionsModule.NotebookExecutions;
 
 const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
 ) {
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.layer),
+    Layer.merge(CellExecutionsModule.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
