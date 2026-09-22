@@ -77,7 +77,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 - [x] `python/EnvironmentValidator.ts`
 - [x] `python/PythonExtension.ts`
-- [ ] `python/Uv.ts`
+- [x] `python/Uv.ts`
 
 ### Status and telemetry
 

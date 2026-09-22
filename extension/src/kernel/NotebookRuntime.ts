@@ -35,7 +35,7 @@ import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import {
   extractCellIdFromCellMessage,
   MarimoNotebookCell,
@@ -207,7 +207,7 @@ type RuntimeWorkRequirements =
   | NotebookRenderer.Service
   | OutputChannel.Service
   | PythonEnvInvalidation.Service
-  | Uv
+  | Uv.Service
   | NotebookVariables.Service
   | VsCode.Service;
 

@@ -8,7 +8,7 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import * as Config from "../../config/Config.ts";
 import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
-import { Uv, UvBin } from "../../python/Uv.ts";
+import * as Uv from "../../python/Uv.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../../types.ts";
 import type * as NotebookRuntime from "../NotebookRuntime.ts";
@@ -77,9 +77,9 @@ const withTestCtx = Effect.fn(function* (options: {
     }),
     // Cancellation happens before invoking uv; any Uv method call is a defect.
     // Layer.mock still requires the non-method properties.
-    Layer.mock(Uv, {
+    Layer.mock(Uv.Service, {
       bin: Effect.succeed(
-        UvBin.Bundled({
+        Uv.UvBin.Bundled({
           executable: "uv",
           version: Option.none(),
         }),

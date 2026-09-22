@@ -24,7 +24,7 @@ import * as VsCode from "../platform/VsCode.ts";
 import * as EnvironmentValidator from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import * as CellOutputProjections from "./CellOutputProjections.ts";
 import * as NotebookRuntime from "./NotebookRuntime.ts";
@@ -64,7 +64,7 @@ interface NotebookControllerHandle {
  */
 export const NotebookControllersLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const uv = yield* Uv;
+    const uv = yield* Uv.Service;
     const code = yield* VsCode.Service;
     const pyExt = yield* PythonExtension.Service;
     const notebooks = yield* NotebookRuntime.Service;

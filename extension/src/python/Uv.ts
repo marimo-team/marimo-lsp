@@ -59,77 +59,142 @@ const BUNDLED_UV_PATH = NodePath.join(
   resolvePlatformBinaryName("uv"),
 );
 
-export class UvExecutionError extends Data.TaggedError("UvExecutionError")<{
-  bin: UvBin;
-  command: ChildProcess.Command;
-  cause: PlatformError;
+export class ExecutionError extends Data.TaggedError("Uv.ExecutionError")<{
+  readonly bin: UvBin;
+  readonly command: ChildProcess.Command;
+  readonly cause: PlatformError;
 }> {}
 
-export class UvUnknownError extends Data.TaggedError("UvUnknownError")<{
-  command: ChildProcess.Command;
-  exitCode?: ChildProcessSpawner.ExitCode;
-  stderr: string;
+export class UnknownError extends Data.TaggedError("Uv.UnknownError")<{
+  readonly command: ChildProcess.Command;
+  readonly exitCode?: ChildProcessSpawner.ExitCode;
+  readonly stderr: string;
 }> {}
 
-class UvMissingPyProjectError extends Data.TaggedError(
-  "UvMissingPyProjectError",
+export class MissingPyProjectError extends Data.TaggedError(
+  "Uv.MissingPyProjectError",
 )<{
-  directory: string;
-  cause: UvUnknownError;
+  readonly directory: string;
+  readonly cause: UnknownError;
 }> {
-  static refine(directory: string, cause: UvUnknownError) {
+  static refine(directory: string, cause: UnknownError) {
     return Effect.fail(
       cause.stderr.includes(
         "error: No `pyproject.toml` found in current directory or any parent directory",
       )
-        ? new UvMissingPyProjectError({ directory, cause })
+        ? new MissingPyProjectError({ directory, cause })
         : cause,
     );
   }
 }
 
-class UvMissingPep723MetadataError extends Data.TaggedError(
-  "UvMissingPep723MetadataError",
+export class MissingPep723MetadataError extends Data.TaggedError(
+  "Uv.MissingPep723MetadataError",
 )<{
-  script: string;
-  cause: UvUnknownError;
+  readonly script: string;
+  readonly cause: UnknownError;
 }> {
-  static refine(script: string, cause: UvUnknownError) {
+  static refine(script: string, cause: UnknownError) {
     return Effect.fail(
       cause.stderr.includes("does not contain a PEP 723 metadata")
-        ? new UvMissingPep723MetadataError({ script, cause })
+        ? new MissingPep723MetadataError({ script, cause })
         : cause,
     );
   }
 }
 
-class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
-  cause: UvUnknownError;
+export class ResolutionError extends Data.TaggedError("Uv.ResolutionError")<{
+  readonly cause: UnknownError;
 }> {
-  static refine(cause: UvUnknownError) {
+  static refine(cause: UnknownError) {
     return Effect.fail(
       cause.stderr.includes("No solution found when resolving dependencies")
-        ? new UvResolutionError({ cause })
+        ? new ResolutionError({ cause })
         : cause,
     );
   }
 }
 
-export class Uv extends Context.Service<Uv>()("Uv", {
-  make: Effect.gen(function* () {
+export type Error =
+  | ExecutionError
+  | UnknownError
+  | MissingPyProjectError
+  | MissingPep723MetadataError
+  | ResolutionError;
+
+type CommandError = ExecutionError | UnknownError;
+
+export interface Output {
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface Interface {
+  readonly bin: Effect.Effect<UvBin>;
+  readonly getCacheDir: Effect.Effect<string, CommandError>;
+  readonly channel: Pick<vscode.OutputChannel, "name" | "show">;
+  readonly venv: (
+    path: string,
+    options?: { readonly python?: string; readonly clear?: true },
+  ) => Effect.Effect<void, CommandError>;
+  readonly currentDeps: (options: {
+    readonly script: string;
+  }) => Effect.Effect<
+    string,
+    CommandError | MissingPep723MetadataError | ResolutionError
+  >;
+  readonly init: (
+    path: string,
+    options?: { readonly python?: string },
+  ) => Effect.Effect<void, CommandError>;
+  readonly initScript: (options: {
+    readonly script: string;
+  }) => Effect.Effect<void, CommandError>;
+  readonly syncScript: (options: {
+    readonly script: string;
+  }) => Effect.Effect<
+    string,
+    CommandError | MissingPep723MetadataError | ResolutionError
+  >;
+  readonly addScript: (options: {
+    readonly script: string;
+    readonly packages: ReadonlyArray<string>;
+    readonly noSync?: boolean;
+  }) => Effect.Effect<Output, CommandError>;
+  readonly addProject: (options: {
+    readonly directory: string;
+    readonly packages: ReadonlyArray<string>;
+    readonly target?: ProjectDependencyTarget;
+  }) => Effect.Effect<
+    void,
+    CommandError | MissingPyProjectError | ResolutionError
+  >;
+  readonly pipInstall: (
+    packages: ReadonlyArray<string>,
+    options: { readonly venv: string },
+  ) => Effect.Effect<void, CommandError>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/Uv",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const config = yield* Config.Service;
     const telemetry = yield* Telemetry;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const scope = yield* Effect.scope;
-    const channel = yield* code.window.createOutputChannel("marimo (uv)");
+    const outputChannel = yield* code.window.createOutputChannel("marimo (uv)");
 
     // Resolve uv on first use. WASM language-server startup does not need uv,
     // and the universal extension intentionally does not bundle the binary.
     const uvBinary = yield* Effect.cached(
       Effect.gen(function* () {
         const bin = yield* findUvBin(yield* config.uv.path).pipe(
-          Effect.catchTag("UvExecutionError", (error) =>
+          Effect.catchTag("Uv.ExecutionError", (error) =>
             handleUvNotInstalled(error, code, telemetry),
           ),
         );
@@ -159,133 +224,140 @@ export class Uv extends Context.Service<Uv>()("Uv", {
 
     const uv = (options: Parameters<ReturnType<typeof createUv>>[0]) =>
       Effect.flatMap(uvBinary, (bin) =>
-        createUv(bin, spawner, channel)(options),
+        createUv(bin, spawner, outputChannel)(options),
       );
 
-    return {
-      bin: uvBinary,
-      getCacheDir: Effect.map(uv({ args: ["cache", "dir"] }), (e) =>
-        e.stdout.trim(),
-      ),
-      channel: {
-        name: channel.name,
-        show: channel.show.bind(channel),
-      },
-      venv(path: string, options: { python?: string; clear?: true } = {}) {
-        const args = ["venv", path];
-        if (options.python) {
-          args.push("--python", options.python);
-        }
-        if (options.clear) {
-          args.push("--clear");
-        }
-        return Effect.andThen(uv({ args }), Effect.void);
-      },
-      currentDeps(options: { script: string }) {
-        return uv({
-          args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
-        }).pipe(
-          Effect.catchTag(
-            "UvUnknownError",
-            UvResolutionError.refine.bind(null),
-          ),
-          Effect.catchTag(
-            "UvUnknownError",
-            UvMissingPep723MetadataError.refine.bind(null, options.script),
-          ),
-          Effect.map((e) => e.stdout),
-        );
-      },
-      init(path: string, options: { python?: string } = {}) {
-        const args = ["init", path];
-        if (options.python) {
-          args.push("--python", options.python);
-        }
-        return Effect.andThen(uv({ args }), Effect.void);
-      },
-      initScript({ script }: { script: string }) {
-        return Effect.andThen(
-          uv({ args: ["init", "--script", script] }),
-          Effect.void,
-        );
-      },
-      syncScript(options: { script: string }) {
-        return Effect.map(
-          uv({ args: ["sync", "--script", options.script] }),
-          ({ stderr }) => resolveScriptEnvironmentPath(stderr),
-        ).pipe(
-          Effect.catchTag(
-            "UvUnknownError",
-            UvMissingPep723MetadataError.refine.bind(null, options.script),
-          ),
-          Effect.catchTag(
-            "UvUnknownError",
-            UvResolutionError.refine.bind(null),
-          ),
-        );
-      },
-      addScript(options: {
-        script: string;
-        packages: ReadonlyArray<string>;
-        noSync?: boolean;
-      }) {
-        const args = ["add", ...options.packages, "--script", options.script];
-        if (options.noSync) {
-          args.push("--no-sync");
-        }
-        return uv({ args });
-      },
-      addProject(options: {
-        directory: string;
-        packages: ReadonlyArray<string>;
-        target?: ProjectDependencyTarget;
-      }) {
-        const args = ["add"];
-        switch (options.target?._tag) {
-          case "Group":
-            args.push("--group", options.target.name);
-            break;
-          case "Optional":
-            args.push("--optional", options.target.name);
-            break;
-        }
-        args.push(...options.packages, "--directory", options.directory);
-        return uv({ args }).pipe(
-          Effect.catchTag(
-            "UvUnknownError",
-            UvResolutionError.refine.bind(null),
-          ),
-          Effect.catchTag(
-            "UvUnknownError",
-            UvMissingPyProjectError.refine.bind(null, options.directory),
-          ),
-          Effect.andThen(Effect.void),
-        );
-      },
-      pipInstall(
-        packages: ReadonlyArray<string>,
-        options: {
-          readonly venv: string;
-        },
-      ) {
-        const args = ["pip", "install"];
-        return Effect.andThen(
-          uv({
-            args: [...args, ...packages],
-            env: {
-              VIRTUAL_ENV: options.venv,
-            },
-          }),
-          Effect.void,
-        );
-      },
+    const venv = Effect.fn("Uv.venv")(function* (
+      path: string,
+      options: { readonly python?: string; readonly clear?: true } = {},
+    ) {
+      const args = ["venv", path];
+      if (options.python) {
+        args.push("--python", options.python);
+      }
+      if (options.clear) {
+        args.push("--clear");
+      }
+      yield* uv({ args });
+    });
+
+    const currentDeps = Effect.fn("Uv.currentDeps")(function* (options: {
+      readonly script: string;
+    }) {
+      return yield* uv({
+        args: ["tree", "--script", options.script, "-d", "0", "--quiet"],
+      }).pipe(
+        Effect.catchTag("Uv.UnknownError", ResolutionError.refine.bind(null)),
+        Effect.catchTag(
+          "Uv.UnknownError",
+          MissingPep723MetadataError.refine.bind(null, options.script),
+        ),
+        Effect.map((e) => e.stdout),
+      );
+    });
+
+    const init = Effect.fn("Uv.init")(function* (
+      path: string,
+      options: { readonly python?: string } = {},
+    ) {
+      const args = ["init", path];
+      if (options.python) {
+        args.push("--python", options.python);
+      }
+      yield* uv({ args });
+    });
+
+    const initScript = Effect.fn("Uv.initScript")(function* (options: {
+      readonly script: string;
+    }) {
+      yield* uv({ args: ["init", "--script", options.script] });
+    });
+
+    const syncScript = Effect.fn("Uv.syncScript")(function* (options: {
+      readonly script: string;
+    }) {
+      return yield* Effect.map(
+        uv({ args: ["sync", "--script", options.script] }),
+        ({ stderr }) => resolveScriptEnvironmentPath(stderr),
+      ).pipe(
+        Effect.catchTag(
+          "Uv.UnknownError",
+          MissingPep723MetadataError.refine.bind(null, options.script),
+        ),
+        Effect.catchTag("Uv.UnknownError", ResolutionError.refine.bind(null)),
+      );
+    });
+
+    const addScript = Effect.fn("Uv.addScript")(function* (options: {
+      readonly script: string;
+      readonly packages: ReadonlyArray<string>;
+      readonly noSync?: boolean;
+    }) {
+      const args = ["add", ...options.packages, "--script", options.script];
+      if (options.noSync) {
+        args.push("--no-sync");
+      }
+      return yield* uv({ args });
+    });
+
+    const addProject = Effect.fn("Uv.addProject")(function* (options: {
+      readonly directory: string;
+      readonly packages: ReadonlyArray<string>;
+      readonly target?: ProjectDependencyTarget;
+    }) {
+      const args = ["add"];
+      switch (options.target?._tag) {
+        case "Group":
+          args.push("--group", options.target.name);
+          break;
+        case "Optional":
+          args.push("--optional", options.target.name);
+          break;
+      }
+      args.push(...options.packages, "--directory", options.directory);
+      yield* uv({ args }).pipe(
+        Effect.catchTag("Uv.UnknownError", ResolutionError.refine.bind(null)),
+        Effect.catchTag(
+          "Uv.UnknownError",
+          MissingPyProjectError.refine.bind(null, options.directory),
+        ),
+      );
+    });
+
+    const pipInstall = Effect.fn("Uv.pipInstall")(function* (
+      packages: ReadonlyArray<string>,
+      options: { readonly venv: string },
+    ) {
+      yield* uv({
+        args: ["pip", "install", ...packages],
+        env: { VIRTUAL_ENV: options.venv },
+      });
+    });
+
+    const bin = uvBinary;
+    const getCacheDir = Effect.map(uv({ args: ["cache", "dir"] }), (output) =>
+      output.stdout.trim(),
+    );
+    const channel = {
+      name: outputChannel.name,
+      show: outputChannel.show.bind(outputChannel),
     };
+
+    return Service.of({
+      bin,
+      getCacheDir,
+      channel,
+      venv,
+      currentDeps,
+      init,
+      initScript,
+      syncScript,
+      addScript,
+      addProject,
+      pipInstall,
+    });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([NodeServices.layer, Config.layer]),
-  );
-}
+).pipe(Layer.provide([NodeServices.layer, Config.layer]));
 
 function createUv(
   bin: UvBin,
@@ -324,11 +396,11 @@ function createUv(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.catchTag(
         "PlatformError",
-        (cause) => new UvExecutionError({ bin, command, cause }),
+        (cause) => new ExecutionError({ bin, command, cause }),
       ),
     );
     if (exitCode !== 0) {
-      return yield* new UvUnknownError({ command, exitCode, stderr });
+      return yield* new UnknownError({ command, exitCode, stderr });
     }
     return { stdout, stderr };
   });
@@ -482,7 +554,7 @@ const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
     Effect.map(Schema.decodeOption(Schema.fromJsonString(VersionInfo))),
     Effect.catchTag(
       "PlatformError",
-      (cause) => new UvExecutionError({ bin, command, cause }),
+      (cause) => new ExecutionError({ bin, command, cause }),
     ),
   );
 });
@@ -492,7 +564,7 @@ const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
  * Aborts the operation that needs uv after user interaction.
  */
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
-  error: UvExecutionError,
+  error: ExecutionError,
   code: VsCode.Interface,
   telemetry: Context.Service.Shape<typeof Telemetry>,
 ) {

@@ -12,7 +12,7 @@ import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
 import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
-import { Uv, UvBin } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 
 /**
  * Provides health check and diagnostic information for the marimo extension.
@@ -21,7 +21,7 @@ export class HealthService extends Context.Service<HealthService>()(
   "HealthService",
   {
     make: Effect.gen(function* () {
-      const uv = yield* Uv;
+      const uv = yield* Uv.Service;
       const code = yield* VsCode.Service;
       const config = yield* Config.Service;
       const marimo = yield* MarimoClient.Service;
@@ -197,7 +197,7 @@ export class HealthService extends Context.Service<HealthService>()(
           lines.push(`\tNode version: ${NodeProcess.version} `);
           lines.push("");
 
-          if (Option.isSome(uvBin) && UvBin.$is("Default")(uvBin.value)) {
+          if (Option.isSome(uvBin) && Uv.UvBin.$is("Default")(uvBin.value)) {
             // If using default UV (i.e., "uv"), show PATH for debugging
 
             // PATH (formatted for readability)
@@ -270,7 +270,7 @@ export function formatMarimoLspDiagnostics({
   uvBin,
 }: {
   server: Config.MarimoLspServer;
-  uvBin: Option.Option<UvBin>;
+  uvBin: Option.Option<Uv.UvBin>;
 }): readonly string[] {
   return Config.MarimoLspServer.$match(server, {
     Wasm: () => ["\tMode: WASM (bundled Pyodide)"],
@@ -283,7 +283,7 @@ export function formatMarimoLspDiagnostics({
         onNone: () => ["\tMode: Native (uv)", "\tUV: Not found ✗"],
         onSome: (bin) => {
           const lines = ["\tMode: Native (uv)"];
-          UvBin.$match(bin, {
+          Uv.UvBin.$match(bin, {
             Bundled: ({ executable }) =>
               lines.push(`\tUV Bin: Bundled (${executable})`),
             Default: ({ executable }) =>

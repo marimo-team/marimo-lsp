@@ -33,7 +33,7 @@ import * as Storage from "../platform/Storage.ts";
 import type * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type * as PythonExtension from "../python/PythonExtension.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
 import { StatusBar } from "../statusbar/StatusBar.ts";

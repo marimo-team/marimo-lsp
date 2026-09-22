@@ -26,7 +26,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import type {
@@ -231,7 +231,7 @@ export const layer = Layer.effect(
         }),
       ),
     );
-    const uv = yield* Uv;
+    const uv = yield* Uv.Service;
     const selection = yield* selectMarimoLspExecutable({
       server: lspServer,
       resolveUvBinary: Effect.map(uv.bin, ({ executable }) => executable),

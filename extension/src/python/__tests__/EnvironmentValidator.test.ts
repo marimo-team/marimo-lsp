@@ -12,7 +12,7 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import * as EnvironmentValidator from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
 import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
-import { Uv } from "../../python/Uv.ts";
+import * as Uv from "../../python/Uv.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 
@@ -58,7 +58,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should fail with missing marimo",
     Effect.fn(function* () {
-      const uv = yield* Uv;
+      const uv = yield* Uv.Service;
       const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
@@ -96,7 +96,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect.skipIf(isWindows)(
     "Should fail with outdated marimo",
     Effect.fn(function* () {
-      const uv = yield* Uv;
+      const uv = yield* Uv.Service;
       const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
@@ -136,7 +136,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should succeed with marimo installed",
     Effect.fn(function* () {
-      const uv = yield* Uv;
+      const uv = yield* Uv.Service;
       const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 

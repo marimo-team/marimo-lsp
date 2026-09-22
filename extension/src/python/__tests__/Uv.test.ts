@@ -7,7 +7,7 @@ import { Context, Effect, Layer, Result } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { resolveScriptEnvironmentPath, Uv } from "../../python/Uv.ts";
+import * as Uv from "../../python/Uv.ts";
 import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
 
 const python = "3.13";
@@ -43,7 +43,7 @@ describe("Uv", () => {
     it.effect(
       "should create a new python venv",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
         const target = NodePath.join(tmpdir.path, ".venv");
         yield* uv.venv(target, { python });
@@ -57,13 +57,13 @@ describe("Uv", () => {
     it.effect(
       "should fail `uv add` without pyproject.toml",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
         const result = yield* Effect.result(
           uv.addProject({ directory: tmpdir.path, packages: ["httpx"] }),
         );
         assert(Result.isFailure(result), "Expected failure");
-        assert.strictEqual(result.failure._tag, "UvMissingPyProjectError");
+        assert.strictEqual(result.failure._tag, "Uv.MissingPyProjectError");
       }),
       { timeout },
     );
@@ -73,7 +73,7 @@ describe("Uv", () => {
     it.effect(
       "should preserve custom dependency-group placement with `uv add`",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
         yield* uv.init(tmpdir.path, { python });
 
@@ -99,7 +99,7 @@ describe("Uv", () => {
     it.effect(
       "should preserve optional-dependency placement with `uv add`",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
         yield* uv.init(tmpdir.path, { python });
 
@@ -125,7 +125,7 @@ describe("Uv", () => {
     it.effect(
       "should `uv pip install` into venv",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
         const venv = NodePath.join(tmpdir.path, ".venv");
         yield* uv.venv(venv, { python });
@@ -150,7 +150,7 @@ describe("Uv", () => {
     it.effect(
       "should `uv init` a new project",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
 
         const target = NodePath.join(tmpdir.path, "foo");
@@ -165,9 +165,9 @@ describe("Uv", () => {
 
   it.layer(Layer.fresh(UvLive))((it) => {
     it.effect(
-      "should fail with UvResolutionError on conflicting dependencies",
+      "should fail with ResolutionError on conflicting dependencies",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
 
         // Create a script with conflicting dependencies
@@ -189,7 +189,7 @@ print("This should fail to sync")
         const result = yield* Effect.result(uv.syncScript({ script }));
 
         assert(Result.isFailure(result), "Expected failure");
-        assert.strictEqual(result.failure._tag, "UvResolutionError");
+        assert.strictEqual(result.failure._tag, "Uv.ResolutionError");
       }),
       { timeout },
     );
@@ -197,9 +197,9 @@ print("This should fail to sync")
 
   it.layer(Layer.fresh(UvLive))((it) => {
     it.effect(
-      "should fail with UvMissingPep723MetadataError when script has no metadata",
+      "should fail with MissingPep723MetadataError when script has no metadata",
       Effect.fn(function* () {
-        const uv = yield* Uv;
+        const uv = yield* Uv.Service;
         const tmpdir = yield* TmpDir;
 
         // Create a script without PEP 723 metadata
@@ -216,14 +216,17 @@ print("This script has no PEP 723 metadata")
         const result = yield* Effect.result(uv.currentDeps({ script }));
 
         assert(Result.isFailure(result), "Expected failure");
-        assert.strictEqual(result.failure._tag, "UvMissingPep723MetadataError");
+        assert.strictEqual(
+          result.failure._tag,
+          "Uv.MissingPep723MetadataError",
+        );
       }),
       { timeout },
     );
   });
 
   it("should resolve relative script environment paths", () => {
-    const envPath = resolveScriptEnvironmentPath(
+    const envPath = Uv.resolveScriptEnvironmentPath(
       "Using script environment at: .cache/uv/environments-v2/test",
     );
 

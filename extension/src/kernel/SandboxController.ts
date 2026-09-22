@@ -15,7 +15,7 @@ import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import * as NotebookRuntime from "./NotebookRuntime.ts";
@@ -24,7 +24,7 @@ import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
-    const uv = yield* Uv;
+    const uv = yield* Uv.Service;
     const code = yield* VsCode.Service;
     const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
@@ -64,14 +64,14 @@ export const createSandboxController = Effect.fn("createSandboxController")(
         if (requirements.length > 0) {
           yield* uvAddScriptSafe(requirements, notebook).pipe(
             Effect.provideService(VsCode.Service, code),
-            Effect.provideService(Uv, uv),
+            Effect.provideService(Uv.Service, uv),
           );
         }
 
         // always ensure the env is up to date
         const venv = yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
           // Should be added by findRequirements or uvAddScriptSafe
-          Effect.catchTag("UvMissingPep723MetadataError", () =>
+          Effect.catchTag("Uv.MissingPep723MetadataError", () =>
             Effect.die("Expected PEP 723 metadata to be present"),
           ),
         );
@@ -108,7 +108,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
           // resolveExecutable rejects unsaved notebooks (UnsavedNotebookError),
           // handled below with an interactive save prompt.
           const executable = yield* resolveExecutable(notebook).pipe(
-            Effect.provideService(Uv, uv),
+            Effect.provideService(Uv.Service, uv),
           );
 
           const documentHandle = yield* notebooks.forDocument(rawNotebook);
@@ -139,19 +139,19 @@ export const createSandboxController = Effect.fn("createSandboxController")(
           ),
           // Log everything else
           Effect.tapCause(Effect.logError),
-          Effect.catchTag("UvExecutionError", () =>
+          Effect.catchTag("Uv.ExecutionError", () =>
             showErrorAndPromptLogs(
               "Failed to execute uv. Ensure uv is installed and accessible in your PATH.",
               { channel: uv.channel },
             ),
           ),
-          Effect.catchTag("UvUnknownError", () =>
+          Effect.catchTag("Uv.UnknownError", () =>
             showErrorAndPromptLogs(
               "uv command failed. Check the logs for details.",
               { channel: uv.channel },
             ),
           ),
-          Effect.catchTag("UvResolutionError", () =>
+          Effect.catchTag("Uv.ResolutionError", () =>
             showErrorAndPromptLogs(
               "Dependency conflict. Your notebook has conflicting package version requirements.",
               { channel: uv.channel },
@@ -227,7 +227,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
       id: controller.id,
       resolveExecutable: (notebook: MarimoNotebookDocument) =>
         resolveExecutable(notebook).pipe(
-          Effect.provideService(Uv, uv),
+          Effect.provideService(Uv.Service, uv),
           Effect.mapError((error) =>
             error._tag === "UnsavedNotebookError"
               ? error
@@ -261,7 +261,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
 
 const findRequirements = Effect.fn(
   function* (notebook: MarimoNotebookDocument) {
-    const uv = yield* Uv;
+    const uv = yield* Uv.Service;
     const packages = yield* uv.currentDeps({
       script: notebook.uri.fsPath,
     });
@@ -295,7 +295,7 @@ const findRequirements = Effect.fn(
   },
   flow(
     Effect.catchTag(
-      "UvMissingPep723MetadataError",
+      "Uv.MissingPep723MetadataError",
       Effect.fn(function* () {
         yield* Effect.logDebug("No PEP 723 metadata.");
         return ["marimo"];

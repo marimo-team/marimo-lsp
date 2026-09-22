@@ -14,7 +14,7 @@ import * as Constants from "../platform/Constants.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as EnvironmentValidator from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
-import { Uv } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../schemas/Models.gen.ts";
 import type { Drive } from "./CellExecutions.ts";
@@ -32,7 +32,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     label: string;
     env: py.Environment;
   }) {
-    const uv = yield* Uv;
+    const uv = yield* Uv.Service;
     const code = yield* VsCode.Service;
     const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
@@ -199,7 +199,7 @@ export const createPythonController = Effect.fn("createPythonController")(
                     venvPath: venv.value,
                   }).pipe(
                     Effect.provideService(VsCode.Service, code),
-                    Effect.provideService(Uv, uv),
+                    Effect.provideService(Uv.Service, uv),
                   );
                 } else {
                   const msg =

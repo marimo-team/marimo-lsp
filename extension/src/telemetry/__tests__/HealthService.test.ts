@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { Option } from "effect";
 
 import { MarimoLspServer } from "../../config/Config.ts";
-import { UvBin } from "../../python/Uv.ts";
+import * as Uv from "../../python/Uv.ts";
 import { formatMarimoLspDiagnostics } from "../HealthService.ts";
 
 it("reports the bundled WASM runtime without uv diagnostics", () => {
@@ -19,7 +19,7 @@ it("reports the uv-provisioned native runtime", () => {
     formatMarimoLspDiagnostics({
       server: MarimoLspServer.Python(),
       uvBin: Option.some(
-        UvBin.Bundled({
+        Uv.UvBin.Bundled({
           executable: "/extension/bundled/uv",
           version: Option.none(),
         }),
