@@ -19,7 +19,7 @@ import type {
   ScriptSource,
   VenvSource,
 } from "../schemas/Models.gen.ts";
-import { NotebookSession } from "./NotebookSession.ts";
+import * as NotebookSession from "./NotebookSession.ts";
 
 export type State = Data.TaggedEnum<{
   Idle: {};
@@ -54,7 +54,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const marimo = yield* MarimoClient.Service;
     const notebooks = yield* NotebookRuntime.Service;
-    const session = yield* NotebookSession;
+    const session = yield* NotebookSession.Service;
     const generation = yield* Ref.make(0);
     const state = yield* SubscriptionRef.make<State>(State.Idle());
 

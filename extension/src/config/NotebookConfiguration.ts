@@ -14,7 +14,7 @@ import {
 } from "effect";
 
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { NotebookSession } from "../notebook/NotebookSession.ts";
+import * as NotebookSession from "../notebook/NotebookSession.ts";
 import type { MarimoConfig } from "../types.ts";
 
 const cacheKey = "configuration" as const;
@@ -42,7 +42,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const marimo = yield* MarimoClient.Service;
-    const session = yield* NotebookSession;
+    const session = yield* NotebookSession.Service;
     const current = yield* SubscriptionRef.make(Option.none<MarimoConfig>());
     const generation = yield* Ref.make(0);
     const mutations = Semaphore.makeUnsafe(1);

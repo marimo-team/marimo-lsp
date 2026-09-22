@@ -16,7 +16,7 @@ import {
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import * as NotebookDependencies from "./NotebookDependencies.ts";
 import * as NotebookDocumentSessions from "./NotebookDocumentSessions.ts";
-import { NotebookSession } from "./NotebookSession.ts";
+import * as NotebookSession from "./NotebookSession.ts";
 
 /**
  * Compares sessions by their opaque identity without structurally hashing the
@@ -38,7 +38,7 @@ class NotebookSessionKey implements Equal.Equal {
 }
 
 const layerFor = (key: NotebookSessionKey) => {
-  const sessionLayer = Layer.succeed(NotebookSession, key.session);
+  const sessionLayer = Layer.succeed(NotebookSession.Service, key.session);
   return Layer.mergeAll(
     sessionLayer,
     NotebookConfiguration.layer.pipe(Layer.provide(sessionLayer)),
@@ -47,7 +47,7 @@ const layerFor = (key: NotebookSessionKey) => {
 };
 
 type SessionServices =
-  | NotebookSession
+  | NotebookSession.Service
   | NotebookConfiguration.Service
   | NotebookDependencies.Service;
 

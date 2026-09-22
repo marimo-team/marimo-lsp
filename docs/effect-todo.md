@@ -90,7 +90,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 Review these tags for explicit interfaces, `@marimo/` identities, and namespace
 imports. They do not need construction layers.
 
-- [ ] `notebook/NotebookSession.ts`
+- [x] `notebook/NotebookSession.ts`
 - [x] `platform/ExtensionContext.ts`
 
 ## Activation layers
