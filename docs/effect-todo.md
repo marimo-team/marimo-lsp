@@ -100,7 +100,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 `Live` suffixes.
 
 - [x] `config/ConfigContextManager.ts`
-- [ ] `features/AutoExport.ts`
+- [x] `features/AutoExport.ts`
 - [ ] `features/CellInputVisibilitySync.ts`
 - [ ] `features/CellMetadataBindings.ts`
 - [ ] `features/CellStatusBarProvider.ts`

@@ -1,18 +1,18 @@
 import { Effect, Option } from "effect";
 
-import type { AutoExportFormat } from "../features/AutoExport.ts";
+import type * as AutoExport from "../features/AutoExport.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { ManagedAppOptions } from "../schemas/Models.gen.ts";
 
 const FORMATS = ["html", "ipynb", "markdown"] as const;
 
-const isManagedFormat = (format: string): format is AutoExportFormat =>
+const isManagedFormat = (format: string): format is AutoExport.Format =>
   format === "html" || format === "ipynb" || format === "markdown";
 
 export function mergeAutoDownloadFormats(
   current: ManagedAppOptions["autoDownload"],
-  selected: ReadonlyArray<AutoExportFormat>,
+  selected: ReadonlyArray<AutoExport.Format>,
 ): ManagedAppOptions["autoDownload"] {
   const retained = current.filter(
     (format) => !isManagedFormat(format) || selected.includes(format),

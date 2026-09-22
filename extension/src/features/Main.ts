@@ -39,7 +39,7 @@ import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentSt
 import * as StatusBar from "../statusbar/StatusBar.ts";
 import * as HealthService from "../telemetry/HealthService.ts";
 import type * as Telemetry from "../telemetry/Telemetry.ts";
-import { AutoExportLive } from "./AutoExport.ts";
+import * as AutoExport from "./AutoExport.ts";
 import { CellInputVisibilitySyncLive } from "./CellInputVisibilitySync.ts";
 import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
 import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
@@ -70,7 +70,7 @@ const MainLive = Layer.empty
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProviderLive),
     Layer.merge(CellMetadataBindingsLive),
-    Layer.merge(AutoExportLive),
+    Layer.merge(AutoExport.layer),
     Layer.merge(ReloadOnConfigChangeLive),
     Layer.merge(ConfigContextManager.layer),
     Layer.merge(ThemeSyncLive),

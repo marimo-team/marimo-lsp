@@ -20,15 +20,15 @@ import {
   type NotebookId,
 } from "../schemas/MarimoNotebookDocument.ts";
 
-export const AUTO_EXPORT_INTERVAL = "5 seconds";
+export const interval = "5 seconds";
 
-export type AutoExportFormat = "html" | "ipynb" | "markdown";
+export type Format = "html" | "ipynb" | "markdown";
 type AutoExportExtension = "html" | "ipynb" | "md";
 
 interface AutoExportState {
   readonly incarnation: object;
   readonly generation: number;
-  readonly exported: Readonly<Record<AutoExportFormat, number>>;
+  readonly exported: Readonly<Record<Format, number>>;
 }
 
 const initialState = (): AutoExportState => ({
@@ -37,7 +37,7 @@ const initialState = (): AutoExportState => ({
   exported: { html: -1, ipynb: -1, markdown: -1 },
 });
 
-export function autoExportUri(
+export function outputUri(
   code: VsCode.Interface,
   notebook: MarimoNotebookDocument,
   extension: AutoExportExtension,
@@ -65,7 +65,7 @@ function marimoNotebooks(editors: ReadonlyArray<vscode.NotebookEditor>) {
   ];
 }
 
-export const AutoExportLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const marimo = yield* MarimoClient.Service;
@@ -95,7 +95,7 @@ export const AutoExportLive = Layer.effectDiscard(
 
     const markExported = (
       notebookId: NotebookId,
-      format: AutoExportFormat,
+      format: Format,
       exportedState: AutoExportState,
     ) =>
       Ref.update(states, (current) =>
@@ -160,7 +160,7 @@ export const AutoExportLive = Layer.effectDiscard(
     );
 
     yield* Effect.forkScoped(
-      Stream.tick(AUTO_EXPORT_INTERVAL).pipe(
+      Stream.tick(interval).pipe(
         Stream.runForEach(() =>
           Effect.gen(function* () {
             const editors = yield* code.window.getVisibleNotebookEditors;
@@ -232,10 +232,7 @@ export const AutoExportLive = Layer.effectDiscard(
       );
     }
 
-    function exportFormat(
-      notebook: MarimoNotebookDocument,
-      format: AutoExportFormat,
-    ) {
+    function exportFormat(notebook: MarimoNotebookDocument, format: Format) {
       const content = (() => {
         if (format === "html") {
           return marimo.exportHtml({
@@ -257,7 +254,7 @@ export const AutoExportLive = Layer.effectDiscard(
       })();
 
       const extension = format === "markdown" ? "md" : format;
-      const uri = autoExportUri(code, notebook, extension);
+      const uri = outputUri(code, notebook, extension);
       return content.pipe(
         Effect.andThen(Schema.decodeUnknownEffect(Schema.String)),
         Effect.flatMap((value) =>
@@ -274,5 +271,5 @@ export const AutoExportLive = Layer.effectDiscard(
         ),
       );
     }
-  }),
+  }).pipe(Effect.withSpan("AutoExport.layer")),
 );
