@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import { Cause, Effect, Option, Result } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import { ExtensionContext } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
@@ -25,7 +25,7 @@ const TUTORIALS = [
 const openTutorial = Effect.fn("command.openTutorial")(function* () {
   const code = yield* VsCode;
   const context = yield* ExtensionContext;
-  const serializer = yield* NotebookSerializer;
+  const serializer = yield* NotebookSerializer.Service;
   const telemetry = yield* Telemetry;
   const selection = yield* code.window.showQuickPickItems(
     TUTORIALS.map(([label, filename, icon]) => ({

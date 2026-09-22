@@ -17,7 +17,7 @@ import type * as vscode from "vscode";
 
 import * as Config from "../config/Config.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";

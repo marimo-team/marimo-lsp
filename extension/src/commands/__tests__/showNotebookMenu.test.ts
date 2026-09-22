@@ -6,7 +6,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { GitHubClient } from "../../platform/GitHubClient.ts";
@@ -44,8 +44,8 @@ const runtimeLayer = makeTestNotebookRuntime({
 });
 
 const serializerLayer = Layer.succeed(
-  NotebookSerializer,
-  NotebookSerializer.of({
+  NotebookSerializer.Service,
+  NotebookSerializer.Service.of({
     notebookType: NOTEBOOK_TYPE,
     serializeEffect: () => Effect.die("not implemented"),
     deserializeEffect: () => Effect.die("not implemented"),

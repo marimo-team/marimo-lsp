@@ -18,10 +18,7 @@ import { TestMarimoClientProcess } from "../../__mocks__/TestMarimoClient.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  NotebookSerializer,
-  NotebookSourceError,
-} from "../../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import { Constants } from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
@@ -41,7 +38,7 @@ it.effect(
     );
 
     const exit = yield* Effect.gen(function* () {
-      const serializer = yield* NotebookSerializer;
+      const serializer = yield* NotebookSerializer.Service;
       const deserialize = yield* Effect.forkChild(
         serializer
           .deserializeEffect(new TextEncoder().encode("app = marimo.App()"))
@@ -70,7 +67,7 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      yield* NotebookSerializer;
+      yield* NotebookSerializer.Service;
       const registrations = Array.from(yield* Ref.get(vscode.serializers));
       const registration = registrations[0];
       assert.isDefined(registration);
@@ -117,7 +114,7 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      yield* NotebookSerializer;
+      yield* NotebookSerializer.Service;
       const registrations = Array.from(yield* Ref.get(vscode.serializers));
       const registration = registrations[0];
       assert.isDefined(registration);
@@ -160,7 +157,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "rejects invalid owned metadata instead of serializing defaults",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const invalidCell = yield* Effect.result(
           serializer.serializeEffect({
             cells: [
@@ -189,7 +186,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "serializes notebook cells to marimo format",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
             {
@@ -235,7 +232,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "serializes markdown notebook cells to marimo format",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
             {
@@ -301,7 +298,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
       Effect.gen(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
             {
@@ -323,7 +320,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "preserves an explicit hide_code=false for markdown",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
             {
@@ -346,7 +343,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "rejects a present null notebook metadata namespace",
       Effect.fn(function* () {
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const result = yield* Effect.result(
           serializer.serializeEffect({
             cells: [],
@@ -361,7 +358,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "returns a typed source error for non-marimo Python",
       Effect.fn(function* () {
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const result = yield* Effect.result(
           serializer.deserializeEffect(
             new TextEncoder().encode("print('hello')\n"),
@@ -369,7 +366,9 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
         );
 
         assert(Result.isFailure(result));
-        assert(result.failure instanceof NotebookSourceError);
+        assert(
+          result.failure instanceof NotebookSerializer.NotebookSourceError,
+        );
         expect(result.failure.failure).toEqual({
           kind: "convertible",
         });
@@ -380,7 +379,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       "deserializes mo.md() without f-strings to markdown cells",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 
 __generated_with = "0.9.0"
@@ -438,7 +437,7 @@ if __name__ == "__main__":
       "keeps mo.md() with f-strings as Python cells",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 
 __generated_with = "0.9.0"
@@ -484,7 +483,7 @@ if __name__ == "__main__":
       "round-trip markdown cells maintain mo.md() format",
       Effect.fn(function* () {
         const { LanguageId } = yield* Constants;
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 
 __generated_with = "0.9.0"
@@ -537,7 +536,7 @@ if __name__ == "__main__":
       ["notebook with ellipsis", "with_ellipsis.txt"],
     ] as const)("identity: %s", ([_, filename]) => {
       return Effect.gen(function* () {
-        const serializer = yield* NotebookSerializer;
+        const serializer = yield* NotebookSerializer.Service;
         const source = yield* Effect.tryPromise(() =>
           NodeFs.promises.readFile(
             new URL(`../../__mocks__/notebooks/${filename}`, import.meta.url),

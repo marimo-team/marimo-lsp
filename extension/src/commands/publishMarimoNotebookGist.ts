@@ -4,7 +4,7 @@ import { Cause, Effect, flow, Option, Result, Schema } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -16,7 +16,7 @@ export const publishMarimoNotebookGist = Effect.fn(
     const code = yield* VsCode;
     const gh = yield* GitHubClient;
     const marimo = yield* MarimoClient.Service;
-    const serializer = yield* NotebookSerializer;
+    const serializer = yield* NotebookSerializer.Service;
 
     const choice = yield* code.window.showQuickPick(["Public", "Secret"], {
       placeHolder: "Gist visibility",

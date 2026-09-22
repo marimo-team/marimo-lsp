@@ -47,7 +47,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `notebook/NotebookDependencies.ts`
 - [x] `notebook/NotebookDocumentSessions.ts`
 - [x] `notebook/NotebookEditorRegistry.ts`
-- [ ] `notebook/NotebookSerializer.ts`
+- [x] `notebook/NotebookSerializer.ts`
 - [ ] `notebook/NotebookSessionResources.ts`
 
 ### Panels

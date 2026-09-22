@@ -13,7 +13,7 @@ import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
