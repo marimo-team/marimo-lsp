@@ -30,7 +30,7 @@ import { GitHubClient } from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
 import type { VsCode } from "../platform/VsCode.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
+import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";

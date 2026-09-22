@@ -41,7 +41,7 @@ import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
+import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
 import {
   extractCellIdFromCellMessage,
@@ -217,7 +217,7 @@ type RuntimeWorkRequirements =
   | NotebookDocumentSessions
   | NotebookRenderer
   | OutputChannel.Service
-  | PythonEnvInvalidation
+  | PythonEnvInvalidation.Service
   | Uv
   | NotebookVariables
   | VsCode;

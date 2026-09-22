@@ -11,7 +11,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { EnvironmentValidator } from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
-import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
+import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
 import { Uv } from "../../python/Uv.ts";
 
 const isWindows = NodeProcess.platform === "win32";
@@ -380,7 +380,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
       "should re-validate after a PythonEnvInvalidation event",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator;
-        const invalidation = yield* PythonEnvInvalidation;
+        const invalidation = yield* PythonEnvInvalidation.Service;
         const tmpdir = yield* TempDir;
         const countFile = NodePath.join(tmpdir.path, "invalidation-count");
         const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);

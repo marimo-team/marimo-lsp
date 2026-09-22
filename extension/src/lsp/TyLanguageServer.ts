@@ -25,7 +25,7 @@ import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { createStorageKey, Storage } from "../platform/Storage.ts";
 import { VsCode } from "../platform/VsCode.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
+import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
@@ -94,7 +94,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
   {
     make: Effect.gen(function* () {
       const pyExt = yield* PythonExtension;
-      const envInvalidation = yield* PythonEnvInvalidation;
+      const envInvalidation = yield* PythonEnvInvalidation.Service;
       const telemetry = yield* Effect.serviceOption(Telemetry);
       const code = yield* VsCode;
       const notifyMissingTy = yield* makeTyMissingNotifier();

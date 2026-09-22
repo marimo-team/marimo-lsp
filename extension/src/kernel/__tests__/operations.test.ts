@@ -7,7 +7,7 @@ import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { Config } from "../../config/Config.ts";
-import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
+import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
 import { Uv, UvBin } from "../../python/Uv.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../../types.ts";
@@ -70,7 +70,7 @@ const withTestCtx = Effect.fn(function* (options: {
   const layer = Layer.mergeAll(
     vscode.layer,
     Config.layer.pipe(Layer.provide(vscode.layer)),
-    Layer.succeed(PythonEnvInvalidation, {
+    Layer.succeed(PythonEnvInvalidation.Service, {
       invalidate: () =>
         Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
       changes: Stream.empty,
