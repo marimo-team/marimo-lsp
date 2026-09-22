@@ -2,10 +2,7 @@ import { Effect, Layer, Option, Ref, Scope, Stream } from "effect";
 
 import refreshPackagesCommand from "../../commands/refreshPackages.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import {
-  NotebookDependencies,
-  type NotebookDependencyState,
-} from "../../notebook/NotebookDependencies.ts";
+import * as NotebookDependencies from "../../notebook/NotebookDependencies.ts";
 import {
   type NotebookDocumentSession,
   NotebookDocumentSessions,
@@ -27,7 +24,7 @@ interface PackageTreeItem {
 
 interface ActiveDependencies {
   readonly session: NotebookDocumentSession;
-  readonly state: NotebookDependencyState;
+  readonly state: NotebookDependencies.State;
 }
 
 /**
@@ -130,7 +127,7 @@ export const PackagesViewLive = Layer.effectDiscard(
               sessionResources
                 .runScoped(
                   session,
-                  NotebookDependencies.pipe(
+                  NotebookDependencies.Service.pipe(
                     Effect.flatMap((dependencies) =>
                       dependencies.changes.pipe(
                         Stream.runForEach((state) =>
@@ -171,7 +168,7 @@ export const PackagesViewLive = Layer.effectDiscard(
             yield* sessionResources
               .runScoped(
                 session.value,
-                NotebookDependencies.pipe(
+                NotebookDependencies.Service.pipe(
                   Effect.flatMap((dependencies) => dependencies.refresh),
                 ),
               )

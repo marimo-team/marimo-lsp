@@ -14,7 +14,7 @@ import {
 } from "effect";
 
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
-import { NotebookDependencies } from "./NotebookDependencies.ts";
+import * as NotebookDependencies from "./NotebookDependencies.ts";
 import {
   type NotebookDocumentSession,
   NotebookDocumentSessionEndedError,

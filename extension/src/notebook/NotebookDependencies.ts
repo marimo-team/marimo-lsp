@@ -21,14 +21,18 @@ import type {
 } from "../schemas/Models.gen.ts";
 import { NotebookSession } from "./NotebookSession.ts";
 
-export type NotebookDependencyState = Data.TaggedEnum<{
+export type State = Data.TaggedEnum<{
   Idle: {};
   Loading: {};
   Loaded: { readonly tree: DependencyTreeNode | null };
   Failed: { readonly error: string };
 }>;
-export const NotebookDependencyState =
-  Data.taggedEnum<NotebookDependencyState>();
+export const State = Data.taggedEnum<State>();
+
+export interface Interface {
+  readonly changes: Stream.Stream<State>;
+  readonly refresh: Effect.Effect<void>;
+}
 
 type PackageSource = VenvSource | ScriptSource;
 
@@ -41,144 +45,140 @@ function controllerSource(
 }
 
 /** Dependency state and loading policy for one notebook document session. */
-export class NotebookDependencies extends Context.Service<NotebookDependencies>()(
-  "NotebookDependencies",
-  {
-    make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient.Service;
-      const notebooks = yield* NotebookRuntime.Service;
-      const session = yield* NotebookSession;
-      const generation = yield* Ref.make(0);
-      const state = yield* SubscriptionRef.make<NotebookDependencyState>(
-        NotebookDependencyState.Idle(),
-      );
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/NotebookDependencies",
+) {}
 
-      const fetch = Effect.gen(function* () {
-        yield* SubscriptionRef.set(state, NotebookDependencyState.Loading());
-        const notebook = yield* notebooks.forNotebook(session.notebookId);
-        const controller = yield* notebook.getController;
-        if (Option.isNone(controller)) {
-          return NotebookDependencyState.Failed({
-            error: "No kernel selected",
-          });
-        }
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const marimo = yield* MarimoClient.Service;
+    const notebooks = yield* NotebookRuntime.Service;
+    const session = yield* NotebookSession;
+    const generation = yield* Ref.make(0);
+    const state = yield* SubscriptionRef.make<State>(State.Idle());
 
-        const source = controllerSource(controller.value);
-        const result = yield* marimo
-          .getDependencyTree({
-            notebookUri: session.notebookId,
-            source,
-          })
-          .pipe(
-            Effect.map(({ tree }) => NotebookDependencyState.Loaded({ tree })),
-            Effect.catch((error) => {
-              const message = String(error);
-              if (source.kind === "script") {
-                return Effect.logError(
-                  "Dependency tree failed for script mode",
-                ).pipe(
-                  Effect.annotateLogs({
-                    notebookUri: session.notebookId,
-                    error: message,
-                  }),
-                  Effect.as(NotebookDependencyState.Failed({ error: message })),
-                );
-              }
+    const fetch = Effect.gen(function* () {
+      yield* SubscriptionRef.set(state, State.Loading());
+      const notebook = yield* notebooks.forNotebook(session.notebookId);
+      const controller = yield* notebook.getController;
+      if (Option.isNone(controller)) {
+        return State.Failed({
+          error: "No kernel selected",
+        });
+      }
 
-              return Effect.logWarning(
-                "Dependency tree failed, falling back to package list",
+      const source = controllerSource(controller.value);
+      const result = yield* marimo
+        .getDependencyTree({
+          notebookUri: session.notebookId,
+          source,
+        })
+        .pipe(
+          Effect.map(({ tree }) => State.Loaded({ tree })),
+          Effect.catch((error) => {
+            const message = String(error);
+            if (source.kind === "script") {
+              return Effect.logError(
+                "Dependency tree failed for script mode",
               ).pipe(
                 Effect.annotateLogs({
                   notebookUri: session.notebookId,
                   error: message,
                 }),
-                Effect.andThen(
-                  marimo
-                    .listPackages({
-                      notebookUri: session.notebookId,
-                      source,
-                    })
-                    .pipe(
-                      Effect.map((packageList) =>
-                        NotebookDependencyState.Loaded({
-                          tree: {
-                            name: "installed-packages",
-                            version: null,
+                Effect.as(State.Failed({ error: message })),
+              );
+            }
+
+            return Effect.logWarning(
+              "Dependency tree failed, falling back to package list",
+            ).pipe(
+              Effect.annotateLogs({
+                notebookUri: session.notebookId,
+                error: message,
+              }),
+              Effect.andThen(
+                marimo
+                  .listPackages({
+                    notebookUri: session.notebookId,
+                    source,
+                  })
+                  .pipe(
+                    Effect.map((packageList) =>
+                      State.Loaded({
+                        tree: {
+                          name: "installed-packages",
+                          version: null,
+                          tags: [],
+                          dependencies: packageList.packages.map((pkg) => ({
+                            name: pkg.name,
+                            version: pkg.version,
                             tags: [],
-                            dependencies: packageList.packages.map((pkg) => ({
-                              name: pkg.name,
-                              version: pkg.version,
-                              tags: [],
-                              dependencies: [],
-                            })),
-                          },
-                        }),
-                      ),
-                      Effect.catch((fallbackError) => {
-                        const fallbackMessage = String(fallbackError);
-                        return Effect.logError(
-                          "Package list fallback also failed",
-                        ).pipe(
-                          Effect.annotateLogs({
-                            notebookUri: session.notebookId,
-                            error: fallbackMessage,
-                          }),
-                          Effect.as(
-                            NotebookDependencyState.Failed({
-                              error: `${message}; fallback also failed: ${fallbackMessage}`,
-                            }),
-                          ),
-                        );
+                            dependencies: [],
+                          })),
+                        },
                       }),
                     ),
-                ),
-              );
-            }),
-          );
-
-        yield* Effect.logTrace("Fetched notebook dependencies").pipe(
-          Effect.annotateLogs({
-            notebookUri: session.notebookId,
-            state: result._tag,
+                    Effect.catch((fallbackError) => {
+                      const fallbackMessage = String(fallbackError);
+                      return Effect.logError(
+                        "Package list fallback also failed",
+                      ).pipe(
+                        Effect.annotateLogs({
+                          notebookUri: session.notebookId,
+                          error: fallbackMessage,
+                        }),
+                        Effect.as(
+                          State.Failed({
+                            error: `${message}; fallback also failed: ${fallbackMessage}`,
+                          }),
+                        ),
+                      );
+                    }),
+                  ),
+              ),
+            );
           }),
         );
-        return result;
-      });
 
-      const cache = yield* Cache.makeWith(() => fetch, {
-        capacity: 1,
-        timeToLive: (exit) =>
-          Exit.isSuccess(exit) &&
-          exit.value._tag === "Loaded" &&
-          exit.value.tree !== null
-            ? Duration.infinity
-            : Duration.zero,
-      });
-
-      const load = Effect.gen(function* () {
-        const expectedGeneration = yield* Ref.get(generation);
-        const result = yield* Cache.get(cache, expectedGeneration);
-        if ((yield* Ref.get(generation)) === expectedGeneration) {
-          yield* SubscriptionRef.set(state, result);
-        }
-        return result;
-      });
-
-      const invalidate = Ref.update(generation, (value) => value + 1).pipe(
-        Effect.andThen(
-          SubscriptionRef.set(state, NotebookDependencyState.Idle()),
-        ),
+      yield* Effect.logTrace("Fetched notebook dependencies").pipe(
+        Effect.annotateLogs({
+          notebookUri: session.notebookId,
+          state: result._tag,
+        }),
       );
+      return result;
+    });
 
-      return {
-        changes: Stream.merge(
-          SubscriptionRef.changes(state),
-          Stream.fromEffect(load).pipe(Stream.drain),
-        ),
-        refresh: invalidate.pipe(Effect.andThen(load), Effect.asVoid),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+    const cache = yield* Cache.makeWith(() => fetch, {
+      capacity: 1,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) &&
+        exit.value._tag === "Loaded" &&
+        exit.value.tree !== null
+          ? Duration.infinity
+          : Duration.zero,
+    });
+
+    const load = Effect.gen(function* () {
+      const expectedGeneration = yield* Ref.get(generation);
+      const result = yield* Cache.get(cache, expectedGeneration);
+      if ((yield* Ref.get(generation)) === expectedGeneration) {
+        yield* SubscriptionRef.set(state, result);
+      }
+      return result;
+    });
+
+    const invalidate = Ref.update(generation, (value) => value + 1).pipe(
+      Effect.andThen(SubscriptionRef.set(state, State.Idle())),
+    );
+
+    return Service.of({
+      changes: Stream.merge(
+        SubscriptionRef.changes(state),
+        Stream.fromEffect(load).pipe(Stream.drain),
+      ),
+      refresh: invalidate.pipe(Effect.andThen(load), Effect.asVoid),
+    });
+  }),
+);

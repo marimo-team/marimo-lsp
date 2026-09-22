@@ -1,7 +1,7 @@
 import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookDependencies } from "../notebook/NotebookDependencies.ts";
+import * as NotebookDependencies from "../notebook/NotebookDependencies.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
@@ -29,7 +29,7 @@ const handler = Effect.fn("command.refreshPackages")(function* () {
   yield* sessionResources
     .runScoped(
       session.value,
-      NotebookDependencies.pipe(
+      NotebookDependencies.Service.pipe(
         Effect.flatMap((dependencies) => dependencies.refresh),
       ),
     )

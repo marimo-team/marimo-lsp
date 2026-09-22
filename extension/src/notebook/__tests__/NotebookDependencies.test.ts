@@ -23,10 +23,7 @@ import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import {
-  NotebookDependencies,
-  type NotebookDependencyState,
-} from "../NotebookDependencies.ts";
+import * as NotebookDependencies from "../NotebookDependencies.ts";
 import { NotebookDocumentSessions } from "../NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../NotebookSessionResources.ts";
 
@@ -53,7 +50,7 @@ function makeController(options: {
   };
 }
 
-const isTerminal = (state: NotebookDependencyState) =>
+const isTerminal = (state: NotebookDependencies.State) =>
   state._tag === "Loaded" || state._tag === "Failed";
 
 const makeContext = Effect.fn(function* (options: {
@@ -107,7 +104,7 @@ const inNotebook = <A, E, R>(
 const collectUntilTerminal = (notebookUri: NotebookId) =>
   inNotebook(
     notebookUri,
-    NotebookDependencies.pipe(
+    NotebookDependencies.Service.pipe(
       Effect.flatMap((dependencies) =>
         dependencies.changes.pipe(
           Stream.takeUntil(isTerminal),
@@ -175,7 +172,7 @@ describe("NotebookDependencies", () => {
       const collect = (subscribed: Deferred.Deferred<void>) =>
         inNotebook(
           NOTEBOOK_URI,
-          NotebookDependencies.pipe(
+          NotebookDependencies.Service.pipe(
             Effect.flatMap((dependencies) =>
               dependencies.changes.pipe(
                 Stream.tap(() => Deferred.succeed(subscribed, undefined)),
@@ -316,7 +313,7 @@ describe("NotebookDependencies", () => {
 
       yield* inNotebook(
         NOTEBOOK_URI,
-        NotebookDependencies.pipe(
+        NotebookDependencies.Service.pipe(
           Effect.flatMap((dependencies) =>
             Effect.gen(function* () {
               const initial = yield* dependencies.changes.pipe(
@@ -379,7 +376,7 @@ describe("NotebookDependencies", () => {
 
       yield* inNotebook(
         NOTEBOOK_URI,
-        NotebookDependencies.pipe(
+        NotebookDependencies.Service.pipe(
           Effect.flatMap((dependencies) =>
             Effect.gen(function* () {
               const staleRefresh = yield* dependencies.refresh.pipe(
