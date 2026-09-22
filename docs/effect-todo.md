@@ -70,7 +70,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `platform/Debug.ts`
 - [x] `platform/Notebooks.ts`
 - [x] `platform/Auth.ts`
-- [ ] `platform/VsCode.ts`: `Languages`
+- [x] `platform/Languages.ts`
 - [ ] `platform/VsCode.ts`: `VsCode`
 
 ### Python
