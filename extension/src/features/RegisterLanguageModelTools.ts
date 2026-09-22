@@ -1,6 +1,5 @@
 import {
   Array as EffectArray,
-  Context,
   Effect,
   Formatter,
   Layer,
@@ -14,7 +13,7 @@ import { SCRATCH_CELL_ID } from "../constants.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   extractCellIdFromCellMessage,
   MarimoNotebookDocument,
@@ -27,7 +26,7 @@ import type { CellOperationNotification } from "../types.ts";
  */
 const EXECUTE_CODE_TOOL = "marimo_executeCode";
 
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type VsCodeService = VsCode.Interface;
 
 /**
  * Extract a cell-op's stdout/stderr text
@@ -102,7 +101,7 @@ export function scratchpadResultText(
  */
 export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
     const decoder = new TextDecoder();

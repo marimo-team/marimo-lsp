@@ -20,7 +20,7 @@ import type * as vscode from "vscode";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-import { VsCode } from "./VsCode.ts";
+import * as VsCode from "./VsCode.ts";
 
 type KernelStatus =
   | "unknown"
@@ -74,7 +74,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const notebooks = yield* NotebookRuntime.Service;
 
     const context = yield* Effect.context();

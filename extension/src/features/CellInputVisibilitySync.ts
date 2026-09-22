@@ -12,7 +12,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -150,7 +150,7 @@ function visibilityChanges(
  */
 export const CellInputVisibilitySyncLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const snapshots = yield* Ref.make(
       HashMap.empty<NotebookId, HiddenCodeSnapshot>(),

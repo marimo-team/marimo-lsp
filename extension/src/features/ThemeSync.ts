@@ -2,7 +2,7 @@ import { Data, Effect, Layer, Option, Queue, Stream } from "effect";
 
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
 type ThemeSyncUpdate = Data.TaggedEnum<{
@@ -20,7 +20,7 @@ const ThemeSyncUpdate = Data.taggedEnum<ThemeSyncUpdate>();
  */
 export const ThemeSyncLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const marimo = yield* MarimoClient.Service;
     const editorRegistry = yield* NotebookEditorRegistry.Service;
 

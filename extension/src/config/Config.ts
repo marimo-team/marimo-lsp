@@ -2,7 +2,7 @@ import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { DEFAULT_NOTEBOOK_FILE_ROOT } from "../kernel/NotebookFileRoot.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 const MarimoLspServerSetting = Schema.Literals(["wasm", "python", "custom"]);
 const MarimoLspCommand = Schema.NonEmptyArray(Schema.String).check(
@@ -117,7 +117,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* Effect.serviceOption(VsCode);
+    const code = yield* Effect.serviceOption(VsCode.Service);
 
     if (Option.isNone(code)) {
       yield* Effect.logWarning(

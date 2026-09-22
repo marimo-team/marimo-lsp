@@ -12,7 +12,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import { toVsCodeRange, toWorkspaceEdit } from "../converters.ts";
 
@@ -26,7 +26,7 @@ export const registerRenameProvider = Effect.fn(function* (
 ) {
   const caps = client.serverInfo.capabilities.renameProvider;
   if (!caps) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   const prepareProvider = typeof caps === "object" && caps.prepareProvider;
 

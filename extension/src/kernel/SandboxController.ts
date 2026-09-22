@@ -12,7 +12,7 @@ import { Version } from "../lib/Version.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
@@ -25,7 +25,7 @@ import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
     const marimo = yield* MarimoClient.Service;
@@ -34,7 +34,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const { LanguageId } = yield* Constants.Service;
 
     const runPromise = Effect.runPromiseWith(
-      yield* Effect.context<OutputChannel.Service | VsCode>(),
+      yield* Effect.context<OutputChannel.Service | VsCode.Service>(),
     );
 
     const controller = yield* code.notebooks.createNotebookController(
@@ -63,7 +63,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
 
         if (requirements.length > 0) {
           yield* uvAddScriptSafe(requirements, notebook).pipe(
-            Effect.provideService(VsCode, code),
+            Effect.provideService(VsCode.Service, code),
             Effect.provideService(Uv, uv),
           );
         }

@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Scope } from "effect";
 import type * as vscode from "vscode";
 
 import type { MarimoView } from "../constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 /**
  * Manages VS Code tree view items with automatic disposal.
@@ -50,7 +50,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const createTreeDataProvider = Effect.fn("TreeView.createTreeDataProvider")(
       function* <T>(options: {
@@ -124,7 +124,7 @@ export interface TreeItem {
 /**
  * The service value's type, extracted with `Context.Service.Shape`.
  */
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type VsCodeService = VsCode.Interface;
 
 /**
  * Converts our TreeItem to VS Code's TreeItem.

@@ -11,7 +11,7 @@ import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import * as Constants from "../platform/Constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { Uv } from "../python/Uv.ts";
@@ -33,7 +33,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     env: py.Environment;
   }) {
     const uv = yield* Uv;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const cellDrive = yield* VsCodeCellDrive.Service;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
     const config = yield* Config.Service;
@@ -190,7 +190,7 @@ export const createPythonController = Effect.fn("createPythonController")(
                 yield* installPackages(packages, {
                   venvPath: venv.value,
                 }).pipe(
-                  Effect.provideService(VsCode, code),
+                  Effect.provideService(VsCode.Service, code),
                   Effect.provideService(Uv, uv),
                 );
               } else {

@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 /**
  * Detects if the active Python file is a marimo notebook and sets context
@@ -9,7 +9,7 @@ import { VsCode } from "../platform/VsCode.ts";
  */
 export const MarimoFileDetectorLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     // Helper to check if a text document is a marimo notebook
     const isMarimoFile = (document: vscode.TextDocument): boolean => {

@@ -15,7 +15,7 @@ import type * as vscode from "vscode";
 
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -93,7 +93,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const editorRegistry = yield* NotebookEditorRegistry.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const notebooks = new Map<NotebookId, NotebookEntry>();

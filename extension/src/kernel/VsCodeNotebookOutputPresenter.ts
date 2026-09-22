@@ -2,7 +2,7 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Context, Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   findNotebookCell,
   MarimoNotebookDocument,
@@ -36,7 +36,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const projections = yield* CellOutputProjections.Service;
 
     const present = Effect.fn("VsCodeNotebookOutputPresenter.present")(

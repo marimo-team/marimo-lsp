@@ -12,7 +12,7 @@
 import { Effect, Option } from "effect";
 
 import * as Constants from "../platform/Constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   type MarimoNotebookDocument,
@@ -61,7 +61,7 @@ export const applyDocumentTransaction = Effect.fn(
   notebook: MarimoNotebookDocument,
   transaction: DocumentTransactionNotification["transaction"],
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const { LanguageId } = yield* Constants.Service;
 
   const byId = new Map<string, MarimoNotebookCell>();

@@ -11,7 +11,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import { toLspRange, toTextEdit, type VsCodeService } from "../converters.ts";
 
@@ -37,7 +37,7 @@ export const registerDocumentFormattingProvider = Effect.fn(function* (
   client: NotebookLspClient,
 ) {
   if (!client.serverInfo.capabilities.documentFormattingProvider) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerDocumentFormattingEditProvider(sel, {
     provideDocumentFormattingEdits: Effect.fn(function* (doc, opts) {
@@ -63,7 +63,7 @@ export const registerDocumentRangeFormattingProvider = Effect.fn(function* (
   client: NotebookLspClient,
 ) {
   if (!client.serverInfo.capabilities.documentRangeFormattingProvider) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerDocumentRangeFormattingEditProvider(sel, {
     provideDocumentRangeFormattingEdits: Effect.fn(

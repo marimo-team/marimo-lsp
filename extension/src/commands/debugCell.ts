@@ -3,13 +3,13 @@ import { Effect, flow, Option } from "effect";
 import { defineCommand } from "../commands.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.debugCell")(
   function* (cell: Option.Option<MarimoNotebookCell>) {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const debugAdapter = yield* DebugAdapter.Service;
 
     if (Option.isNone(cell)) {

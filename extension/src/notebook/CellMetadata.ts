@@ -1,6 +1,6 @@
 import { Data, Effect, Option } from "effect";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { type MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
 
@@ -58,7 +58,7 @@ export const update = Effect.fn("CellMetadata.update")(function* (
   cell: MarimoNotebookCell,
   transform: Transform,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const resolved = resolveCurrentCell(cell);
   if (resolved instanceof TargetNotFound) {
     return yield* resolved;

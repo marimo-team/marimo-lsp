@@ -2,11 +2,11 @@ import { Effect, Layer, Option, Result, Stream } from "effect";
 
 import restartKernel from "../commands/restartKernel.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   const restart = yield* code.window.showInformationMessage(
     "The notebook file root changed. Restart the marimo kernel to apply it.",
@@ -19,7 +19,7 @@ export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
 
 /** Watches configuration changes that require an explicit reload or restart. */
 export const watchForConfigurationChanges = Effect.fn(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const notebooks = yield* NotebookRuntime.Service;
   const pendingFileRootChanges = new Set<string>();
 

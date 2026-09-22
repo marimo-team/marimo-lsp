@@ -7,7 +7,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { UNSAFE_castForNegativeTest } from "../../lib/__tests__/branded.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import {
   toCodeAction,
   toCodeActionKind,
@@ -60,7 +60,7 @@ const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
 
 const withVsCode = Effect.gen(function* () {
   const test = yield* TestVsCode.make();
-  return yield* VsCode.pipe(Effect.provide(test.layer));
+  return yield* VsCode.Service.pipe(Effect.provide(test.layer));
 });
 
 describe("toVsCodeRange", () => {

@@ -4,7 +4,7 @@ import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -121,7 +121,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const bindings = new Map<string, MetadataBinding>();
 
     // Stream that fires when metadata changes on any marimo notebook cell
@@ -251,7 +251,7 @@ export const layer = Layer.effect(
 
         const cellIndex = yield* CellMetadata.update(activeCell, (current) =>
           binding.setValue(current, newValue),
-        ).pipe(Effect.provideService(VsCode, code));
+        ).pipe(Effect.provideService(VsCode.Service, code));
 
         // Re-execute the cell to apply the metadata changes
         yield* code.commands.executeVSCode("notebook.cell.execute", {

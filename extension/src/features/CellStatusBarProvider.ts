@@ -5,7 +5,7 @@ import enableCell from "../commands/enableCell.ts";
 import runStale from "../commands/runStale.ts";
 import { NOTEBOOK_TYPE, SETUP_CELL_NAME } from "../constants.ts";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -20,7 +20,7 @@ const DEFAULT_NAME = "_";
  */
 export const CellStatusBarProviderLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const executions = yield* CellExecutions.Service;
 
     // Stream that fires when metadata changes on any marimo notebook cell

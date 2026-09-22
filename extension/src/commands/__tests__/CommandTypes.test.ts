@@ -7,13 +7,13 @@ import {
   type VscodeBuiltinCommand,
   type VscodeCommandMap,
 } from "../../commands.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { Invocation } from "../Invocation.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
 
 const typecheckedUsage = (cell: vscode.NotebookCell) =>
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     code.commands.bind(MarimoCommands.runStale, "Run stale cells", cell);
     code.commands.bind(

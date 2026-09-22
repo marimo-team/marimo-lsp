@@ -3,7 +3,7 @@ import { Effect, Layer, Option, Schema } from "effect";
 import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import * as Constants from "../platform/Constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   type MarimoCellMetadata,
   SqlCellProjection,
@@ -48,7 +48,7 @@ export const CellMetadataBindingsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const { LanguageId } = yield* Constants.Service;
     const bindingService = yield* CellMetadataUIBinding.Service;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const datasources = yield* NotebookDatasources.Service;
 
     /**

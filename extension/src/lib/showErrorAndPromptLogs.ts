@@ -1,13 +1,13 @@
 import { Effect, Option } from "effect";
 
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 export const showErrorAndPromptLogs = Effect.fn(function* (
   msg: string,
   options: { channel?: { name: string; show(): void } } = {},
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const defaultChannel = yield* OutputChannel.Service;
   const channel = options.channel ?? defaultChannel;
 

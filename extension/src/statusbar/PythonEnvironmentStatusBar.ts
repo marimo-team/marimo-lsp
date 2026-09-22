@@ -23,7 +23,7 @@
 import { Effect, Function, Layer, Option, Queue, Stream } from "effect";
 
 import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { StatusBar, type StatusBarItem } from "./StatusBar.ts";
@@ -43,7 +43,7 @@ const STATUS_BAR_ITEM_PRIORITY = 100.09999;
  */
 export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const statusBar = yield* StatusBar;
     const pythonExtension = yield* PythonExtension;
 
@@ -119,7 +119,7 @@ const updateDisplay = Effect.fn(function* (
   item: StatusBarItem,
   environmentPath: Option.Option<string>,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const pythonExtension = yield* PythonExtension;
 
   if (Option.isNone(environmentPath)) {
@@ -156,7 +156,7 @@ const updateDisplay = Effect.fn(function* (
  * Determines if the status bar should be shown.
  */
 const updateVisibility = Effect.fn(function* (item: StatusBarItem) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   const config = yield* code.workspace.getConfiguration("python");
   const visibility = config.get<string>("interpreter.infoVisibility");

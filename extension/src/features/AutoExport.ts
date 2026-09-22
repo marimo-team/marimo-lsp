@@ -1,7 +1,6 @@
 import * as NodePath from "node:path";
 
 import {
-  type Context,
   Effect,
   Filter,
   HashMap,
@@ -15,7 +14,7 @@ import type * as vscode from "vscode";
 
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookDocument,
   type NotebookId,
@@ -39,7 +38,7 @@ const initialState = (): AutoExportState => ({
 });
 
 export function autoExportUri(
-  code: Context.Service.Shape<typeof VsCode>,
+  code: VsCode.Interface,
   notebook: MarimoNotebookDocument,
   extension: AutoExportExtension,
 ) {
@@ -68,7 +67,7 @@ function marimoNotebooks(editors: ReadonlyArray<vscode.NotebookEditor>) {
 
 export const AutoExportLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const marimo = yield* MarimoClient.Service;
     const runtime = yield* NotebookRuntime.Service;
     const states = yield* Ref.make(

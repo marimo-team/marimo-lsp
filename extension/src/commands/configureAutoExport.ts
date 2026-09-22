@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import type { AutoExportFormat } from "../features/AutoExport.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { ManagedAppOptions } from "../schemas/Models.gen.ts";
 
@@ -27,7 +27,7 @@ export function mergeAutoDownloadFormats(
 
 export const configureAutoExport = Effect.fn("command.configureAutoExport")(
   function* (notebook: Option.Option<MarimoNotebookDocument>) {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     if (Option.isNone(notebook)) {
       yield* code.window.showWarningMessage(
         "Open a marimo notebook to configure export formats.",

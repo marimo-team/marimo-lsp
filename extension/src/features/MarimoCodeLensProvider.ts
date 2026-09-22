@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
 import openAsMarimoNotebook from "../commands/openAsMarimoNotebook.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 /**
  * Regex to match top-level marimo.App( declaration.
@@ -38,7 +38,7 @@ export function findMarimoAppLine(text: string): number | undefined {
  */
 export const MarimoCodeLensProviderLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     // Helper to check if a text document is a marimo file
     const isMarimoFile = (document: vscode.TextDocument): boolean => {

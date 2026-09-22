@@ -21,7 +21,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { Version } from "../lib/Version.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "./PythonEnvInvalidation.ts";
 
 class InvalidExecutableError extends Data.TaggedError(
@@ -100,7 +100,7 @@ export class EnvironmentValidator extends Context.Service<EnvironmentValidator>(
     make: Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fs = yield* FileSystem.FileSystem;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const invalidation = yield* PythonEnvInvalidation.Service;
 
       const EnvCheck = Schema.Array(

@@ -25,7 +25,7 @@ import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { Uv } from "../python/Uv.ts";
 import * as Api from "../schemas/Models.gen.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
@@ -133,7 +133,11 @@ export interface Interface extends Commands {
     readonly name: string;
     readonly show: () => void;
   };
-  readonly restart: Effect.Effect<void, never, OutputChannel.Service | VsCode>;
+  readonly restart: Effect.Effect<
+    void,
+    never,
+    OutputChannel.Service | VsCode.Service
+  >;
 }
 
 interface NotificationChannel<A> {
@@ -206,7 +210,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const config = yield* Config.Service;
     const telemetry = yield* Telemetry;
 
@@ -479,7 +483,7 @@ export const makeCustomLspFailureNotifier = Effect.fn(
   readonly mode: MarimoLspMode;
   readonly channel: { readonly name: string; show(): void };
 }) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   return yield* Effect.cached(
     Effect.gen(function* () {
       if (mode !== "configured") return;

@@ -19,7 +19,7 @@ import showDiagnostics from "../commands/showDiagnostics.ts";
 import showNotebookMenu from "../commands/showNotebookMenu.ts";
 import updateActivePythonEnvironment from "../commands/updateActivePythonEnvironment.ts";
 import updateCellMetadata from "../commands/updateCellMetadata.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 
 /**
@@ -27,7 +27,7 @@ import { Telemetry } from "../telemetry/Telemetry.ts";
  */
 export const RegisterCommandsLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const telemetry = yield* Telemetry;
 
     yield* code.commands.register(newMarimoNotebook);

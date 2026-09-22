@@ -12,7 +12,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import {
   toCompletionItem,
@@ -26,7 +26,7 @@ export const registerCompletionProvider = Effect.fn(function* (
 ) {
   const caps = client.serverInfo.capabilities.completionProvider;
   if (!caps) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   const triggerCharacters = caps.triggerCharacters ?? [];
   const resolveProvider = caps.resolveProvider;

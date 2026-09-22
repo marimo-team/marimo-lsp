@@ -40,7 +40,7 @@ import {
 } from "../../lib/__tests__/branded.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -163,7 +163,7 @@ const withTestCtx = Effect.fn(function* (
   );
 
   const mockController = yield* Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const controller = yield* code.notebooks.createNotebookController(
       "test-controller",
       NOTEBOOK_TYPE,

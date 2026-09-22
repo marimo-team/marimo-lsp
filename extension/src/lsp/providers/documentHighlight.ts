@@ -8,7 +8,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import {
   toDocumentHighlight,
@@ -22,7 +22,7 @@ export const registerDocumentHighlightProvider = Effect.fn(function* (
   if (!client.serverInfo.capabilities.documentHighlightProvider) {
     return;
   }
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerDocumentHighlightProvider(sel, {
     provideDocumentHighlights: Effect.fn(function* (doc, pos) {

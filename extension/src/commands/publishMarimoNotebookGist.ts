@@ -6,14 +6,14 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import * as GitHubClient from "../platform/GitHubClient.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",
 )(
   function* (notebook: MarimoNotebookDocument) {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const gh = yield* GitHubClient.Service;
     const marimo = yield* MarimoClient.Service;
     const serializer = yield* NotebookSerializer.Service;

@@ -18,7 +18,7 @@ import {
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as Constants from "../../platform/Constants.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
 
 const affinityMap = (
@@ -248,7 +248,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
@@ -274,7 +274,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const uri = "/test/notebook_mo.py";
 
       yield* ctx.vscode.setActiveNotebookEditor(
@@ -318,7 +318,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(
@@ -362,7 +362,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(

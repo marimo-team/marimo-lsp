@@ -3,13 +3,13 @@ import type * as vscode from "vscode";
 
 import { defineCommand } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.openAsMarimoNotebook")(function* (
   resource?: string | vscode.Uri,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   let uri: vscode.Uri;
   if (typeof resource === "string") {

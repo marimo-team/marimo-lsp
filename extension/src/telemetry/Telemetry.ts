@@ -16,7 +16,7 @@ import { type BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import * as ExtensionContext from "../platform/ExtensionContext.ts";
 import * as Storage from "../platform/Storage.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { acquirePostHogAdapter, type PostHogAdapter } from "./posthogSink.ts";
 import { acquireSentryAdapter, type SentryAdapter } from "./sentrySink.ts";
 
@@ -76,7 +76,7 @@ const NOOP_POSTHOG: PostHogAdapter = {
  */
 export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
   make: Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const config = yield* code.workspace.getConfiguration("marimo");
     const enabled = config.get<boolean>("telemetry") ?? true;
     if (!enabled) return disabledTelemetry();

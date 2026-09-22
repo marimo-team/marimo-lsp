@@ -3,7 +3,7 @@ import * as NodeFs from "node:fs";
 import { Cause, Data, Effect, Option } from "effect";
 
 import { assert } from "../assert.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   formatProjectDependencyTarget,
   inspectProjectDependencies,
@@ -17,23 +17,23 @@ export function installPackages(
   options: {
     venvPath: string;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode.Service>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script: MarimoNotebookDocument;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode.Service>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script?: MarimoNotebookDocument;
     venvPath?: string;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode> {
+): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode.Service> {
   return Effect.gen(function* () {
     const uv = yield* Uv;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     return yield* code.window.withProgress(
       {
         location: code.ProgressLocation.Notification,
@@ -51,7 +51,7 @@ export function installPackages(
             const requests = yield* resolveProjectInstallRequests(
               packages,
               venvPath,
-            ).pipe(Effect.provideService(VsCode, code));
+            ).pipe(Effect.provideService(VsCode.Service, code));
             if (requests == null) return "cancelled" as const;
 
             for (const request of requests) {
@@ -81,7 +81,7 @@ export function installPackages(
 
             // safely update the the notebook
             yield* uvAddScriptSafe(packages, notebook).pipe(
-              Effect.provideService(VsCode, code),
+              Effect.provideService(VsCode.Service, code),
               Effect.provideService(Uv, uv),
             );
 
@@ -137,7 +137,7 @@ class ProjectInspectionError extends Data.TaggedError(
 export const resolveProjectInstallRequests = Effect.fn(
   "resolveProjectInstallRequests",
 )(function* (packages: ReadonlyArray<string>, directory: string) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const requests: ProjectInstallRequest[] = [];
 
   const inspection = yield* Effect.try({
@@ -216,7 +216,7 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
   notebook: MarimoNotebookDocument,
 ) {
   const uv = yield* Uv;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const tmpFile = `${notebook.uri.fsPath}.tmp`;
   const metadata = yield* notebook.parseMetadata();
   yield* Effect.promise(() =>

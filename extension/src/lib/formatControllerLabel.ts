@@ -1,9 +1,9 @@
 import type * as py from "@vscode/python-extension";
-import { type Context, Result } from "effect";
+import { Result } from "effect";
 
-import type { VsCode } from "../platform/VsCode.ts";
+import type * as VsCode from "../platform/VsCode.ts";
 
-type VsCodeShape = Context.Service.Shape<typeof VsCode>;
+type VsCodeShape = VsCode.Interface;
 
 /**
  * Format a {@link py.Environment} similar to vscode-jupyter

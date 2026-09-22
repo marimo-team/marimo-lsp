@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { SCRATCH_CELL_ID } from "../../constants.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { CellOperationNotification } from "../../types.ts";
 import {
   consoleText,
@@ -70,7 +70,7 @@ describe("scratchpadResultText", () => {
       const vscode = yield* TestVsCode.make({});
 
       const text = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return scratchpadResultText(
           [
             scratchOp([out("stdout", "scratch-stdout")], rendered("SCRATCH")),

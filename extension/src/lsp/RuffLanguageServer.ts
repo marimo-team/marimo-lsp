@@ -21,7 +21,7 @@ import {
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
@@ -64,7 +64,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const telemetry = yield* Effect.serviceOption(Telemetry);
 
     const statusRef = yield* Ref.make<Status>(Status.Starting());
@@ -204,7 +204,7 @@ export const defaultLayer = layer.pipe(
  * startup.
  */
 const resolveRuffBinary = Effect.fn(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const config = yield* Config.Service;
 
   const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
@@ -319,7 +319,7 @@ function getGlobalRuffSettings(
  * Returns the reason why the Ruff language server is disabled, or None if enabled.
  */
 const getRuffDisabledReason = Effect.fn(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const config = yield* Config.Service;
 
   const managedFeaturesEnabled =

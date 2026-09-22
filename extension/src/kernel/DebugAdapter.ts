@@ -17,7 +17,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as Debug from "../platform/Debug.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import {
   type NotebookId,
@@ -44,7 +44,7 @@ print(_json.dumps({"port": _sys._marimo_debugpy_port, "tmpdir": _tmpdir}))
 }
 
 /** Resolve the bundled debugpy libs path from the ms-python.debugpy extension. */
-const resolveDebugpyPath = Effect.fn(function* (code: VsCode["Service"]) {
+const resolveDebugpyPath = Effect.fn(function* (code: VsCode.Interface) {
   const ext = code.extensions.getExtension("ms-python.debugpy");
   if (Option.isNone(ext)) {
     yield* Effect.logWarning("ms-python.debugpy extension not found");
@@ -108,7 +108,7 @@ export interface Interface {
   ) => Effect.Effect<
     void,
     Error,
-    NotebookRuntime.Service | OutputChannel.Service | VsCode
+    NotebookRuntime.Service | OutputChannel.Service | VsCode.Service
   >;
 }
 
@@ -130,7 +130,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const debugpyLibsPath = yield* resolveDebugpyPath(code);
 

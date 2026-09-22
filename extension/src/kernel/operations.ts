@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 
 import * as Config from "../config/Config.ts";
 import { installPackages } from "../lib/installPackages.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
@@ -15,7 +15,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
     notebook: MarimoNotebookDocument,
     controller: NotebookRuntime.NotebookController,
   ) {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const config = yield* Config.Service;
     const envInvalidation = yield* PythonEnvInvalidation.Service;
 

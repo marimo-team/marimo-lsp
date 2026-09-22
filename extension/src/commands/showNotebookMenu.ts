@@ -4,7 +4,7 @@ import { defineCommand } from "../commands.ts";
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
 import createSetupCell from "./createSetupCell.ts";
 import type { NotebookTarget } from "./Invocation.ts";
@@ -39,7 +39,7 @@ export const NOTEBOOK_MENU_ITEMS = [
 const handler = Effect.fn("command.showNotebookMenu")(function* (
   target: Option.Option<NotebookTarget>,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const notebook = Option.map(target, (value) => value.document);
   const selection = yield* code.window.showQuickPickItems(NOTEBOOK_MENU_ITEMS, {
     placeHolder: "Choose a notebook action",

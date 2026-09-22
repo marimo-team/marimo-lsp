@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 export type StatusBarAlignment = "Left" | "Right";
 export type StatusBarCommand = string;
@@ -54,7 +54,7 @@ export type StatusBarItem = Effect.Success<
  */
 export class StatusBar extends Context.Service<StatusBar>()("StatusBar", {
   make: Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     return {
       /**

@@ -3,13 +3,13 @@ import { Cause, Effect, flow, Option } from "effect";
 import { defineCommand } from "../commands.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.newMarimoNotebook")(
   function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const telemetry = yield* Telemetry;
 
     const uri = yield* code.window.showSaveDialog({

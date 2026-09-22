@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -153,7 +153,7 @@ it.effect(
 
     expect(executions).toBe(0);
 
-    const api = yield* VsCode.pipe(Effect.provide(code.layer));
+    const api = yield* VsCode.Service.pipe(Effect.provide(code.layer));
     const events: string[] = [];
     const execution: vscode.NotebookCellExecution = {
       cell: notebookEditor.notebook.cellAt(0),

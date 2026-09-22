@@ -22,7 +22,7 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import * as Commands from "../platform/Commands.ts";
 import * as Env from "../platform/Env.ts";
-import { ParseUriError, VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import * as Window from "../platform/Window.ts";
 import * as Workspace from "../platform/Workspace.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
@@ -1510,7 +1510,7 @@ export function createTestNotebookEditor(
 }
 
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
-  readonly layer: Layer.Layer<VsCode>;
+  readonly layer: Layer.Layer<VsCode.Service>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
   readonly commands: Ref.Ref<HashSet.HashSet<string>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
@@ -1742,7 +1742,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const commandResultsPubSub =
       yield* PubSub.unbounded<Result.Result<string, string>>();
 
-    const layer = Layer.succeed(VsCode, {
+    const layer = Layer.succeed(VsCode.Service, {
       // namespaces
       window: {
         showSaveDialog() {
@@ -2391,7 +2391,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         parseUri(value: string) {
           return Result.try({
             try: () => Uri.parse(value, /* strict */ true),
-            catch: (cause) => new ParseUriError({ cause }),
+            catch: (cause) => new VsCode.ParseUriError({ cause }),
           });
         },
       },

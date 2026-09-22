@@ -2,7 +2,7 @@ import { Effect, Layer, Schema, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { NotebookIdFromString } from "../../schemas/MarimoNotebookDocument.ts";
 
 const decodeNotebookId = Schema.decodeUnknownEffect(NotebookIdFromString);
@@ -56,7 +56,7 @@ export function containsNotebookUri(
 /** Keeps live sessions aligned with notebook file rename and deletion events. */
 export const SessionFileLifecycleLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const runtime = yield* NotebookRuntime.Service;
     const deletedWhileOpen = new Set<string>();
 

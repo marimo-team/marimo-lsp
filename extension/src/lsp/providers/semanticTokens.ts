@@ -15,7 +15,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import { toLspRange } from "../converters.ts";
 
@@ -25,7 +25,7 @@ export const registerSemanticTokensProvider = Effect.fn(function* (
 ) {
   const caps = client.serverInfo.capabilities.semanticTokensProvider;
   if (!caps) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   const legend = new code.SemanticTokensLegend(
     caps.legend.tokenTypes,

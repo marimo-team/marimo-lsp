@@ -4,7 +4,7 @@ import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
 
@@ -34,7 +34,7 @@ export const createConfigToggle = <T extends string>({
   getDisplayName: (value: T) => string;
 }) =>
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources.Service;
 

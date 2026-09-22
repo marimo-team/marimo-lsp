@@ -22,7 +22,7 @@ import type * as vscode from "vscode";
 import { assert } from "../assert.ts";
 import * as Config from "../config/Config.ts";
 import { Version } from "../lib/Version.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import type { ProjectDependencyTarget } from "./ProjectDependencyTarget.ts";
 
@@ -117,7 +117,7 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 
 export class Uv extends Context.Service<Uv>()("Uv", {
   make: Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const config = yield* Config.Service;
     const telemetry = yield* Telemetry;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -151,7 +151,7 @@ export class Uv extends Context.Service<Uv>()("Uv", {
         });
         return bin;
       }).pipe(
-        Effect.provideService(VsCode, code),
+        Effect.provideService(VsCode.Service, code),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(Scope.Scope, scope),
       ),
@@ -367,7 +367,7 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   userConfigPath: Option.Option<string>,
 ) {
   let bin: UvBin;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const bundledExists = NodeFs.existsSync(BUNDLED_UV_PATH);
 
   // Priority 1: Untrusted workspace with bundled binary - use bundled for security
@@ -493,7 +493,7 @@ const getUvVersion = Effect.fn("getUvVersion")(function* (bin: UvBin) {
  */
 const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   error: UvExecutionError,
-  code: Context.Service.Shape<typeof VsCode>,
+  code: VsCode.Interface,
   telemetry: Context.Service.Shape<typeof Telemetry>,
 ) {
   yield* telemetry.uvMissing(error.bin._tag);

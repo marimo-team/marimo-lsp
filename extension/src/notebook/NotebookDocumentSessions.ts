@@ -12,7 +12,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookDocument,
   type NotebookId,
@@ -68,7 +68,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const serviceScope = yield* Effect.scope;
     const sessions = yield* SubscriptionRef.make(
       HashMap.empty<NotebookId, SessionEntry>(),

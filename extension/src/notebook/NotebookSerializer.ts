@@ -16,7 +16,7 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as Constants from "../platform/Constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -93,7 +93,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const marimo = yield* MarimoClient.Service;
     const constants = yield* Constants.Service;
-    const code = yield* Effect.serviceOption(VsCode);
+    const code = yield* Effect.serviceOption(VsCode.Service);
 
     const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
       function* (notebook: vscode.NotebookData) {
@@ -426,7 +426,7 @@ ${code}
  */
 function snapshotLiveNotebook(
   doc: vscode.NotebookDocument,
-  code: VsCode["Service"],
+  code: VsCode.Interface,
 ): vscode.NotebookData {
   return {
     metadata: doc.metadata,

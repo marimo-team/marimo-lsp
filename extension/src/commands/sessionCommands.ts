@@ -4,14 +4,14 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { type NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 import type { SessionCommandTarget } from "./MarimoCommands.ts";
 
 const openSessionNotebook = Effect.fn("command.openSessionNotebook")(function* (
   notebookUri: NotebookId,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const openNotebooks = yield* code.workspace.getNotebookDocuments;
   const existing = openNotebooks.find(
     (document) =>
@@ -54,7 +54,7 @@ export const restartSession = Effect.fn("command.restartSession")(function* ({
 export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
   notebookUri,
 }: SessionCommandTarget) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const sessions = yield* LiveSessions.Service;
   const runtime = yield* NotebookRuntime.Service;
   const session = yield* sessions.find(notebookUri);
@@ -78,7 +78,7 @@ export const shutdownSession = Effect.fn("command.shutdownSession")(function* ({
 
 export const shutdownAllSessions = Effect.fn("command.shutdownAllSessions")(
   function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const sessions = yield* LiveSessions.Service;
     const runtime = yield* NotebookRuntime.Service;
     const live = yield* sessions.get;

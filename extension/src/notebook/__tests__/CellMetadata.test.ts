@@ -9,7 +9,7 @@ import {
   getNotebookEdits,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as CellMetadata from "../CellMetadata.ts";
 
@@ -26,7 +26,7 @@ it.effect(
       });
 
       yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const uri = createNotebookUri("file:///test/notebook_mo.py");
         const output = new code.NotebookCellOutput([
           code.NotebookCellOutputItem.text("result"),

@@ -3,14 +3,14 @@ import { Effect, Option, Result, Schema } from "effect";
 import { defineCommand } from "../commands.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { NotebookTarget } from "./Invocation.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.exportNotebookAsHtml")(function* (
   target: Option.Option<NotebookTarget>,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const marimo = yield* MarimoClient.Service;
 
   if (Option.isNone(target)) {

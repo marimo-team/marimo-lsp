@@ -19,7 +19,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { makeNotebookLspClient } from "../client.ts";
 
@@ -39,7 +39,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
     () =>
       Effect.gen(function* () {
         const test = yield* TestVsCode.make();
-        const code = yield* VsCode.pipe(Effect.provide(test.layer));
+        const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
         const outputChannel = yield* code.window.createOutputChannel("ty");
 
         const client = yield* makeNotebookLspClient({

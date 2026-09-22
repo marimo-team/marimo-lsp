@@ -1,7 +1,7 @@
 import { Data, Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 export class ImageFetchError extends Data.TaggedError("ImageFetchError")<{
   cause: unknown;
@@ -92,7 +92,7 @@ export const saveImageToDisk = Effect.fn("saveImageToDisk")(function* (
   suggestedName: string,
   notebookUri: vscode.Uri,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const { bytes } = yield* resolveImageBytes(src);
   const saveUri = yield* code.window.showSaveDialog({
     title: "Save image",

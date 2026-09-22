@@ -3,13 +3,13 @@ import { Effect, Layer } from "effect";
 import { commandId } from "../commands.ts";
 import openTutorial from "../commands/openTutorial.ts";
 import showMarimoMenu from "../commands/showMarimoMenu.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { StatusBar } from "./StatusBar.ts";
 
 /** Manages the marimo status bar item with quick pick menu. */
 export const MarimoStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const statusBar = yield* StatusBar;
 
     yield* code.commands.register(showMarimoMenu);

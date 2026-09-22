@@ -24,7 +24,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as Storage from "../platform/Storage.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
@@ -105,7 +105,7 @@ export const layer = Layer.effect(
     const pyExt = yield* PythonExtension;
     const envInvalidation = yield* PythonEnvInvalidation.Service;
     const telemetry = yield* Effect.serviceOption(Telemetry);
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const notifyMissingTy = yield* makeMissingNotifier();
 
     const statusRef = yield* Ref.make<Status>(Status.Starting());
@@ -312,7 +312,7 @@ export const defaultLayer = layer.pipe(
  * startup.
  */
 const resolveTyBinary = Effect.fn(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const config = yield* Config.Service;
 
   const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
@@ -354,7 +354,7 @@ const resolveTyBinary = Effect.fn(function* () {
 export const makeMissingNotifier = Effect.fn(
   "TyLanguageServer.makeMissingNotifier",
 )(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const storage = yield* Storage.Service;
   const trackSetup = Option.match(yield* Effect.serviceOption(Telemetry), {
     onSome: (telemetry) => telemetry.tySetup,

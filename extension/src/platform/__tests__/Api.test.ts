@@ -11,7 +11,7 @@ import {
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../Api.ts";
-import { VsCode } from "../VsCode.ts";
+import * as VsCode from "../VsCode.ts";
 
 const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
@@ -52,7 +52,7 @@ describe("Api", () => {
 
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api.Service;
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const fakeUri = yield* Effect.fromResult(
           code.utils.parseUri("file:///non-existent-notebook.py"),
         );
@@ -91,7 +91,7 @@ describe("Api", () => {
 
       const kernel = yield* Effect.gen(function* () {
         const api = yield* Api.Service;
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const uri = yield* Effect.fromResult(
           code.utils.parseUri("file:///test/notebook_mo.py"),
         );

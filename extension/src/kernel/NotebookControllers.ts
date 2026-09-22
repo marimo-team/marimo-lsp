@@ -20,7 +20,7 @@ import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
@@ -65,7 +65,7 @@ interface NotebookControllerHandle {
 export const NotebookControllersLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const uv = yield* Uv;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const pyExt = yield* PythonExtension;
     const notebooks = yield* NotebookRuntime.Service;
     const sandboxController = yield* createSandboxController();
@@ -118,7 +118,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
             env,
             handlesRef,
             notebooks,
-          }).pipe(Effect.provideService(VsCode, code)),
+          }).pipe(Effect.provideService(VsCode.Service, code)),
         { discard: true },
       );
       yield* pruneStaleControllers({
@@ -177,7 +177,7 @@ const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
     handlesRef: SynchronizedRef.SynchronizedRef<
       HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
     >;
-    code: VsCode["Service"];
+    code: VsCode.Interface;
   }) {
     const { notebook, sandboxController, handlesRef, code } = options;
     const handles = yield* SynchronizedRef.get(handlesRef);
@@ -275,7 +275,7 @@ const createOrUpdateController = Effect.fn(
   notebooks: NotebookRuntime.Interface;
 }) {
   const { env, handlesRef, notebooks } = options;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const controllerId = PythonController.getId(env);
   const controllerLabel = formatControllerLabel(code, env);
 
@@ -332,7 +332,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
     const desiredControllerIds = new Set(
       envs.map((env) => PythonController.getId(env)),
     );
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const selectedControllerIds = new Set<string>();
     const documents = yield* code.workspace.getNotebookDocuments;
     for (const rawDocument of documents) {
@@ -403,7 +403,7 @@ const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
 function isInUvCache(
   env: py.Environment,
   options: {
-    code: VsCode["Service"];
+    code: VsCode.Interface;
     uvCacheDir: Option.Option<vscode.Uri>;
   },
 ) {

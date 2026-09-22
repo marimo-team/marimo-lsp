@@ -4,7 +4,7 @@ import openSession from "../../commands/openSession.ts";
 import restartSession from "../../commands/restartSession.ts";
 import shutdownAllSessions from "../../commands/shutdownAllSessions.ts";
 import shutdownSession from "../../commands/shutdownSession.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import * as TreeView from "../TreeView.ts";
 import * as LiveSessions from "./LiveSessions.ts";
@@ -12,7 +12,7 @@ import * as LiveSessions from "./LiveSessions.ts";
 /** Native VS Code tree view for live marimo kernel sessions. */
 export const SessionsViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const treeView = yield* TreeView.Service;
     const sessions = yield* LiveSessions.Service;
     const provider = yield* treeView.createTreeDataProvider({

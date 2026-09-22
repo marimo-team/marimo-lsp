@@ -3,7 +3,7 @@ import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../__mocks__/TestVsCode.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { makeActiveNotebookEditorChanges } from "../platform/Window.ts";
 import { makeNotebookLifecycle } from "../platform/Workspace.ts";
 
@@ -15,7 +15,7 @@ describe("TestVsCode", () => {
       const vscode = yield* TestVsCode.make();
 
       const editor = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const editor = yield* code.window.getActiveNotebookEditor;
         return editor;
       }).pipe(Effect.provide(vscode.layer));
@@ -34,7 +34,7 @@ describe("TestVsCode", () => {
       });
 
       const documents = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const documents = yield* code.workspace.getNotebookDocuments;
         return documents.map((doc) => doc.uri.toString()).toSorted();
       }).pipe(Effect.provide(vscode.layer));
@@ -101,7 +101,7 @@ describe("TestVsCode", () => {
       const vscode = yield* TestVsCode.make();
 
       yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
 
         // Open before subscribing: the document must still appear in the
         // lifecycle snapshot instead of being lost between independent stores.
@@ -187,7 +187,7 @@ describe("TestVsCode", () => {
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       const activeEditor = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return yield* code.window.getActiveNotebookEditor;
       }).pipe(Effect.provide(vscode.layer));
 
@@ -209,7 +209,7 @@ describe("TestVsCode", () => {
       });
 
       const result = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
 
         // `SubscriptionRef.changes` sends the current value at
         // subscription. Expect the first None and the five updates below.

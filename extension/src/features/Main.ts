@@ -30,7 +30,7 @@ import * as ExtensionContext from "../platform/ExtensionContext.ts";
 import * as GitHubClient from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as Storage from "../platform/Storage.ts";
-import type { VsCode } from "../platform/VsCode.ts";
+import type * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import type { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
@@ -109,7 +109,7 @@ const MainLive = Layer.empty
 export function makeExtension(
   layer: Layer.Layer<
     | MarimoClient.Service
-    | VsCode
+    | VsCode.Service
     | PythonExtension
     | Telemetry
     | TyLanguageServer.Service

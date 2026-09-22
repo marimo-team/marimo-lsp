@@ -33,7 +33,7 @@ import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
 import { Uv } from "../python/Uv.ts";
 import {
@@ -62,7 +62,7 @@ import {
 } from "./NotebookFileRoot.ts";
 import { handleMissingPackageAlert } from "./operations.ts";
 
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type VsCodeService = VsCode.Interface;
 type CellExecutionsService = CellExecutions.Interface;
 
 type CommandFields<K extends keyof MarimoClient.Interface> =
@@ -209,7 +209,7 @@ type RuntimeWorkRequirements =
   | PythonEnvInvalidation.Service
   | Uv
   | NotebookVariables.Service
-  | VsCode;
+  | VsCode.Service;
 
 function hasRunId<T extends { run_id?: string | null }>(
   event: T,
@@ -297,7 +297,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const config = yield* Config.Service;
     const marimo = yield* MarimoClient.Service;
     const renderer = yield* NotebookRenderer.Service;
@@ -1441,7 +1441,7 @@ function handleStdinPrompt(
   respond: RespondToStdin,
 ) {
   return Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     if (operation.console == null) return;
 
     for (const output of EffectArray.ensure(operation.console)) {

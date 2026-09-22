@@ -14,7 +14,7 @@ import { Effect } from "effect";
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookLspClient } from "../client.ts";
 import { toDocumentPositionParams, toLocationResult } from "../converters.ts";
 
@@ -23,7 +23,7 @@ export const registerDefinitionProvider = Effect.fn(function* (
   client: NotebookLspClient,
 ) {
   if (!client.serverInfo.capabilities.definitionProvider) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerDefinitionProvider(sel, {
     provideDefinition: Effect.fn(function* (doc, pos) {
@@ -41,7 +41,7 @@ export const registerDeclarationProvider = Effect.fn(function* (
   client: NotebookLspClient,
 ) {
   if (!client.serverInfo.capabilities.declarationProvider) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerDeclarationProvider(sel, {
     provideDeclaration: Effect.fn(function* (doc, pos) {
@@ -59,7 +59,7 @@ export const registerTypeDefinitionProvider = Effect.fn(function* (
   client: NotebookLspClient,
 ) {
   if (!client.serverInfo.capabilities.typeDefinitionProvider) return;
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   yield* code.languages.registerTypeDefinitionProvider(sel, {
     provideTypeDefinition: Effect.fn(function* (doc, pos) {

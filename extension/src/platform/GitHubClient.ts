@@ -13,7 +13,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
-import { VsCode } from "./VsCode.ts";
+import * as VsCode from "./VsCode.ts";
 
 const GistRequest = Schema.Struct({
   public: Schema.Boolean,
@@ -60,7 +60,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const client = yield* HttpApiClient.make(GitHubApi, {
       baseUrl: "https://api.github.com",

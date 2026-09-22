@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Queue, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 /**
@@ -27,7 +27,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     // Defined in package.json
     const rendererId = "marimo-renderer";
     const channel = yield* code.notebooks.createRendererMessaging(rendererId);

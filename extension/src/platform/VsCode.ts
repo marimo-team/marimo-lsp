@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer, Option, Result } from "effect";
+import { Context, Data, Effect, Layer, Option, Result, Scope } from "effect";
 
 declare global {
   // oxlint-disable-next-line eslint/no-var, eslint/no-underscore-dangle
@@ -25,15 +25,97 @@ import * as Notebooks from "./Notebooks.ts";
 import * as Window from "./Window.ts";
 import * as Workspace from "./Workspace.ts";
 
-export class ParseUriError extends Data.TaggedError("ParseUriError")<{
-  cause: unknown;
+export class ParseUriError extends Data.TaggedError("VsCode.ParseUriError")<{
+  readonly cause: unknown;
 }> {}
 
-/**
- * Wraps VS Code API functionality in Effect services
- */
-export class VsCode extends Context.Service<VsCode>()("VsCode", {
-  make: Effect.gen(function* () {
+export interface Interface {
+  readonly window: Window.Interface;
+  readonly commands: Commands.Interface;
+  readonly workspace: Workspace.Interface;
+  readonly env: Env.Interface;
+  readonly debug: Debug.Interface;
+  readonly notebooks: Notebooks.Interface;
+  readonly auth: Auth.Interface;
+  readonly languages: Languages.Interface;
+  readonly Diagnostic: typeof vscode.Diagnostic;
+  readonly DiagnosticSeverity: typeof vscode.DiagnosticSeverity;
+  readonly CodeActionTriggerKind: typeof vscode.CodeActionTriggerKind;
+  readonly Hover: typeof vscode.Hover;
+  readonly TextEdit: typeof vscode.TextEdit;
+  readonly SignatureHelp: typeof vscode.SignatureHelp;
+  readonly InlayHint: typeof vscode.InlayHint;
+  readonly InlayHintLabelPart: typeof vscode.InlayHintLabelPart;
+  readonly SnippetString: typeof vscode.SnippetString;
+  readonly CodeAction: typeof vscode.CodeAction;
+  readonly CodeActionKind: typeof vscode.CodeActionKind;
+  readonly CompletionTriggerKind: typeof vscode.CompletionTriggerKind;
+  readonly CompletionItem: typeof vscode.CompletionItem;
+  readonly CompletionItemKind: typeof vscode.CompletionItemKind;
+  readonly CompletionList: typeof vscode.CompletionList;
+  readonly MarkdownString: typeof vscode.MarkdownString;
+  readonly SignatureInformation: typeof vscode.SignatureInformation;
+  readonly ParameterInformation: typeof vscode.ParameterInformation;
+  readonly CodeLens: typeof vscode.CodeLens;
+  readonly DocumentHighlight: typeof vscode.DocumentHighlight;
+  readonly DocumentSymbol: typeof vscode.DocumentSymbol;
+  readonly FoldingRange: typeof vscode.FoldingRange;
+  readonly SelectionRange: typeof vscode.SelectionRange;
+  readonly SemanticTokensLegend: typeof vscode.SemanticTokensLegend;
+  readonly SemanticTokens: typeof vscode.SemanticTokens;
+  readonly LanguageModelToolResult: typeof vscode.LanguageModelToolResult;
+  readonly LanguageModelTextPart: typeof vscode.LanguageModelTextPart;
+  readonly NotebookData: typeof vscode.NotebookData;
+  readonly NotebookCellData: typeof vscode.NotebookCellData;
+  readonly NotebookCellKind: typeof vscode.NotebookCellKind;
+  readonly NotebookCellOutput: typeof vscode.NotebookCellOutput;
+  readonly NotebookCellOutputItem: typeof vscode.NotebookCellOutputItem;
+  readonly NotebookEditorRevealType: typeof vscode.NotebookEditorRevealType;
+  readonly NotebookEdit: typeof vscode.NotebookEdit;
+  readonly NotebookRange: typeof vscode.NotebookRange;
+  readonly NotebookCellStatusBarItem: typeof vscode.NotebookCellStatusBarItem;
+  readonly NotebookControllerAffinity: typeof vscode.NotebookControllerAffinity;
+  readonly NotebookCellStatusBarAlignment: typeof vscode.NotebookCellStatusBarAlignment;
+  readonly WorkspaceEdit: typeof vscode.WorkspaceEdit;
+  readonly Position: typeof vscode.Position;
+  readonly EventEmitter: typeof vscode.EventEmitter;
+  readonly DebugAdapterInlineImplementation: typeof vscode.DebugAdapterInlineImplementation;
+  readonly ProgressLocation: typeof vscode.ProgressLocation;
+  readonly ThemeIcon: typeof vscode.ThemeIcon;
+  readonly TreeItem: typeof vscode.TreeItem;
+  readonly TreeItemCollapsibleState: typeof vscode.TreeItemCollapsibleState;
+  readonly ThemeColor: typeof vscode.ThemeColor;
+  readonly StatusBarAlignment: typeof vscode.StatusBarAlignment;
+  readonly Location: typeof vscode.Location;
+  readonly Uri: typeof vscode.Uri;
+  readonly Range: typeof vscode.Range;
+  readonly RelativePattern: typeof vscode.RelativePattern;
+  readonly version: string;
+  readonly extensions: {
+    readonly getExtension: <T = unknown>(
+      extensionId: string,
+    ) => Option.Option<vscode.Extension<T>>;
+  };
+  readonly lm: {
+    readonly registerTool: <T>(
+      name: string,
+      tool: vscode.LanguageModelTool<T>,
+    ) => Effect.Effect<void, never, Scope.Scope>;
+  };
+  readonly utils: {
+    readonly parseUri: (
+      value: string,
+    ) => Result.Result<vscode.Uri, ParseUriError>;
+  };
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/VsCode",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
     // Expose the raw vscode module for runtime inspection via --inspect-extensions.
     // Only active when MARIMO_DEBUG=1 (set by launch-dev.sh).
     if (process.env.MARIMO_DEBUG === "1") {
@@ -41,7 +123,23 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       globalThis.__marimoVsCode = vscode;
     }
 
-    return {
+    const getExtension = <T = unknown>(extensionId: string) =>
+      Option.fromNullishOr(vscode.extensions.getExtension<T>(extensionId));
+
+    const registerTool = Effect.fn("VsCode.lm.registerTool")(function* <T>(
+      name: string,
+      tool: vscode.LanguageModelTool<T>,
+    ) {
+      yield* acquireDisposable(() => vscode.lm.registerTool(name, tool));
+    });
+
+    const parseUri = (value: string) =>
+      Result.try({
+        try: () => vscode.Uri.parse(value, /* strict*/ true),
+        catch: (cause) => new ParseUriError({ cause }),
+      });
+
+    return Service.of({
       // namespaces
       window: yield* Window.Service,
       commands: yield* Commands.Service,
@@ -105,48 +203,20 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       Range: vscode.Range,
       RelativePattern: vscode.RelativePattern,
       version: vscode.version,
-      extensions: {
-        getExtension<T = unknown>(extensionId: string) {
-          return Option.fromNullishOr(
-            vscode.extensions.getExtension<T>(extensionId),
-          );
-        },
-      },
-      // Language Model (agent tools). Inline like `extensions` — one method.
-      lm: {
-        /**
-         * Register a language-model tool; unregistered when the surrounding
-         * scope closes. The tool's `invoke`/`prepareInvocation` are built by
-         * the caller (which owns the runtime to run any Effects).
-         */
-        registerTool<T>(name: string, tool: vscode.LanguageModelTool<T>) {
-          return Effect.asVoid(
-            acquireDisposable(() => vscode.lm.registerTool(name, tool)),
-          );
-        },
-      },
-      // helper
-      utils: {
-        parseUri(value: string) {
-          return Result.try({
-            try: () => vscode.Uri.parse(value, /* strict*/ true),
-            catch: (cause) => new ParseUriError({ cause }),
-          });
-        },
-      },
-    };
+      extensions: { getExtension },
+      lm: { registerTool },
+      utils: { parseUri },
+    });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([
-      Window.layer,
-      Workspace.layer,
-      Commands.defaultLayer,
-      Env.layer,
-      Debug.layer,
-      Notebooks.layer,
-      Auth.layer,
-      Languages.layer,
-    ]),
-  );
-}
+).pipe(
+  Layer.provide([
+    Window.layer,
+    Workspace.layer,
+    Commands.defaultLayer,
+    Env.layer,
+    Debug.layer,
+    Notebooks.layer,
+    Auth.layer,
+    Languages.layer,
+  ]),
+);

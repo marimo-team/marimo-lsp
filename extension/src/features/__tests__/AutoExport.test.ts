@@ -18,7 +18,7 @@ import {
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { kernelSessionId } from "../../lib/__tests__/branded.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import * as Workspace from "../../platform/Workspace.ts";
 import {
   MarimoNotebookCell,
@@ -154,7 +154,7 @@ describe("autoExportUri", () => {
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const uri = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return autoExportUri(code, ctx.notebook, "html");
       }).pipe(Effect.provide(ctx.vscode.layer));
 

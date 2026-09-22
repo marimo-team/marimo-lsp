@@ -5,7 +5,7 @@ import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import * as NotebookDependencies from "../../notebook/NotebookDependencies.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
 import * as TreeView from "../TreeView.ts";
@@ -37,7 +37,7 @@ export const PackagesViewLive = Layer.effectDiscard(
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources.Service;
     const notebooks = yield* NotebookRuntime.Service;
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     // Track the current package tree items for the active notebook
     const packageItems = yield* Ref.make<readonly PackageTreeItem[]>([]);

@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   type NotebookCellId,
@@ -32,7 +32,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
     const notebooks = new WeakMap<
       vscode.NotebookDocument,
       Map<NotebookCellId, CellOutputProjection>

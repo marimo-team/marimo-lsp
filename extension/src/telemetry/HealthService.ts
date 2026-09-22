@@ -10,7 +10,7 @@ import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
 import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv, UvBin } from "../python/Uv.ts";
 
@@ -22,7 +22,7 @@ export class HealthService extends Context.Service<HealthService>()(
   {
     make: Effect.gen(function* () {
       const uv = yield* Uv;
-      const code = yield* VsCode;
+      const code = yield* VsCode.Service;
       const config = yield* Config.Service;
       const marimo = yield* MarimoClient.Service;
       const notebooks = yield* NotebookRuntime.Service;
@@ -34,7 +34,9 @@ export class HealthService extends Context.Service<HealthService>()(
         Effect.gen(function* () {
           const [uvDisabled, extVersion] = yield* Effect.all([
             Effect.map(config.uv.enabled, (enabled) => !enabled),
-            getExtensionVersion().pipe(Effect.provideService(VsCode, code)),
+            getExtensionVersion().pipe(
+              Effect.provideService(VsCode.Service, code),
+            ),
           ]);
 
           const lines: string[] = [];

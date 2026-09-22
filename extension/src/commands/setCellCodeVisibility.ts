@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
 import * as CellMetadata from "../notebook/CellMetadata.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 
 const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
@@ -10,7 +10,7 @@ const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
 /** Persist and immediately apply the visibility requested by a cell menu item. */
 const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
   function* (cell: MarimoNotebookCell, hidden: boolean) {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const index = yield* CellMetadata.update(cell, (metadata) => ({
       ...metadata,

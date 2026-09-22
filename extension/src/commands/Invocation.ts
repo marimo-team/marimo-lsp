@@ -6,7 +6,7 @@ import {
   type CommandInvocation,
   VscodeUriSchema,
 } from "../commands.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -120,7 +120,7 @@ const notebookFromEditor = (
   }));
 
 const activeNotebook = Effect.gen(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   return Option.flatMap(
     yield* code.window.getActiveNotebookEditor,
     notebookFromEditor,
@@ -128,7 +128,7 @@ const activeNotebook = Effect.gen(function* () {
 });
 
 const notebookForUri = Effect.fn(function* (uri: vscode.Uri) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const target = uri.toString();
   const editor = (yield* code.window.getVisibleNotebookEditors).find(
     (candidate) => candidate.notebook.uri.toString() === target,
@@ -148,7 +148,7 @@ const notebookFromCell = Effect.fn(function* (cell: vscode.NotebookCell) {
 });
 
 const activeNotebookCell = Effect.gen(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const editor = yield* code.window.getActiveNotebookEditor;
   if (Option.isNone(editor)) return Option.none<MarimoNotebookCell>();
   const notebook = MarimoNotebookDocument.tryFrom(editor.value.notebook);
@@ -173,20 +173,20 @@ const notebookCellFromTitle = Effect.fn(function* (value: unknown) {
 
 const commandPalette = {
   none: noTarget("commandPalette", true),
-  notebook: makeAdapter<[], [notebook: Option.Option<NotebookTarget>], VsCode>(
-    "commandPalette",
-    true,
-    0,
-    (args) =>
-      Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(
-        Effect.andThen(activeNotebook),
-        Effect.map((notebook) => [notebook]),
-      ),
+  notebook: makeAdapter<
+    [],
+    [notebook: Option.Option<NotebookTarget>],
+    VsCode.Service
+  >("commandPalette", true, 0, (args) =>
+    Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(
+      Effect.andThen(activeNotebook),
+      Effect.map((notebook) => [notebook]),
+    ),
   ),
   notebookCell: makeAdapter<
     [],
     [cell: Option.Option<MarimoNotebookCell>],
-    VsCode
+    VsCode.Service
   >("commandPalette", true, 0, (args) =>
     Schema.decodeUnknownEffect(Schema.Tuple([]))(args).pipe(
       Effect.andThen(activeNotebookCell),
@@ -207,7 +207,7 @@ const notebookToolbar = {
   notebook: makeAdapter<
     [context?: NotebookToolbarContext],
     [notebook: Option.Option<NotebookTarget>],
-    VsCode
+    VsCode.Service
   >("notebookToolbar", true, 1, (args) =>
     decodeOptional(NotebookToolbarContextSchema)(args[0]).pipe(
       Effect.flatMap(notebookFromToolbarContext),
@@ -220,7 +220,7 @@ const notebookCellTitle = {
   notebook: makeAdapter<
     [cell: vscode.NotebookCell],
     [notebook: Option.Option<NotebookTarget>],
-    VsCode
+    VsCode.Service
   >("notebookCellTitle", true, 1, (args) =>
     notebookCellFromTitle(args[0]).pipe(
       Effect.flatMap(
@@ -235,7 +235,7 @@ const notebookCellTitle = {
   notebookCell: makeAdapter<
     [cell: vscode.NotebookCell],
     [cell: Option.Option<MarimoNotebookCell>],
-    VsCode
+    VsCode.Service
   >("notebookCellTitle", true, 1, (args) =>
     notebookCellFromTitle(args[0]).pipe(Effect.map((cell) => [cell])),
   ),
@@ -245,7 +245,7 @@ const notebookCellStatusBar = {
   notebook: makeAdapter<
     [cell: vscode.NotebookCell],
     [notebook: Option.Option<NotebookTarget>],
-    VsCode
+    VsCode.Service
   >("notebookCellStatusBar", false, 1, (args) =>
     Schema.decodeUnknownEffect(VscodeNotebookCellSchema)(args[0]).pipe(
       Effect.flatMap(notebookFromCell),

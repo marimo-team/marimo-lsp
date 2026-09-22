@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type Context, Effect } from "effect";
+import { Effect } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { CellOutputOperationError } from "../CellOutputOperation.ts";
 import {
   CellOutputProjection,
@@ -68,7 +68,7 @@ class FakeExecution implements OutputExecution {
 }
 
 /** Keyed-output builders bound to the test's VS Code value constructors. */
-const builders = (code: Context.Service.Shape<typeof VsCode>) => ({
+const builders = (code: VsCode.Interface) => ({
   stdout: (text: string): KeyedCellOutput => ({
     key: "stdout",
     output: new code.NotebookCellOutput(
@@ -90,7 +90,7 @@ const withBuilders = <A, E>(
   Effect.gen(function* () {
     const vscode = yield* TestVsCode.make({});
     return yield* Effect.gen(function* () {
-      return yield* body(builders(yield* VsCode));
+      return yield* body(builders(yield* VsCode.Service));
     }).pipe(Effect.provide(vscode.layer));
   });
 
