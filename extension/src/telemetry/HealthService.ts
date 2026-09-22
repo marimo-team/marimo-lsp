@@ -9,10 +9,7 @@ import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
-import {
-  TyLanguageServer,
-  TyLanguageServerStatus,
-} from "../lsp/TyLanguageServer.ts";
+import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { PythonExtension } from "../python/PythonExtension.ts";
 import { Uv, UvBin } from "../python/Uv.ts";
@@ -30,7 +27,7 @@ export class HealthService extends Context.Service<HealthService>()(
       const marimo = yield* MarimoClient.Service;
       const notebooks = yield* NotebookRuntime.Service;
       const pyExt = yield* PythonExtension;
-      const tyLsp = yield* TyLanguageServer;
+      const tyLsp = yield* TyLanguageServer.Service;
       const ruffLsp = yield* RuffLanguageServer.Service;
 
       const formatDiagnostics = () =>
@@ -99,7 +96,7 @@ export class HealthService extends Context.Service<HealthService>()(
           if (managedLanguageFeaturesEnabled) {
             lines.push("Python Language Server (ty):");
 
-            TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus, {
+            TyLanguageServer.Status.$match(yield* tyLsp.getHealthStatus, {
               Disabled: ({ reason }) => {
                 lines.push("\tStatus: disabled");
                 lines.push(`\tReason: ${reason}`);

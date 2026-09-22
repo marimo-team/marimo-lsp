@@ -50,7 +50,9 @@ const tyPromptDismissedKey = createStorageKey(
  * No ty binary is available. We never install one ourselves — the user
  * supplies it via the official ty extension or `marimo.ty.path`.
  */
-export class TyBinaryNotFound extends Data.TaggedError("TyBinaryNotFound")<{
+export class BinaryNotFoundError extends Data.TaggedError(
+  "TyLanguageServer.BinaryNotFoundError",
+)<{
   readonly serverVersion: string;
 }> {
   format(): string {
@@ -62,9 +64,9 @@ export class TyBinaryNotFound extends Data.TaggedError("TyBinaryNotFound")<{
   }
 }
 
-export const TyLanguageServerStatus = Data.taggedEnum<TyLanguageServerStatus>();
+export const Status = Data.taggedEnum<Status>();
 
-type TyLanguageServerStatus = Data.TaggedEnum<{
+export type Status = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   NotFound: { readonly message: string };
@@ -89,223 +91,216 @@ type TyLanguageServerStatus = Data.TaggedEnum<{
  * the official ty-vscode extension behavior (ty doesn't support
  * `workspace/didChangeConfiguration` — a full restart is required).
  */
-export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
-  "TyLanguageServer",
-  {
-    make: Effect.gen(function* () {
-      const pyExt = yield* PythonExtension;
-      const envInvalidation = yield* PythonEnvInvalidation.Service;
-      const telemetry = yield* Effect.serviceOption(Telemetry);
-      const code = yield* VsCode;
-      const notifyMissingTy = yield* makeTyMissingNotifier();
+export interface Interface {
+  readonly getHealthStatus: Effect.Effect<Status>;
+}
 
-      const statusRef = yield* Ref.make<TyLanguageServerStatus>(
-        TyLanguageServerStatus.Starting(),
-      );
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/TyLanguageServer",
+) {}
 
-      const disabledReasonOption = yield* getTyDisabledReason();
-      if (Option.isSome(disabledReasonOption)) {
-        if (Option.isSome(telemetry))
-          yield* telemetry.value.tySetup("disabled");
-        yield* Ref.set(
-          statusRef,
-          TyLanguageServerStatus.Disabled({
-            reason: disabledReasonOption.value,
-          }),
-        );
-      }
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const pyExt = yield* PythonExtension;
+    const envInvalidation = yield* PythonEnvInvalidation.Service;
+    const telemetry = yield* Effect.serviceOption(Telemetry);
+    const code = yield* VsCode;
+    const notifyMissingTy = yield* makeMissingNotifier();
 
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          if (Option.isSome(disabledReasonOption)) return;
+    const statusRef = yield* Ref.make<Status>(Status.Starting());
 
-          const outputChannel = yield* code.window.createOutputChannel(
-            `marimo (${TY_SERVER.name})`,
-          );
-
-          // One server cycle: start → run → wait for env change → return.
-          // The Effect.scoped wrapper ensures the server process and all
-          // resources are cleaned up before the next cycle begins.
-          const serverCycle = Effect.gen(function* () {
-            yield* Ref.set(statusRef, TyLanguageServerStatus.Starting());
-            yield* Effect.logDebug("Starting language server").pipe(
-              Effect.annotateLogs({
-                server: TY_SERVER.name,
-                version: TY_SERVER.version,
-              }),
-            );
-
-            const resolved = yield* Option.match(yield* resolveTyBinary(), {
-              onNone: () =>
-                new TyBinaryNotFound({ serverVersion: TY_SERVER.version }),
-              onSome: Effect.succeed,
-            });
-
-            const client = yield* connectMarimoNotebookLspClient({
-              name: TY_SERVER.name,
-              command: resolved.path,
-              args: ["server"],
-              outputChannel,
-              initializationOptions: {},
-              onConfigurationRequest: (params) =>
-                Effect.forEach(params.items, (item) =>
-                  Effect.gen(function* () {
-                    if (item.section !== "ty") return null;
-
-                    const scopeUri = item.scopeUri
-                      ? code.Uri.parse(item.scopeUri, true)
-                      : undefined;
-                    const path =
-                      yield* pyExt.getActiveEnvironmentPath(scopeUri);
-                    const env = Option.getOrNull(
-                      yield* pyExt.resolveEnvironment(path),
-                    );
-
-                    return {
-                      pythonExtension: {
-                        activeEnvironment:
-                          env == null
-                            ? null
-                            : {
-                                version:
-                                  env.version == null
-                                    ? null
-                                    : {
-                                        major: env.version.major,
-                                        minor: env.version.minor,
-                                        patch: env.version.micro,
-                                        sysVersion: env.version.sysVersion,
-                                      },
-                                environment:
-                                  env.environment == null
-                                    ? null
-                                    : {
-                                        folderUri:
-                                          env.environment.folderUri.toString(),
-                                        name: env.environment.name,
-                                        type: env.environment.type,
-                                      },
-                                executable: {
-                                  uri: env.executable.uri?.toString(),
-                                  sysPrefix: env.executable.sysPrefix,
-                                },
-                              },
-                      },
-                    };
-                  }),
-                ),
-            });
-
-            const serverVersion = client.serverInfo.version;
-
-            yield* Effect.logInfo("Language server started").pipe(
-              Effect.annotateLogs({
-                server: TY_SERVER.name,
-                version: serverVersion,
-              }),
-            );
-
-            if (Option.isSome(telemetry)) {
-              yield* telemetry.value.binaryResolved({
-                server: "ty",
-                resolved,
-                version: serverVersion,
-              });
-            }
-
-            // Update running status with current Python environment
-            const activePath = yield* pyExt.getActiveEnvironmentPath();
-            const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
-            const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
-              path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
-              version: env.version?.sysVersion ?? null,
-            }));
-            yield* Ref.set(
-              statusRef,
-              TyLanguageServerStatus.Running({
-                serverVersion,
-                binarySource: resolved,
-                pythonEnvironment,
-              }),
-            );
-
-            // Block until env invalidation, then return to let
-            // Effect.scoped clean up and the loop restart.
-            yield* envInvalidation.changes.pipe(
-              Stream.take(1),
-              Stream.runDrain,
-            );
-
-            yield* Effect.logInfo("Restarting language server").pipe(
-              Effect.annotateLogs({ server: TY_SERVER.name }),
-            );
-          }).pipe(Effect.scoped);
-
-          // Run the server in a loop: start → invalidation → restart.
-          // A missing binary gets a dedicated recovery path; other failures
-          // propagate to catchCause and stop the loop.
-          yield* Effect.forever(serverCycle).pipe(
-            // A missing binary is a user-resolvable configuration state, not
-            // a crash: record it, nudge once, and stop the restart loop.
-            Effect.catchTag("TyBinaryNotFound", (error) =>
-              Effect.gen(function* () {
-                const message = error.format();
-                yield* Ref.set(
-                  statusRef,
-                  TyLanguageServerStatus.NotFound({ message }),
-                );
-                yield* Effect.logInfo(message).pipe(
-                  Effect.annotateLogs({
-                    server: TY_SERVER.name,
-                    version: TY_SERVER.version,
-                  }),
-                );
-                if (Option.isSome(telemetry)) {
-                  yield* telemetry.value.binaryUnresolved("ty");
-                }
-                yield* notifyMissingTy;
-              }),
-            ),
-            Effect.catchCause((cause) =>
-              Effect.gen(function* () {
-                if (isExpectedCancellation(cause)) return;
-                if (Option.isSome(telemetry))
-                  yield* telemetry.value.tySetup("startup_failed");
-                const message = "Failed to start ty language server";
-                yield* Ref.set(
-                  statusRef,
-                  TyLanguageServerStatus.Failed({ message, cause }),
-                );
-                yield* Effect.logError(message).pipe(
-                  Effect.annotateLogs({
-                    server: TY_SERVER.name,
-                    version: TY_SERVER.version,
-                    cause,
-                  }),
-                );
-                yield* showErrorAndPromptLogs(message);
-              }),
-            ),
-          );
+    const disabledReasonOption = yield* getTyDisabledReason();
+    if (Option.isSome(disabledReasonOption)) {
+      if (Option.isSome(telemetry)) yield* telemetry.value.tySetup("disabled");
+      yield* Ref.set(
+        statusRef,
+        Status.Disabled({
+          reason: disabledReasonOption.value,
         }),
       );
+    }
 
-      return {
-        getHealthStatus: Ref.get(statusRef),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([
-      Config.layer,
-      OutputChannel.layer,
-      NotebookVariables.layer,
-      PythonEnvInvalidation.layer,
-      Storage.layer,
-    ]),
-  );
-}
+    yield* Effect.forkScoped(
+      Effect.gen(function* () {
+        if (Option.isSome(disabledReasonOption)) return;
+
+        const outputChannel = yield* code.window.createOutputChannel(
+          `marimo (${TY_SERVER.name})`,
+        );
+
+        // One server cycle: start → run → wait for env change → return.
+        // The Effect.scoped wrapper ensures the server process and all
+        // resources are cleaned up before the next cycle begins.
+        const serverCycle = Effect.gen(function* () {
+          yield* Ref.set(statusRef, Status.Starting());
+          yield* Effect.logDebug("Starting language server").pipe(
+            Effect.annotateLogs({
+              server: TY_SERVER.name,
+              version: TY_SERVER.version,
+            }),
+          );
+
+          const resolved = yield* Option.match(yield* resolveTyBinary(), {
+            onNone: () =>
+              new BinaryNotFoundError({ serverVersion: TY_SERVER.version }),
+            onSome: Effect.succeed,
+          });
+
+          const client = yield* connectMarimoNotebookLspClient({
+            name: TY_SERVER.name,
+            command: resolved.path,
+            args: ["server"],
+            outputChannel,
+            initializationOptions: {},
+            onConfigurationRequest: (params) =>
+              Effect.forEach(params.items, (item) =>
+                Effect.gen(function* () {
+                  if (item.section !== "ty") return null;
+
+                  const scopeUri = item.scopeUri
+                    ? code.Uri.parse(item.scopeUri, true)
+                    : undefined;
+                  const path = yield* pyExt.getActiveEnvironmentPath(scopeUri);
+                  const env = Option.getOrNull(
+                    yield* pyExt.resolveEnvironment(path),
+                  );
+
+                  return {
+                    pythonExtension: {
+                      activeEnvironment:
+                        env == null
+                          ? null
+                          : {
+                              version:
+                                env.version == null
+                                  ? null
+                                  : {
+                                      major: env.version.major,
+                                      minor: env.version.minor,
+                                      patch: env.version.micro,
+                                      sysVersion: env.version.sysVersion,
+                                    },
+                              environment:
+                                env.environment == null
+                                  ? null
+                                  : {
+                                      folderUri:
+                                        env.environment.folderUri.toString(),
+                                      name: env.environment.name,
+                                      type: env.environment.type,
+                                    },
+                              executable: {
+                                uri: env.executable.uri?.toString(),
+                                sysPrefix: env.executable.sysPrefix,
+                              },
+                            },
+                    },
+                  };
+                }),
+              ),
+          });
+
+          const serverVersion = client.serverInfo.version;
+
+          yield* Effect.logInfo("Language server started").pipe(
+            Effect.annotateLogs({
+              server: TY_SERVER.name,
+              version: serverVersion,
+            }),
+          );
+
+          if (Option.isSome(telemetry)) {
+            yield* telemetry.value.binaryResolved({
+              server: "ty",
+              resolved,
+              version: serverVersion,
+            });
+          }
+
+          // Update running status with current Python environment
+          const activePath = yield* pyExt.getActiveEnvironmentPath();
+          const resolvedEnv = yield* pyExt.resolveEnvironment(activePath);
+          const pythonEnvironment = Option.map(resolvedEnv, (env) => ({
+            path: env.executable.uri?.fsPath ?? env.path ?? "Unknown",
+            version: env.version?.sysVersion ?? null,
+          }));
+          yield* Ref.set(
+            statusRef,
+            Status.Running({
+              serverVersion,
+              binarySource: resolved,
+              pythonEnvironment,
+            }),
+          );
+
+          // Block until env invalidation, then return to let
+          // Effect.scoped clean up and the loop restart.
+          yield* envInvalidation.changes.pipe(Stream.take(1), Stream.runDrain);
+
+          yield* Effect.logInfo("Restarting language server").pipe(
+            Effect.annotateLogs({ server: TY_SERVER.name }),
+          );
+        }).pipe(Effect.scoped);
+
+        // Run the server in a loop: start → invalidation → restart.
+        // A missing binary gets a dedicated recovery path; other failures
+        // propagate to catchCause and stop the loop.
+        yield* Effect.forever(serverCycle).pipe(
+          // A missing binary is a user-resolvable configuration state, not
+          // a crash: record it, nudge once, and stop the restart loop.
+          Effect.catchTag("TyLanguageServer.BinaryNotFoundError", (error) =>
+            Effect.gen(function* () {
+              const message = error.format();
+              yield* Ref.set(statusRef, Status.NotFound({ message }));
+              yield* Effect.logInfo(message).pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  version: TY_SERVER.version,
+                }),
+              );
+              if (Option.isSome(telemetry)) {
+                yield* telemetry.value.binaryUnresolved("ty");
+              }
+              yield* notifyMissingTy;
+            }),
+          ),
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              if (isExpectedCancellation(cause)) return;
+              if (Option.isSome(telemetry))
+                yield* telemetry.value.tySetup("startup_failed");
+              const message = "Failed to start ty language server";
+              yield* Ref.set(statusRef, Status.Failed({ message, cause }));
+              yield* Effect.logError(message).pipe(
+                Effect.annotateLogs({
+                  server: TY_SERVER.name,
+                  version: TY_SERVER.version,
+                  cause,
+                }),
+              );
+              yield* showErrorAndPromptLogs(message);
+            }),
+          ),
+        );
+      }),
+    );
+
+    return Service.of({
+      getHealthStatus: Ref.get(statusRef),
+    });
+  }),
+);
+
+export const defaultLayer = layer.pipe(
+  Layer.provide([
+    Config.layer,
+    OutputChannel.layer,
+    NotebookVariables.layer,
+    PythonEnvInvalidation.layer,
+    Storage.layer,
+  ]),
+);
 
 /**
  * Resolves the ty binary using a 2-tier strategy:
@@ -356,8 +351,8 @@ const resolveTyBinary = Effect.fn(function* () {
  * machine once the user chooses Don't Show Again. Installing is not dismissal.
  * The local F5 configuration bypasses persistence so reloads can replay it.
  */
-export const makeTyMissingNotifier = Effect.fn(
-  "TyLanguageServer.makeTyMissingNotifier",
+export const makeMissingNotifier = Effect.fn(
+  "TyLanguageServer.makeMissingNotifier",
 )(function* () {
   const code = yield* VsCode;
   const storage = yield* Storage;

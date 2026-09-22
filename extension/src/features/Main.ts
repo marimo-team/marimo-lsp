@@ -8,7 +8,7 @@ import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import type * as MarimoClient from "../lsp/MarimoClient.ts";
 import type * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
-import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
+import type * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
@@ -111,7 +111,7 @@ export function makeExtension(
     | VsCode
     | PythonExtension
     | Telemetry
-    | TyLanguageServer
+    | TyLanguageServer.Service
     | RuffLanguageServer.Service,
     never,
     ExtensionContext
