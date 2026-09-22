@@ -11,12 +11,12 @@ import {
 } from "effect";
 
 import { Uri } from "../__mocks__/TestVsCode.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
 
 export class TestPythonExtension extends Data.TaggedClass(
   "TestPythonExtension",
 )<{
-  readonly layer: Layer.Layer<PythonExtension>;
+  readonly layer: Layer.Layer<PythonExtension.Service>;
   readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
   readonly removeEnvironment: (
     env: py.ResolvedEnvironment,
@@ -59,7 +59,7 @@ export class TestPythonExtension extends Data.TaggedClass(
     });
 
     return new TestPythonExtension({
-      layer: Layer.succeed(PythonExtension, {
+      layer: Layer.succeed(PythonExtension.Service, {
         updateActiveEnvironmentPath(executable: string) {
           return Effect.gen(function* () {
             const envPath: py.EnvironmentPath = {

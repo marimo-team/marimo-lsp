@@ -14,7 +14,7 @@ import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
@@ -30,7 +30,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
     const marimo = yield* MarimoClient.Service;
     const notebooks = yield* NotebookRuntime.Service;
-    const python = yield* PythonExtension;
+    const python = yield* PythonExtension.Service;
     const { LanguageId } = yield* Constants.Service;
 
     const runPromise = Effect.runPromiseWith(

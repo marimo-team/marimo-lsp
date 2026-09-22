@@ -7,7 +7,7 @@ import * as RuffLanguageServer from "./lsp/RuffLanguageServer.ts";
 import * as TyLanguageServer from "./lsp/TyLanguageServer.ts";
 import * as OutputChannel from "./platform/OutputChannel.ts";
 import * as VsCode from "./platform/VsCode.ts";
-import { PythonExtension } from "./python/PythonExtension.ts";
+import * as PythonExtension from "./python/PythonExtension.ts";
 import { Telemetry } from "./telemetry/Telemetry.ts";
 
 export const { activate, deactivate } = makeExtension(

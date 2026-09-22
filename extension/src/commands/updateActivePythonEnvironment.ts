@@ -5,7 +5,7 @@ import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import type { NotebookTarget } from "./Invocation.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
@@ -15,7 +15,7 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
 ) {
   const uv = yield* Uv;
   const code = yield* VsCode.Service;
-  const py = yield* PythonExtension;
+  const py = yield* PythonExtension.Service;
   const notebooks = yield* NotebookRuntime.Service;
 
   if (Option.isNone(target)) {

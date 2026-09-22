@@ -24,7 +24,7 @@ import { Effect, Function, Layer, Option, Queue, Stream } from "effect";
 
 import { formatPythonStatusBarLabel } from "../lib/formatControllerLabel.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { StatusBar, type StatusBarItem } from "./StatusBar.ts";
 
@@ -45,7 +45,7 @@ export const PythonEnvironmentStatusBarLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const statusBar = yield* StatusBar;
-    const pythonExtension = yield* PythonExtension;
+    const pythonExtension = yield* PythonExtension.Service;
 
     const item = yield* statusBar.createStatusBarItem(
       "marimo.pythonEnvironment",
@@ -120,7 +120,7 @@ const updateDisplay = Effect.fn(function* (
   environmentPath: Option.Option<string>,
 ) {
   const code = yield* VsCode.Service;
-  const pythonExtension = yield* PythonExtension;
+  const pythonExtension = yield* PythonExtension.Service;
 
   if (Option.isNone(environmentPath)) {
     // No interpreter selected - show warning state

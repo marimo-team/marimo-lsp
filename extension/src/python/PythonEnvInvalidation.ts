@@ -1,6 +1,6 @@
 import { Context, Duration, Effect, Layer, PubSub, Stream } from "effect";
 
-import { PythonExtension } from "./PythonExtension.ts";
+import * as PythonExtension from "./PythonExtension.ts";
 
 /**
  * Broadcast channel for Python environment invalidation events.
@@ -20,7 +20,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const pyExt = yield* PythonExtension;
+    const pyExt = yield* PythonExtension.Service;
     const pubsub = yield* PubSub.unbounded<string>();
 
     // Forward Python extension env changes into the invalidation channel

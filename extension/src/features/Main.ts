@@ -32,7 +32,7 @@ import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as Storage from "../platform/Storage.ts";
 import type * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
-import type { PythonExtension } from "../python/PythonExtension.ts";
+import type * as PythonExtension from "../python/PythonExtension.ts";
 import { Uv } from "../python/Uv.ts";
 import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
@@ -110,7 +110,7 @@ export function makeExtension(
   layer: Layer.Layer<
     | MarimoClient.Service
     | VsCode.Service
-    | PythonExtension
+    | PythonExtension.Service
     | Telemetry
     | TyLanguageServer.Service
     | RuffLanguageServer.Service,

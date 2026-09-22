@@ -26,7 +26,7 @@ import * as OutputChannel from "../platform/OutputChannel.ts";
 import * as Storage from "../platform/Storage.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
@@ -102,7 +102,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const pyExt = yield* PythonExtension;
+    const pyExt = yield* PythonExtension.Service;
     const envInvalidation = yield* PythonEnvInvalidation.Service;
     const telemetry = yield* Effect.serviceOption(Telemetry);
     const code = yield* VsCode.Service;
