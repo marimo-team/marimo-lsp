@@ -1,7 +1,7 @@
 import { Effect, flow, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { DebugAdapter } from "../kernel/DebugAdapter.ts";
+import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
@@ -10,7 +10,7 @@ import { MarimoCommands } from "./MarimoCommands.ts";
 const handler = Effect.fn("command.debugCell")(
   function* (cell: Option.Option<MarimoNotebookCell>) {
     const code = yield* VsCode;
-    const debugAdapter = yield* DebugAdapter;
+    const debugAdapter = yield* DebugAdapter.Service;
 
     if (Option.isNone(cell)) {
       yield* code.window.showWarningMessage("No cell at the selected index.");
