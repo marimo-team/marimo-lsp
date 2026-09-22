@@ -5,18 +5,13 @@ import {
   createTestTextDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import {
-  findMarimoAppLine,
-  isMarimoAppText,
-  MARIMO_APP_REGEX,
-  MarimoCodeLensProviderLive,
-} from "../MarimoCodeLensProvider.ts";
+import * as MarimoCodeLensProvider from "../MarimoCodeLensProvider.ts";
 
 // ============================================================================
 // Regex Tests (Pure Functions)
 // ============================================================================
 
-describe("MARIMO_APP_REGEX", () => {
+describe("appPattern", () => {
   describe("should match valid marimo app declarations", () => {
     it.each([
       ["basic", "app = marimo.App()"],
@@ -36,7 +31,7 @@ def __():
     return`,
       ],
     ])("%s", (_name, code) => {
-      expect(MARIMO_APP_REGEX.test(code)).toBe(true);
+      expect(MarimoCodeLensProvider.appPattern.test(code)).toBe(true);
     });
   });
 
@@ -57,24 +52,24 @@ def __():
       ["called without assignment", "marimo.App().run()"],
       ["wrong variable name", "my_app = marimo.App()"],
     ])("%s", (_name, code) => {
-      expect(MARIMO_APP_REGEX.test(code)).toBe(false);
+      expect(MarimoCodeLensProvider.appPattern.test(code)).toBe(false);
     });
   });
 });
 
-describe("isMarimoAppText", () => {
+describe("isAppText", () => {
   it("returns true for valid marimo app", () => {
     const code = "import marimo\n\napp = marimo.App()";
-    expect(isMarimoAppText(code)).toBe(true);
+    expect(MarimoCodeLensProvider.isAppText(code)).toBe(true);
   });
 
   it("returns false for non-marimo file", () => {
     const code = "import pandas as pd\nprint('hello')";
-    expect(isMarimoAppText(code)).toBe(false);
+    expect(MarimoCodeLensProvider.isAppText(code)).toBe(false);
   });
 });
 
-describe("findMarimoAppLine", () => {
+describe("findAppLine", () => {
   it.each([
     ["line 0", "app = marimo.App()", 0],
     ["line 2", "import marimo\n\napp = marimo.App()", 2],
@@ -84,11 +79,13 @@ describe("findMarimoAppLine", () => {
       3,
     ],
   ])("returns correct line number: %s", (_name, code, expectedLine) => {
-    expect(findMarimoAppLine(code)).toBe(expectedLine);
+    expect(MarimoCodeLensProvider.findAppLine(code)).toBe(expectedLine);
   });
 
   it("returns undefined for non-marimo file", () => {
-    expect(findMarimoAppLine("import pandas as pd")).toBeUndefined();
+    expect(
+      MarimoCodeLensProvider.findAppLine("import pandas as pd"),
+    ).toBeUndefined();
   });
 });
 
@@ -96,11 +93,11 @@ describe("findMarimoAppLine", () => {
 // Functionality Tests (Integration with Effect-ts)
 // ============================================================================
 
-describe("MarimoCodeLensProviderLive", () => {
+describe("MarimoCodeLensProvider.layer", () => {
   const withTestCtx = Effect.fn(function* () {
     const vscode = yield* TestVsCode.make();
     const layer = Layer.empty.pipe(
-      Layer.provideMerge(MarimoCodeLensProviderLive),
+      Layer.provideMerge(MarimoCodeLensProvider.layer),
       Layer.provide(vscode.layer),
     );
     return { vscode, layer };
@@ -138,8 +135,8 @@ def _():
 
       // The provider is registered and will be called by VSCode
       // We verify the layer builds and the detection logic works
-      expect(isMarimoAppText(pythonCode)).toBe(true);
-      expect(findMarimoAppLine(pythonCode)).toBe(2);
+      expect(MarimoCodeLensProvider.isAppText(pythonCode)).toBe(true);
+      expect(MarimoCodeLensProvider.findAppLine(pythonCode)).toBe(2);
     }),
   );
 });

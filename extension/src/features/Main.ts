@@ -44,7 +44,7 @@ import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
 import * as CellMetadataBindings from "./CellMetadataBindings.ts";
 import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
 import * as Debug from "./Debug.ts";
-import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
+import * as MarimoCodeLensProvider from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 import { RegisterLanguageModelToolsLive } from "./RegisterLanguageModelTools.ts";
@@ -62,7 +62,7 @@ const MainLive = Layer.empty
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetectorLive),
-    Layer.merge(MarimoCodeLensProviderLive),
+    Layer.merge(MarimoCodeLensProvider.layer),
     Layer.merge(SessionsViewLive),
     Layer.merge(SessionFileLifecycleLive),
     Layer.merge(VariablesViewLive),
