@@ -4,7 +4,7 @@ import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.t
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
-import { NotebookConfiguration } from "./NotebookConfiguration.ts";
+import * as NotebookConfiguration from "./NotebookConfiguration.ts";
 
 /**
  * Mirrors kernel configuration into VS Code context keys for UI:
@@ -68,7 +68,7 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
               sessionResources
                 .runScoped(
                   session,
-                  NotebookConfiguration.pipe(
+                  NotebookConfiguration.Service.pipe(
                     Effect.flatMap((configuration) =>
                       configuration.changes.pipe(
                         Stream.runForEach((value) =>

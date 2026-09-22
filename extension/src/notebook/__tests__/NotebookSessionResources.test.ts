@@ -18,7 +18,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NotebookConfiguration } from "../../config/NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../../config/NotebookConfiguration.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import {
   NotebookDocumentSessionEndedError,
@@ -63,7 +63,7 @@ describe("NotebookSessionResources", () => {
         const running = yield* resources
           .runScoped(
             session,
-            NotebookConfiguration.pipe(
+            NotebookConfiguration.Service.pipe(
               Effect.andThen(
                 Deferred.succeed(started, undefined).pipe(
                   Effect.andThen(Effect.never),
@@ -133,7 +133,7 @@ describe("NotebookSessionResources", () => {
 
         for (let index = 0; index < 100; index++) {
           yield* resources
-            .runScoped(session, tracked.track(NotebookConfiguration))
+            .runScoped(session, tracked.track(NotebookConfiguration.Service))
             .pipe(Scope.provide(session.scope));
         }
 

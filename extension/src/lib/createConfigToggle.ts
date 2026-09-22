@@ -1,6 +1,6 @@
 import { Effect, Option, Scope } from "effect";
 
-import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
@@ -59,7 +59,7 @@ export const createConfigToggle = <T extends string>({
       .runScoped(
         session.value,
         Effect.gen(function* () {
-          const configuration = yield* NotebookConfiguration;
+          const configuration = yield* NotebookConfiguration.Service;
           const config = yield* configuration.get;
           const currentValue = getCurrentValue(config);
 

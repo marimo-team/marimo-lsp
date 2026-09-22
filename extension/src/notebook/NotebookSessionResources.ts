@@ -13,7 +13,7 @@ import {
   Scope,
 } from "effect";
 
-import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { NotebookDependencies } from "./NotebookDependencies.ts";
 import {
   type NotebookDocumentSession,

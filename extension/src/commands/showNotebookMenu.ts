@@ -1,7 +1,7 @@
 import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
@@ -83,7 +83,7 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
   const maybeConfig = yield* sessionResources
     .runScoped(
       session.value,
-      NotebookConfiguration.pipe(
+      NotebookConfiguration.Service.pipe(
         Effect.flatMap((configuration) => configuration.get),
       ),
     )
