@@ -6,14 +6,14 @@ import shutdownAllSessions from "../../commands/shutdownAllSessions.ts";
 import shutdownSession from "../../commands/shutdownSession.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
-import { type TreeItem, TreeView } from "../TreeView.ts";
+import * as TreeView from "../TreeView.ts";
 import { type SessionViewItem, LiveSessions } from "./LiveSessions.ts";
 
 /** Native VS Code tree view for live marimo kernel sessions. */
 export const SessionsViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const treeView = yield* TreeView;
+    const treeView = yield* TreeView.Service;
     const sessions = yield* LiveSessions;
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-sessions",
@@ -34,7 +34,7 @@ export const SessionsViewLive = Layer.effectDiscard(
                 ? "Running"
                 : "Idle";
           const attachment = session.attached ? "open" : "background";
-          const item: TreeItem = {
+          const item: TreeView.TreeItem = {
             label,
             tooltip: `${uri.fsPath}\n${state} · ${attachment}\n${session.executable}`,
             themeIcon:

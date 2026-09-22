@@ -5,7 +5,7 @@ import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessio
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DataTable } from "../../types.ts";
-import { TreeView } from "../TreeView.ts";
+import * as TreeView from "../TreeView.ts";
 import {
   type DatasourceDatabase,
   type DatasourceSchema,
@@ -143,7 +143,7 @@ const itemId = (item: DatasourceTreeItem): string => {
  */
 export const DatasourcesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const treeView = yield* TreeView;
+    const treeView = yield* TreeView.Service;
     const datasources = yield* NotebookDatasources;
     const editors = yield* NotebookEditorRegistry.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;

@@ -2,7 +2,7 @@ import { Effect, HashMap, Layer, Option, Ref, Stream } from "effect";
 
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import { TreeView } from "../TreeView.ts";
+import * as TreeView from "../TreeView.ts";
 import { NotebookVariables } from "./NotebookVariables.ts";
 
 interface VariableTreeItem {
@@ -22,7 +22,7 @@ interface VariableTreeItem {
  */
 export const VariablesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const treeView = yield* TreeView;
+    const treeView = yield* TreeView.Service;
     const variables = yield* NotebookVariables;
     const editorRegistry = yield* NotebookEditorRegistry.Service;
 

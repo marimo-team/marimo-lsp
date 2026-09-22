@@ -8,7 +8,7 @@ import * as NotebookSessionResources from "../../notebook/NotebookSessionResourc
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import { TreeView } from "../TreeView.ts";
+import * as TreeView from "../TreeView.ts";
 
 interface PackageTreeItem {
   type: "package";
@@ -33,7 +33,7 @@ interface ActiveDependencies {
  */
 export const PackagesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const treeView = yield* TreeView;
+    const treeView = yield* TreeView.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources.Service;
     const notebooks = yield* NotebookRuntime.Service;

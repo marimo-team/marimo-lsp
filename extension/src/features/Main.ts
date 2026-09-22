@@ -21,7 +21,7 @@ import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
 import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
-import { TreeView } from "../panel/TreeView.ts";
+import * as TreeView from "../panel/TreeView.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import { Api, type MarimoApi } from "../platform/Api.ts";
