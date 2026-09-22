@@ -1,13 +1,4 @@
-import {
-  Context,
-  Data,
-  Effect,
-  Layer,
-  Option,
-  Result,
-  Scope,
-  Stream,
-} from "effect";
+import { Context, Data, Effect, Layer, Option, Result } from "effect";
 
 declare global {
   // oxlint-disable-next-line eslint/no-var, eslint/no-underscore-dangle
@@ -29,64 +20,9 @@ import { signalFromToken } from "../lib/signalFromToken.ts";
 import * as Commands from "./Commands.ts";
 import * as Debug from "./Debug.ts";
 import * as Env from "./Env.ts";
+import * as Notebooks from "./Notebooks.ts";
 import * as Window from "./Window.ts";
 import * as Workspace from "./Workspace.ts";
-
-export class Notebooks extends Context.Service<Notebooks>()("Notebooks", {
-  make: Effect.gen(function* () {
-    const api = vscode.notebooks;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context());
-    return {
-      createRendererMessaging(rendererId: string) {
-        return Effect.succeed(api.createRendererMessaging(rendererId));
-      },
-      createNotebookController(
-        id: string,
-        notebookType: string,
-        label: string,
-      ): Effect.Effect<
-        Omit<vscode.NotebookController, "dispose">,
-        never,
-        Scope.Scope
-      > {
-        return acquireDisposable(() =>
-          api.createNotebookController(id, notebookType, label),
-        );
-      },
-      registerNotebookCellStatusBarItemProvider(
-        notebookType: string,
-        impl: {
-          provideCellStatusBarItems(
-            cell: vscode.NotebookCell,
-          ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
-          changes: Stream.Stream<void>;
-        },
-      ) {
-        return Effect.gen(function* () {
-          const emitter = yield* acquireDisposable(
-            () => new vscode.EventEmitter<void>(),
-          );
-          yield* Effect.forkScoped(
-            impl.changes.pipe(
-              Stream.runForEach(() => Effect.succeed(emitter.fire())),
-            ),
-          );
-          yield* acquireDisposable(() =>
-            api.registerNotebookCellStatusBarItemProvider(notebookType, {
-              onDidChangeCellStatusBarItems: emitter.event,
-              provideCellStatusBarItems: (cell, token) =>
-                runPromise(impl.provideCellStatusBarItems(cell), {
-                  signal: signalFromToken(token),
-                }),
-            }),
-          );
-        });
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 export class AuthError extends Data.TaggedError("AuthError")<{
   cause: unknown;
@@ -600,7 +536,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       workspace: yield* Workspace.Service,
       env: yield* Env.Service,
       debug: yield* Debug.Service,
-      notebooks: yield* Notebooks,
+      notebooks: yield* Notebooks.Service,
       auth: yield* Auth,
       languages: yield* Languages,
       Diagnostic: vscode.Diagnostic,
