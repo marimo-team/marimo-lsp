@@ -17,7 +17,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 - [x] `platform/OutputChannel.ts`
 - [x] `python/PythonEnvInvalidation.ts`
-- [ ] `notebook/NotebookRenderer.ts`
+- [x] `notebook/NotebookRenderer.ts`
 
 ## Service modules
 

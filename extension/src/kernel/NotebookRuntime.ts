@@ -33,7 +33,7 @@ import {
   NotebookDocumentSessions,
 } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
@@ -215,7 +215,7 @@ type RuntimeWorkRequirements =
   | NotebookDatasources
   | NotebookEditorRegistry
   | NotebookDocumentSessions
-  | NotebookRenderer
+  | NotebookRenderer.Service
   | OutputChannel.Service
   | PythonEnvInvalidation.Service
   | Uv
@@ -268,7 +268,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const code = yield* VsCode;
       const config = yield* Config;
       const marimo = yield* MarimoClient;
-      const renderer = yield* NotebookRenderer;
+      const renderer = yield* NotebookRenderer.Service;
       const executions = yield* CellExecutions;
       const variables = yield* NotebookVariables;
       const datasources = yield* NotebookDatasources;
@@ -1312,7 +1312,7 @@ function processNotebookOperation(
 ) {
   return Effect.gen(function* () {
     const editors = yield* NotebookEditorRegistry;
-    const renderer = yield* NotebookRenderer;
+    const renderer = yield* NotebookRenderer.Service;
     const executions = yield* CellExecutions;
     const sessionNotebook = MarimoNotebookDocument.from(
       options.session.document,

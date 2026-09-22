@@ -8,33 +8,45 @@ import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 /**
  * Manages communication with the marimo notebook renderer.
  */
-export class NotebookRenderer extends Context.Service<NotebookRenderer>()(
-  "NotebookRenderer",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      // Defined in package.json
-      const rendererId = "marimo-renderer";
-      const channel = yield* code.notebooks.createRendererMessaging(rendererId);
-      return {
-        rendererId,
-        postMessage(
-          message: RendererReceiveMessage,
-          editor?: vscode.NotebookEditor,
-        ): Effect.Effect<boolean> {
-          return Effect.promise(() => channel.postMessage(message, editor));
-        },
-        messages: Stream.callback<{
-          editor: vscode.NotebookEditor;
-          message: RendererCommand;
-        }>((queue) =>
-          acquireDisposable(() =>
-            channel.onDidReceiveMessage((msg) => Queue.offerUnsafe(queue, msg)),
-          ),
-        ),
-      };
-    }).pipe(Effect.annotateLogs("service", "NotebookRenderer")),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make);
+export interface Interface {
+  readonly rendererId: string;
+  readonly postMessage: (
+    message: RendererReceiveMessage,
+    editor?: vscode.NotebookEditor,
+  ) => Effect.Effect<boolean>;
+  readonly messages: Stream.Stream<{
+    editor: vscode.NotebookEditor;
+    message: RendererCommand;
+  }>;
 }
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/NotebookRenderer",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode;
+    // Defined in package.json
+    const rendererId = "marimo-renderer";
+    const channel = yield* code.notebooks.createRendererMessaging(rendererId);
+
+    const postMessage = Effect.fn("NotebookRenderer.postMessage")(function* (
+      message: RendererReceiveMessage,
+      editor?: vscode.NotebookEditor,
+    ) {
+      return yield* Effect.promise(() => channel.postMessage(message, editor));
+    });
+    const messages = Stream.callback<{
+      editor: vscode.NotebookEditor;
+      message: RendererCommand;
+    }>((queue) =>
+      acquireDisposable(() =>
+        channel.onDidReceiveMessage((msg) => Queue.offerUnsafe(queue, msg)),
+      ),
+    );
+
+    return Service.of({ rendererId, postMessage, messages });
+  }),
+);

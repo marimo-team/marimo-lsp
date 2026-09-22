@@ -12,7 +12,7 @@ import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
 import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
 import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
+import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
