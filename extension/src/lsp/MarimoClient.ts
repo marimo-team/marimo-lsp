@@ -291,12 +291,17 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
           resolve(child);
         });
 
+      let sessionGeneration = 0;
       const client = new lsp.LanguageClient(
         "marimo-lsp",
         "Marimo Language Server",
         serverOptions,
         {
           outputChannel,
+          // A restarted server begins its snapshot revisions at zero again.
+          initializationOptions: () => ({
+            sessionGeneration: ++sessionGeneration,
+          }),
           revealOutputChannelOn: lsp.RevealOutputChannelOn.Never,
           documentSelector: [
             { notebook: NOTEBOOK_TYPE, language: "sql" },

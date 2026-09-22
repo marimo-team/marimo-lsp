@@ -60,19 +60,25 @@ const makeTestLayer = Effect.fn(function* (
   >();
   const send = options.send ?? (() => Effect.succeed(null));
   let nextSessionId = 1;
+  let revision = 0;
+  const snapshot = () => ({
+    generation: 1,
+    revision: ++revision,
+    sessions: [...serverSessions.values()],
+  });
   const client = makeTestMarimoClient({
     ...options,
     send: (request) =>
       Effect.gen(function* () {
-        const snapshot = [...serverSessions.values()];
+        const before = snapshot();
         const result = yield* send(request);
         switch (request.kind) {
           case "list-sessions":
-            return { sessions: snapshot };
+            return before;
           case "execute": {
             const notebookUri = notebookId(request.notebookUri);
             const existing = serverSessions.get(notebookUri);
-            if (existing?.executable === request.executable) return existing;
+            if (existing?.executable === request.executable) return snapshot();
             serverSessions.set(notebookUri, {
               sessionId: kernelSessionId(
                 `00000000-0000-4000-8000-${String(nextSessionId++).padStart(12, "0")}`,
@@ -85,11 +91,11 @@ const makeTestLayer = Effect.fn(function* (
               status: "idle",
               attached: true,
             });
-            return serverSessions.get(notebookUri);
+            return snapshot();
           }
           case "close-session":
             serverSessions.delete(notebookId(request.notebookUri));
-            break;
+            return snapshot();
           case "move-session": {
             const previous = serverSessions.get(
               notebookId(request.notebookUri),
@@ -99,11 +105,11 @@ const makeTestLayer = Effect.fn(function* (
               const notebookUri = notebookId(request.newNotebookUri);
               serverSessions.set(notebookUri, { ...previous, notebookUri });
             }
-            break;
+            return snapshot();
           }
           case "shutdown-all-sessions":
             serverSessions.clear();
-            break;
+            return snapshot();
         }
         return result;
       }),
@@ -111,6 +117,7 @@ const makeTestLayer = Effect.fn(function* (
   return {
     vscode,
     serverSessions,
+    snapshot,
     layer: Layer.empty.pipe(
       Layer.provideMerge(NotebookRuntime.layer),
       Layer.provide(client),
@@ -429,111 +436,6 @@ it.effect.each([false, true])(
     }),
 );
 
-it.effect(
-  "keeps a replacement binding through stale notifications and clears it on shutdown",
-  Effect.fn(function* () {
-    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
-    const calls: TestCommand[] = [];
-    const editor = TestVsCode.makeNotebookEditor(
-      NodePath.join(process.cwd(), "notebook.py"),
-    );
-    const id = notebookId(editor.notebook.uri.toString());
-    const { layer, serverSessions } = yield* makeTestLayer(
-      {
-        sessionChanges: Stream.fromPubSub(changes),
-        send: (request) =>
-          Effect.sync(() => {
-            calls.push(request);
-            return null;
-          }),
-      },
-      { initialDocuments: [editor.notebook] },
-    );
-
-    yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
-      const document = yield* runtime.forDocument(editor.notebook);
-      const notebook = yield* runtime.forNotebook(id);
-      yield* document.execute({ cells: [] }, "/first-python");
-      const oldSession = serverSessions.get(id);
-      assert.isDefined(oldSession);
-      yield* document.execute({ cells: [] }, "/second-python");
-      const replacement = serverSessions.get(id);
-      assert.isDefined(replacement);
-      expect(replacement.sessionId).not.toBe(oldSession.sessionId);
-
-      for (const sessions of [[], [oldSession]]) {
-        const before = calls.filter(
-          (request) => request.kind === "list-sessions",
-        ).length;
-        yield* PubSub.publish(changes, { sessions });
-        // Wait for reconciliation to enter the notebook queue before the RPC.
-        yield* eventually(
-          Effect.sync(
-            () =>
-              calls.filter((request) => request.kind === "list-sessions")
-                .length,
-          ),
-          (count) => count > before,
-        );
-        yield* notebook.interrupt;
-        expect(calls.at(-1)).toMatchObject({
-          kind: "interrupt",
-          kernelSessionId: replacement.sessionId,
-        });
-      }
-
-      yield* notebook.close;
-      const error = yield* Effect.flip(notebook.interrupt);
-      expect(error._tag).toBe("NoActiveKernelError");
-    }).pipe(Effect.provide(layer));
-  }),
-);
-
-it.effect(
-  "shares one confirmation across notebooks without refreshing again for its own snapshot",
-  Effect.fn(function* () {
-    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
-    let queries = 0;
-    const editors = ["first.py", "second.py", "third.py"].map((name) =>
-      TestVsCode.makeNotebookEditor(NodePath.join(process.cwd(), name)),
-    );
-    const { layer } = yield* makeTestLayer(
-      {
-        sessionChanges: Stream.fromPubSub(changes),
-        send: (request) =>
-          Effect.sync(() => {
-            if (request.kind === "list-sessions") queries += 1;
-            return null;
-          }),
-      },
-      { initialDocuments: editors.map((editor) => editor.notebook) },
-    );
-    yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
-      for (const editor of editors) {
-        const document = yield* runtime.forDocument(editor.notebook);
-        yield* document.execute({ cells: [] }, "/python");
-      }
-      yield* Effect.yieldNow;
-      const before = queries;
-      yield* PubSub.publish(changes, { sessions: [] });
-      yield* eventually(
-        Effect.sync(() => queries),
-        (count) => count > before,
-      );
-      for (const editor of editors) {
-        const handle = yield* runtime.forNotebook(
-          notebookId(editor.notebook.uri.toString()),
-        );
-        yield* handle.interrupt;
-      }
-      yield* Effect.yieldNow;
-      expect(queries - before).toBe(1);
-    }).pipe(Effect.provide(layer));
-  }),
-);
-
 it.effect.each(["close", "move"] as const)(
   "reuses the snapshot from %s instead of querying again",
   (operation) =>
@@ -568,7 +470,7 @@ it.effect.each(["close", "move"] as const)(
             break;
         }
         yield* Effect.yieldNow;
-        expect(queries - before).toBe(1);
+        expect(queries - before).toBe(0);
         expect((yield* Effect.flip(notebook.interrupt))._tag).toBe(
           "NoActiveKernelError",
         );
@@ -580,76 +482,6 @@ it.effect.each(["close", "move"] as const)(
         }
       }).pipe(Effect.provide(layer));
     }),
-);
-
-it.effect(
-  "does not apply a shared confirmation over a newer execution binding",
-  Effect.fn(function* () {
-    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
-    const executionStarted = yield* Deferred.make<void>();
-    const releaseExecution = yield* Deferred.make<void>();
-    const queryStarted = yield* Deferred.make<void>();
-    const releaseQuery = yield* Deferred.make<void>();
-    let delayQuery = false;
-    const calls: TestCommand[] = [];
-    const editors = ["first.py", "second.py"].map((name) =>
-      TestVsCode.makeNotebookEditor(NodePath.join(process.cwd(), name)),
-    );
-    const { layer, serverSessions } = yield* makeTestLayer(
-      {
-        sessionChanges: Stream.fromPubSub(changes),
-        send: (request) =>
-          Effect.gen(function* () {
-            calls.push(request);
-            if (
-              request.kind === "execute" &&
-              request.executable === "/replacement"
-            ) {
-              yield* Deferred.succeed(executionStarted, undefined);
-              yield* Deferred.await(releaseExecution);
-            }
-            if (request.kind === "list-sessions" && delayQuery) {
-              yield* Deferred.succeed(queryStarted, undefined);
-              yield* Deferred.await(releaseQuery);
-            }
-            return null;
-          }),
-      },
-      { initialDocuments: editors.map((editor) => editor.notebook) },
-    );
-    yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
-      for (const editor of editors) {
-        const document = yield* runtime.forDocument(editor.notebook);
-        yield* document.execute({ cells: [] }, "/python");
-      }
-      yield* Effect.yieldNow;
-      const second = editors[1];
-      assert.isDefined(second);
-      const id = notebookId(second.notebook.uri.toString());
-      const document = yield* runtime.forDocument(second.notebook);
-      const execution = yield* document
-        .execute({ cells: [] }, "/replacement")
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(executionStarted);
-      delayQuery = true;
-      yield* PubSub.publish(changes, { sessions: [] });
-      yield* Deferred.await(queryStarted);
-      yield* Deferred.succeed(releaseExecution, undefined);
-      yield* Fiber.join(execution);
-
-      const handle = yield* runtime.forNotebook(id);
-      const interrupt = yield* handle.interrupt.pipe(Effect.forkChild);
-      yield* Effect.yieldNow;
-      yield* Deferred.succeed(releaseQuery, undefined);
-      yield* Fiber.join(interrupt);
-      expect(
-        calls.findLast((request) => request.kind === "interrupt"),
-      ).toMatchObject({
-        kernelSessionId: serverSessions.get(id)?.sessionId,
-      });
-    }).pipe(Effect.provide(layer));
-  }),
 );
 
 it.effect(
@@ -1002,18 +834,7 @@ it.effect(
 it.effect(
   "reports a live kernel from the server session snapshot",
   Effect.fn(function* () {
-    const changes = yield* PubSub.unbounded<{
-      sessions: ReadonlyArray<{
-        sessionId: ReturnType<typeof kernelSessionId>;
-        notebookUri: ReturnType<typeof notebookId>;
-        filename: string;
-        executable: string;
-        workingDirectory: string;
-        startedAt: number;
-        status: "idle";
-        attached: boolean;
-      }>;
-    }>();
+    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
     const { layer, vscode } = yield* makeTestLayer({
@@ -1025,6 +846,8 @@ it.effect(
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
+        generation: 1,
+        revision: 2,
         sessions: [
           {
             sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
@@ -1083,6 +906,75 @@ it.effect(
       );
       expect(Option.isNone(released)).toBe(true);
       expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "keeps processing session changes while another notebook is busy",
+  Effect.fn(function* () {
+    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
+    const executionStarted = yield* Deferred.make<void>();
+    const releaseExecution = yield* Deferred.make<void>();
+    const first = TestVsCode.makeNotebookEditor(
+      NodePath.join(process.cwd(), "busy.py"),
+    );
+    const second = TestVsCode.makeNotebookEditor(
+      NodePath.join(process.cwd(), "other.py"),
+    );
+    const firstId = notebookId(first.notebook.uri.toString());
+    const secondId = notebookId(second.notebook.uri.toString());
+    const { layer, vscode, serverSessions, snapshot } = yield* makeTestLayer(
+      {
+        sessionChanges: Stream.fromPubSub(changes),
+        send: (request) =>
+          request.kind === "execute" && request.executable === "/replacement"
+            ? Deferred.succeed(executionStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseExecution)),
+                Effect.as(null),
+              )
+            : Effect.succeed(null),
+      },
+      { initialDocuments: [first.notebook, second.notebook] },
+    );
+    yield* Effect.gen(function* () {
+      const runtime = yield* NotebookRuntime;
+      const firstDocument = yield* runtime.forDocument(first.notebook);
+      const secondDocument = yield* runtime.forDocument(second.notebook);
+      yield* firstDocument.execute({ cells: [] }, "/python");
+      yield* secondDocument.execute({ cells: [] }, "/python");
+      yield* vscode.setActiveNotebookEditor(Option.some(second));
+      yield* eventually(
+        hasKernelContexts(vscode),
+        (values) => values.at(-1) === true,
+      );
+
+      const execution = yield* firstDocument
+        .execute({ cells: [] }, "/replacement")
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(executionStarted);
+      serverSessions.delete(firstId);
+      yield* PubSub.publish(changes, snapshot());
+      yield* eventually(runtime.getRuntimeSession(firstId), Option.isNone);
+      // This second change must reach the active editor before the busy
+      // notebook's command returns, even though its first change is still queued.
+      serverSessions.delete(secondId);
+      yield* PubSub.publish(changes, snapshot());
+      const contexts = yield* eventually(
+        hasKernelContexts(vscode),
+        (values) => values.at(-1) === false,
+      );
+      expect(contexts.at(-1)).toBe(false);
+      const other = yield* runtime.forNotebook(secondId);
+      expect((yield* Effect.flip(other.interrupt))._tag).toBe(
+        "NoActiveKernelError",
+      );
+
+      yield* Deferred.succeed(releaseExecution, undefined);
+      yield* Fiber.join(execution);
+      // Earlier queued snapshots must not erase the replacement accepted above.
+      const busy = yield* runtime.forNotebook(firstId);
+      yield* busy.interrupt;
     }).pipe(Effect.provide(layer));
   }),
 );

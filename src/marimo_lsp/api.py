@@ -58,7 +58,6 @@ from marimo_lsp.models import (
     ListSQLTablesRequest,
     ModelRequest,
     ReadNotebookOutputsResponse,
-    SessionInfo,
     SetDisplayThemeResponse,
     UpdateUIElementRequest,
 )
@@ -241,8 +240,8 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
 
 
 @command(protocol.Execute)
-async def run(ctx: ApiContext, args: protocol.Execute) -> SessionInfo:
-    """Dispatch execution and return the session that accepted it."""
+async def run(ctx: ApiContext, args: protocol.Execute) -> ListSessionsResponse:
+    """Dispatch execution and return the resulting live-session snapshot."""
     logger.info(f"run for {args.notebook_uri}")
     session = await ctx.sessions.start(
         args.notebook_uri, args.executable, args.working_directory
@@ -263,7 +262,7 @@ async def run(ctx: ApiContext, args: protocol.Execute) -> SessionInfo:
     )
     session.put_control_request(request.as_command(), from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
-    return session.describe()
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.UpdateUiElement)
@@ -422,16 +421,19 @@ async def send_stdin(ctx: ApiContext, args: protocol.SendStdin) -> None:
 
 
 @command(protocol.CloseSession)
-async def close_session(ctx: ApiContext, args: protocol.CloseSession) -> None:
+async def close_session(
+    ctx: ApiContext, args: protocol.CloseSession
+) -> ListSessionsResponse:
     logger.info(f"close_session for {args.notebook_uri}")
     ctx.sessions.close(args.notebook_uri)
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.RestartSession)
 async def restart_session(
     ctx: ApiContext,
     args: protocol.RestartSession,
-) -> None:
+) -> ListSessionsResponse:
     logger.info(f"restart_session for {args.notebook_uri}")
     restarted = await ctx.sessions.restart(
         args.notebook_uri,
@@ -441,12 +443,16 @@ async def restart_session(
     )
     if restarted is None:
         raise SessionNotFoundError(args.notebook_uri)
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.MoveSession)
-async def move_session(ctx: ApiContext, args: protocol.MoveSession) -> None:
+async def move_session(
+    ctx: ApiContext, args: protocol.MoveSession
+) -> ListSessionsResponse:
     logger.info(f"move_session from {args.notebook_uri} to {args.new_notebook_uri}")
     ctx.sessions.move(args.notebook_uri, args.new_notebook_uri)
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.ListSessions)
@@ -454,16 +460,17 @@ async def list_sessions(
     ctx: ApiContext,
     _args: protocol.ListSessions,
 ) -> ListSessionsResponse:
-    return ListSessionsResponse(sessions=ctx.sessions.describe())
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.ShutdownAllSessions)
 async def shutdown_all_sessions(
     ctx: ApiContext,
     _args: protocol.ShutdownAllSessions,
-) -> None:
+) -> ListSessionsResponse:
     """Close every live kernel session with one collection mutation."""
     ctx.sessions.close_all()
+    return ctx.sessions.snapshot()
 
 
 @command(protocol.ExecuteScratchpad)

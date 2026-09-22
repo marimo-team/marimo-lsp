@@ -203,21 +203,34 @@ function makeTestMarimoClientValue(
         ((request) =>
           Effect.succeed(
             request.kind === "list-sessions"
-              ? { sessions: [] }
+              ? { generation: 1, revision: 1, sessions: [] }
               : request.kind === "read-notebook-outputs"
                 ? { cells: [] }
                 : request.kind === "execute"
                   ? {
-                      sessionId: TEST_KERNEL_SESSION_ID,
-                      notebookUri: request.notebookUri,
-                      filename: null,
-                      executable: request.executable,
-                      workingDirectory: request.workingDirectory,
-                      startedAt: 1,
-                      status: "running",
-                      attached: true,
+                      generation: 1,
+                      revision: 2,
+                      sessions: [
+                        {
+                          sessionId: TEST_KERNEL_SESSION_ID,
+                          notebookUri: request.notebookUri,
+                          filename: null,
+                          executable: request.executable,
+                          workingDirectory: request.workingDirectory,
+                          startedAt: 1,
+                          status: "running",
+                          attached: true,
+                        },
+                      ],
                     }
-                  : null,
+                  : [
+                        "close-session",
+                        "restart-session",
+                        "move-session",
+                        "shutdown-all-sessions",
+                      ].includes(request.kind)
+                    ? { generation: 1, revision: 3, sessions: [] }
+                    : null,
           )),
       kernelNotifications: options.kernelNotifications ?? Stream.never,
       documentAnalysis: options.documentAnalysis ?? Stream.never,

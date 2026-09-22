@@ -101,6 +101,7 @@ else:
         response = await lsp_client.initialize_session(
             lsp.InitializeParams(
                 root_uri="file:///test/workspace",
+                initialization_options={"sessionGeneration": 42},
                 capabilities=lsp.ClientCapabilities(
                     notebook_document=lsp.NotebookDocumentClientCapabilities(
                         synchronization=lsp.NotebookDocumentSyncClientCapabilities()
@@ -563,7 +564,7 @@ async def test_execute_returns_the_session_before_execution_finishes(
         )
     )
     try:
-        session = await asyncio.wait_for(
+        snapshot = await asyncio.wait_for(
             send_command(
                 client,
                 {
@@ -576,17 +577,25 @@ async def test_execute_returns_the_session_before_execution_finishes(
             ),
             timeout=10,
         )
+        session = next(
+            item for item in snapshot["sessions"] if item["notebookUri"] == uri
+        )
+        assert snapshot["generation"] == 42
+        assert snapshot["revision"] > 0
         assert session["notebookUri"] == uri
         assert session["workingDirectory"] == str(tmp_path)
         assert session["sessionId"] == await asyncio.wait_for(started, timeout=10)
         assert not completed.is_set()
-        await send_command(
-            client,
-            {
-                "kind": "interrupt",
-                "notebookUri": uri,
-                "kernelSessionId": session["sessionId"],
-            },
+        await asyncio.wait_for(
+            send_command(
+                client,
+                {
+                    "kind": "interrupt",
+                    "notebookUri": uri,
+                    "kernelSessionId": session["sessionId"],
+                },
+            ),
+            timeout=10,
         )
         await asyncio.wait_for(completed.wait(), timeout=10)
     finally:

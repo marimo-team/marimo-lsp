@@ -177,6 +177,7 @@ const withTestCtx = Effect.fn(function* (
     );
   }).pipe(Effect.provide(vscode.layer));
 
+  let revision = 0;
   const layer = Layer.empty.pipe(
     Layer.provideMerge(NotebookRuntime.layer),
     // Merged out (not just provided) so tests can observe the same service
@@ -217,8 +218,14 @@ const withTestCtx = Effect.fn(function* (
                 });
               }
             }
-            return request.kind === "list-sessions"
-              ? { sessions: [...serverSessions.values()] }
+            return ["list-sessions", "execute", "restart-session"].includes(
+              request.kind,
+            )
+              ? {
+                  generation: 1,
+                  revision: ++revision,
+                  sessions: [...serverSessions.values()],
+                }
               : null;
           });
         },

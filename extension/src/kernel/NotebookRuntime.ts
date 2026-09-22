@@ -54,7 +54,6 @@ import {
 import type {
   CellOutputReplay,
   KernelSessionId,
-  SessionInfo,
 } from "../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
@@ -287,10 +286,6 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         ]),
       );
       const executor = yield* makeNotebookExecutor<RuntimeWorkRequirements>();
-      // Confirmations shared across notebook queues must not overwrite a binding
-      // changed after the query began, including a session that was since closed.
-      const bindingVersions = new Map<NotebookId, number>();
-      let bindingVersion = 0;
       const controllerSelections =
         yield* PubSub.unbounded<NotebookControllerSelection>();
 
@@ -301,31 +296,31 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         ),
       );
 
-      const bindKernelSession = Effect.fn("NotebookRuntime.bindKernelSession")(
-        function* (notebookId: NotebookId, next: KernelSessionId | undefined) {
-          const previous = kernelSessions.get(notebookId);
-          if (previous === next) return;
-          bindingVersions.set(notebookId, ++bindingVersion);
+      const reconcileKernelSession = Effect.fn(
+        "NotebookRuntime.reconcileKernelSession",
+      )(function* (notebookId: NotebookId) {
+        const sessions = yield* liveSessions.get;
+        const next = sessions.find(
+          (session) => session.notebookUri === notebookId,
+        )?.sessionId;
+        const previous = kernelSessions.get(notebookId);
+        if (previous === next) return;
 
-          if (next === undefined) kernelSessions.delete(notebookId);
-          else kernelSessions.set(notebookId, next);
-          if (previous !== undefined) {
-            yield* executions.invalidate(notebookId);
-            yield* datasources.clearKernelSession(notebookId, previous);
-          }
-        },
-      );
+        if (next === undefined) kernelSessions.delete(notebookId);
+        else kernelSessions.set(notebookId, next);
+        if (previous !== undefined) {
+          yield* executions.invalidate(notebookId);
+          yield* datasources.clearKernelSession(notebookId, previous);
+        }
+      });
 
       const refreshKernelSession = Effect.fn(
         "NotebookRuntime.refreshKernelSession",
-      )(function* (notebookId: NotebookId) {
-        const sessions = yield* liveSessions.refresh();
-        yield* bindKernelSession(
-          notebookId,
-          sessions.find((session) => session.notebookUri === notebookId)
-            ?.sessionId,
-        );
-      });
+      )((notebookId: NotebookId) =>
+        liveSessions
+          .refresh()
+          .pipe(Effect.andThen(reconcileKernelSession(notebookId))),
+      );
 
       const runInNotebook = executor.submit;
 
@@ -339,6 +334,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         runInNotebook(
           notebookId,
           Effect.gen(function* () {
+            yield* reconcileKernelSession(notebookId);
             const sessionId = kernelSessions.get(notebookId);
             if (
               sessionId === undefined ||
@@ -355,20 +351,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
 
       const mutateKernelSession = <E>(
         notebookId: NotebookId,
-        effect: Effect.Effect<Option.Option<ReadonlyArray<SessionInfo>>, E>,
+        effect: Effect.Effect<unknown, E>,
       ) =>
         runInNotebook(
           notebookId,
-          Effect.gen(function* () {
-            const snapshot = yield* effect;
-            if (Option.isNone(snapshot)) return;
-            yield* bindKernelSession(
-              notebookId,
-              snapshot.value.find(
-                (session) => session.notebookUri === notebookId,
-              )?.sessionId,
-            );
-          }),
+          effect.pipe(Effect.andThen(reconcileKernelSession(notebookId))),
         );
 
       const respondToStdin: RespondToStdin = (
@@ -435,8 +422,8 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       })),
                       send,
                     );
-                    yield* bindKernelSession(notebookId, result.sessionId);
-                    yield* liveSessions.record(result);
+                    yield* liveSessions.accept(result);
+                    yield* reconcileKernelSession(notebookId);
                     return null;
                   }).pipe(
                     Effect.catchTag("NotebookDocumentSessionEndedError", () =>
@@ -695,57 +682,20 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           Stream.runForEach((snapshot) =>
             Effect.gen(function* () {
               yield* updateKernelContext();
-              const observed = new Map(
-                snapshot.map((session) => [
-                  session.notebookUri,
-                  session.sessionId,
-                ]),
-              );
               const notebookIds = new Set<NotebookId>([
                 ...kernelSessions.keys(),
-                ...observed.keys(),
+                ...snapshot.map((session) => session.notebookUri),
               ]);
-              // Lazily confirm once for the whole batch. The executor checks
-              // each hint after earlier notebook work has finished.
-              const confirm = yield* Effect.cached(
-                Effect.gen(function* () {
-                  const versions = new Map(bindingVersions);
-                  const sessions = yield* liveSessions.refresh();
-                  return {
-                    versions,
-                    sessions: new Map(
-                      sessions.map((session) => [
-                        session.notebookUri,
-                        session.sessionId,
-                      ]),
-                    ),
-                  };
-                }),
-              );
+              // Admit work without waiting for busy notebooks. Each worker reads
+              // the latest accepted snapshot when it reaches the front of its queue.
               yield* Effect.forEach(
                 notebookIds,
                 (notebookUri) =>
-                  executor.submit(
+                  executor.post(
                     notebookUri,
-                    Effect.gen(function* () {
-                      if (
-                        kernelSessions.get(notebookUri) ===
-                        observed.get(notebookUri)
-                      )
-                        return;
-                      const confirmed = yield* confirm;
-                      if (
-                        bindingVersions.get(notebookUri) !==
-                        confirmed.versions.get(notebookUri)
-                      )
-                        return;
-                      yield* bindKernelSession(
-                        notebookUri,
-                        confirmed.sessions.get(notebookUri),
-                      );
-                    }),
+                    reconcileKernelSession(notebookUri),
                   ),
-                { discard: true, concurrency: "unbounded" },
+                { discard: true },
               );
             }).pipe(
               Effect.catchCause((cause) =>
@@ -1096,18 +1046,12 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
           return runInNotebook(
             notebookId,
             Effect.gen(function* () {
-              const snapshot = yield* liveSessions.move(
-                notebookId,
+              yield* liveSessions.move(notebookId, newNotebookId);
+              yield* reconcileKernelSession(notebookId);
+              yield* executor.post(
                 newNotebookId,
+                reconcileKernelSession(newNotebookId),
               );
-              if (Option.isNone(snapshot)) return;
-              for (const id of [notebookId, newNotebookId]) {
-                yield* bindKernelSession(
-                  id,
-                  snapshot.value.find((session) => session.notebookUri === id)
-                    ?.sessionId,
-                );
-              }
             }),
           );
         },

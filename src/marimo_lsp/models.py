@@ -179,8 +179,14 @@ class SessionInfo(msgspec.Struct, rename="camel", frozen=True):
 
 
 class ListSessionsResponse(msgspec.Struct, rename="camel"):
-    """Snapshot of all live sessions owned by this language server."""
+    """Snapshot of all live sessions owned by this language server.
 
+    The client assigns a generation at initialization. Revisions order snapshots
+    within that server, so responses and notifications can be consumed out of order.
+    """
+
+    generation: int
+    revision: int
     sessions: list[SessionInfo]
 
 

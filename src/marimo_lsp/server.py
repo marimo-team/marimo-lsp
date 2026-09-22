@@ -78,6 +78,14 @@ def create_server(  # noqa: C901, PLR0915
     atexit.register(sessions.close_all)
 
     # Lsp Features
+    @server.feature(lsp.INITIALIZE)
+    def initialize(params: lsp.InitializeParams) -> None:
+        options = _json_rpc_value(params.initialization_options)
+        if isinstance(options, dict):
+            generation = options.get("sessionGeneration")
+            if isinstance(generation, int):
+                sessions.generation = generation
+
     @server.feature(lsp.SHUTDOWN)
     def shutdown(params: None) -> None:
         del params

@@ -585,6 +585,8 @@ class Sessions:
         self._saved_session_files = saved_session_files
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
+        self.generation = 0
+        self._revision = 0
         self._lifecycle_locks: dict[str, asyncio.Lock] = {}
         self._lifecycle_versions: dict[str, int] = {}
         # A bounded set of cancellation tombstones closes the race where a
@@ -618,6 +620,16 @@ class Sessions:
             reverse=True,
         )
 
+    def snapshot(self) -> ListSessionsResponse:
+        """Order command responses and notifications before they leave the server."""
+        with self._lock:
+            self._revision += 1
+            return ListSessionsResponse(
+                generation=self.generation,
+                revision=self._revision,
+                sessions=self.describe(),
+            )
+
     def _notify_changed(self) -> None:
         # Kernel listener threads can report status concurrently with LSP
         # lifecycle requests. Serialize snapshot construction and delivery so
@@ -625,7 +637,7 @@ class Sessions:
         with self._lock:
             self._server.protocol.notify(
                 "marimo/sessionsChanged",
-                msgspec.to_builtins(ListSessionsResponse(sessions=self.describe())),
+                msgspec.to_builtins(self.snapshot()),
             )
 
     def get(self, notebook_uri: str) -> Session | None:

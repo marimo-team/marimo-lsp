@@ -1,19 +1,30 @@
 import { expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Result } from "effect";
+import {
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  PubSub,
+  Result,
+  Stream,
+} from "effect";
 
 import {
   makeTestMarimoClient,
   type TestCommand,
 } from "../../../__tests__/__utils__/TestMarimoClient.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
+import type { ListSessionsResponse } from "../../../schemas/Models.gen.ts";
 import { SessionNotFoundError, LiveSessions } from "../LiveSessions.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
-const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
 const SNAPSHOT = {
+  generation: 1,
+  revision: 1,
   sessions: [
     {
-      sessionId: SESSION_ID,
+      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
       notebookUri: NOTEBOOK_URI,
       filename: "notebook.py",
       executable: "/venv/bin/python",
@@ -25,195 +36,180 @@ const SNAPSHOT = {
   ],
 } as const;
 
-function makeLayer(recorded: TestCommand[], snapshot: unknown = SNAPSHOT) {
-  return LiveSessions.layer.pipe(
-    Layer.provide(
-      makeTestMarimoClient({
-        send: (request) =>
-          Effect.sync(() => {
-            recorded.push(request);
-            return request.kind === "list-sessions" ? snapshot : null;
-          }),
-      }),
-    ),
-  );
-}
+const makeLayer = (options: Parameters<typeof makeTestMarimoClient>[0]) =>
+  LiveSessions.layer.pipe(Layer.provide(makeTestMarimoClient(options)));
 
 it.effect(
-  "decodes the authoritative session snapshot",
+  "does not resurrect a closed session when an earlier query returns late",
   Effect.fn(function* () {
-    const recorded: TestCommand[] = [];
-
-    const live = yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      return yield* sessions.get;
-    }).pipe(Effect.provide(makeLayer(recorded)));
-
-    expect(live).toEqual(SNAPSHOT.sessions);
-    expect(recorded).toEqual([{ kind: "list-sessions" }]);
-  }),
-);
-
-it.effect(
-  "orders recorded sessions by start time, including re-execution of an older session",
-  Effect.fn(function* () {
-    const middle = SNAPSHOT.sessions[0];
-    const older = {
-      ...middle,
-      notebookUri: notebookId("file:///older.py"),
-      startedAt: 10,
-    };
-    const newer = {
-      ...middle,
-      notebookUri: notebookId("file:///newer.py"),
-      startedAt: 100,
-    };
+    const changes = yield* PubSub.unbounded<ListSessionsResponse>();
+    const queryStarted = yield* Deferred.make<void>();
+    const releaseQuery = yield* Deferred.make<void>();
+    let queries = 0;
+    const layer = makeLayer({
+      sessionChanges: Stream.fromPubSub(changes),
+      send: () =>
+        Effect.gen(function* () {
+          if (++queries > 1) {
+            yield* Deferred.succeed(queryStarted, undefined);
+            yield* Deferred.await(releaseQuery);
+          }
+          return SNAPSHOT;
+        }),
+    });
     yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      yield* sessions.record(newer);
-      yield* sessions.record({ ...older, status: "running" });
-      const items = yield* sessions.get;
-      expect(items.map((item) => item.notebookUri)).toEqual([
-        newer.notebookUri,
-        middle.notebookUri,
-        older.notebookUri,
-      ]);
-      expect(items.at(-1)?.status).toBe("running");
-    }).pipe(Effect.provide(makeLayer([], { sessions: [middle, older] })));
+      const live = yield* LiveSessions;
+      const refresh = yield* live.refresh().pipe(Effect.forkChild);
+      yield* Deferred.await(queryStarted);
+      const closed = yield* live.changes.pipe(
+        Stream.filter((items) => items.length === 0),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* PubSub.publish(changes, {
+        ...SNAPSHOT,
+        revision: 2,
+        sessions: [],
+      });
+      yield* Fiber.join(closed);
+      yield* Deferred.succeed(releaseQuery, undefined);
+      expect(yield* Fiber.join(refresh)).toEqual([]);
+      expect(yield* live.get).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect.each([
+  { generation: 1, revision: 100 },
+  { generation: 2, revision: 0 },
+  { generation: 2, revision: 1 },
+])("ignores older or duplicate state after a server restart (%j)", (version) =>
+  Effect.gen(function* () {
+    yield* Effect.gen(function* () {
+      const live = yield* LiveSessions;
+      yield* live.accept({ ...SNAPSHOT, revision: 50 });
+      yield* live.accept({ generation: 2, revision: 1, sessions: [] });
+      yield* live.accept({ ...SNAPSHOT, ...version });
+      expect(yield* live.get).toEqual([]);
+    }).pipe(
+      Effect.provide(makeLayer({ send: () => Effect.succeed(SNAPSHOT) })),
+    );
   }),
 );
 
 it.effect(
-  "preserves the restarting status when recording an execution response",
+  "keeps restarting as a view overlay and shows the latest status when restart finishes",
   Effect.fn(function* () {
     const started = yield* Deferred.make<void>();
     const release = yield* Deferred.make<void>();
-    const layer = LiveSessions.layer.pipe(
-      Layer.provide(
-        makeTestMarimoClient({
-          send: (request) =>
-            request.kind === "restart-session"
-              ? Deferred.succeed(started, undefined).pipe(
-                  Effect.andThen(Deferred.await(release)),
-                  Effect.as(null),
-                )
-              : Effect.succeed(SNAPSHOT),
-        }),
-      ),
-    );
-    yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      const restart = yield* sessions
-        .restart(NOTEBOOK_URI)
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(started);
-      yield* sessions.record({ ...SNAPSHOT.sessions[0], status: "running" });
-      expect(Option.getOrThrow(yield* sessions.find(NOTEBOOK_URI)).status).toBe(
-        "restarting",
-      );
-      yield* Deferred.succeed(release, undefined);
-      yield* Fiber.join(restart);
-      expect(Option.getOrThrow(yield* sessions.find(NOTEBOOK_URI)).status).toBe(
-        "idle",
-      );
-    }).pipe(Effect.provide(layer));
-  }),
-);
-
-it.effect(
-  "shuts down every session and reconciles once",
-  Effect.fn(function* () {
-    const recorded: TestCommand[] = [];
-    const secondNotebook = notebookId("file:///workspace/second.py");
-    const snapshot = {
+    const replacement = {
+      ...SNAPSHOT,
+      revision: 3,
       sessions: [
-        ...SNAPSHOT.sessions,
         {
           ...SNAPSHOT.sessions[0],
           sessionId: kernelSessionId("00000000-0000-4000-8000-000000000002"),
-          notebookUri: secondNotebook,
-          filename: "second.py",
+          status: "running" as const,
         },
       ],
     };
-
+    const layer = makeLayer({
+      send: (request) =>
+        request.kind === "restart-session"
+          ? Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as({ ...SNAPSHOT, revision: 2 }),
+            )
+          : Effect.succeed(SNAPSHOT),
+    });
     yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      yield* sessions.shutdownAll();
-    }).pipe(Effect.provide(makeLayer(recorded, snapshot)));
-
-    expect(recorded).toEqual([
-      { kind: "list-sessions" },
-      { kind: "shutdown-all-sessions" },
-      { kind: "list-sessions" },
-    ]);
+      const live = yield* LiveSessions;
+      const restart = yield* live.restart(NOTEBOOK_URI).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* live.accept(replacement);
+      expect(Option.getOrThrow(yield* live.find(NOTEBOOK_URI))).toMatchObject({
+        sessionId: replacement.sessions[0]?.sessionId,
+        status: "restarting",
+      });
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(restart);
+      expect(yield* live.get).toEqual(replacement.sessions);
+    }).pipe(Effect.provide(layer));
   }),
 );
 
 it.effect(
-  "returns no snapshot when a successful shutdown's follow-up query fails",
+  "does not restore a dead session when restart is interrupted",
   Effect.fn(function* () {
-    let closed = false;
-    const layer = LiveSessions.layer.pipe(
-      Layer.provide(
-        makeTestMarimoClient({
-          send: (request) =>
-            Effect.sync(() => {
-              if (request.kind === "close-session") closed = true;
-              return request.kind === "list-sessions" && !closed
-                ? SNAPSHOT
-                : null;
-            }),
-        }),
-      ),
-    );
+    const started = yield* Deferred.make<void>();
+    const layer = makeLayer({
+      send: (request) =>
+        request.kind === "restart-session"
+          ? Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+            )
+          : Effect.succeed(SNAPSHOT),
+    });
     yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      const result = yield* sessions.shutdown(NOTEBOOK_URI);
-      expect(closed).toBe(true);
-      expect(Option.isNone(result)).toBe(true);
+      const live = yield* LiveSessions;
+      const restart = yield* live.restart(NOTEBOOK_URI).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* live.accept({ ...SNAPSHOT, revision: 2, sessions: [] });
+      yield* Fiber.interrupt(restart);
+      expect(yield* live.get).toEqual([]);
     }).pipe(Effect.provide(layer));
   }),
+);
+
+it.effect.each(["shutdown", "shutdownAll"] as const)(
+  "%s applies its response without a follow-up query",
+  (method) =>
+    Effect.gen(function* () {
+      const recorded: TestCommand[] = [];
+      yield* Effect.gen(function* () {
+        const live = yield* LiveSessions;
+        yield* live[method](NOTEBOOK_URI);
+        expect(yield* live.get).toEqual([]);
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            send: (request) =>
+              Effect.sync(() => {
+                recorded.push(request);
+                if (request.kind === "list-sessions") {
+                  // A second list request fails decoding instead of hiding the regression.
+                  return recorded.length === 1 ? SNAPSHOT : null;
+                }
+                return { ...SNAPSHOT, revision: 2, sessions: [] };
+              }),
+          }),
+        ),
+      );
+      expect(recorded.map((request) => request.kind)).toEqual([
+        "list-sessions",
+        method === "shutdown" ? "close-session" : "shutdown-all-sessions",
+      ]);
+    }),
 );
 
 it.effect(
   "fails when a session disappears before restart",
   Effect.fn(function* () {
-    const recorded: TestCommand[] = [];
     const result = yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      return yield* Effect.result(sessions.restart(NOTEBOOK_URI));
-    }).pipe(Effect.provide(makeLayer(recorded, { sessions: [] })));
-
+      const live = yield* LiveSessions;
+      return yield* Effect.result(live.restart(NOTEBOOK_URI));
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          send: () => Effect.succeed({ ...SNAPSHOT, sessions: [] }),
+        }),
+      ),
+    );
     expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {
       expect(result.failure).toEqual(
         new SessionNotFoundError({ notebookUri: NOTEBOOK_URI }),
       );
     }
-    expect(recorded).toEqual([{ kind: "list-sessions" }]);
-  }),
-);
-
-it.effect(
-  "restarts a session and reconciles with the server snapshot",
-  Effect.fn(function* () {
-    const recorded: TestCommand[] = [];
-
-    yield* Effect.gen(function* () {
-      const sessions = yield* LiveSessions;
-      yield* sessions.restart(NOTEBOOK_URI);
-    }).pipe(Effect.provide(makeLayer(recorded)));
-
-    expect(recorded).toEqual([
-      { kind: "list-sessions" },
-      {
-        kind: "restart-session",
-        notebookUri: NOTEBOOK_URI,
-        executable: "/venv/bin/python",
-        workingDirectory: "/workspace",
-      },
-      { kind: "list-sessions" },
-    ]);
   }),
 );

@@ -26,70 +26,83 @@ export type SessionViewItem = Omit<SessionInfo, "status"> & {
   readonly status: SessionViewStatus;
 };
 
-/** Authoritative live-session state shared by the tree and future renderers. */
+interface SessionState {
+  readonly snapshot: ListSessionsResponse;
+  readonly restarting: ReadonlySet<NotebookId>;
+}
+
+const view = ({
+  snapshot,
+  restarting,
+}: SessionState): ReadonlyArray<SessionViewItem> =>
+  snapshot.sessions.map((session) =>
+    restarting.has(session.notebookUri)
+      ? { ...session, status: "restarting" }
+      : session,
+  );
+
+/** Server snapshots are authoritative; pending restarts only affect presentation. */
 export class LiveSessions extends Context.Service<LiveSessions>()(
   "LiveSessions",
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const sessions = yield* SubscriptionRef.make<
-        ReadonlyArray<SessionViewItem>
-      >([]);
-
-      const applySnapshot = Effect.fn("LiveSessions.applySnapshot")(function* (
-        snapshot: ReadonlyArray<SessionInfo>,
-      ) {
-        yield* SubscriptionRef.set(sessions, snapshot);
-        return snapshot;
+      const state = yield* SubscriptionRef.make<SessionState>({
+        snapshot: { generation: -1, revision: 0, sessions: [] },
+        restarting: new Set(),
       });
 
-      const refresh = Effect.fn("LiveSessions.refresh")(function* () {
-        return yield* applySnapshot((yield* marimo.listSessions({})).sessions);
-      });
+      const accept = Effect.fn("LiveSessions.accept")(
+        (snapshot: ListSessionsResponse) =>
+          SubscriptionRef.updateAndGet(state, (current) => {
+            const previous = current.snapshot;
+            if (
+              snapshot.generation < previous.generation ||
+              (snapshot.generation === previous.generation &&
+                snapshot.revision <= previous.revision)
+            ) {
+              return current;
+            }
+            return { ...current, snapshot };
+          }).pipe(Effect.map((current) => current.snapshot.sessions)),
+      );
 
-      // A failed follow-up query must not turn a successful mutation into an error.
-      const refreshAfterMutation = refresh().pipe(
-        Effect.map(Option.some),
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.interrupt
-            : Effect.logWarning(
-                "Failed to refresh sessions after kernel mutation",
-              ).pipe(
-                Effect.annotateLogs({ cause }),
-                Effect.as(Option.none<ReadonlyArray<SessionInfo>>()),
-              ),
-        ),
+      const refresh = Effect.fn("LiveSessions.refresh")(() =>
+        marimo.listSessions({}).pipe(Effect.flatMap(accept)),
       );
 
       yield* Effect.forkScoped(
         marimo.sessionChanges.pipe(
           Stream.runForEach((snapshot) =>
             Schema.decodeUnknownEffect(ListSessionsResponse)(snapshot).pipe(
-              Effect.flatMap((decoded) => applySnapshot(decoded.sessions)),
+              Effect.flatMap(accept),
               Effect.catchCause((cause) =>
-                Effect.logWarning("Ignored invalid live-session snapshot").pipe(
-                  Effect.annotateLogs({ cause }),
-                ),
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning(
+                      "Ignored invalid live-session snapshot",
+                    ).pipe(Effect.annotateLogs({ cause })),
               ),
             ),
           ),
         ),
       );
 
-      // Subscribe before querying for sessions that are already running. The
-      // server constructs this response after earlier notifications on the wire;
-      // consumers still need to account for independent stream scheduling.
+      // Subscribe first so changes during the initial query are not missed.
+      // Revisions order responses and notifications regardless of scheduling.
       yield* refresh().pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("Failed to load initial live sessions").pipe(
-            Effect.annotateLogs({ cause }),
-          ),
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Failed to load initial live sessions").pipe(
+                Effect.annotateLogs({ cause }),
+              ),
         ),
       );
 
+      const get = SubscriptionRef.get(state).pipe(Effect.map(view));
       const find = (notebookUri: NotebookId) =>
-        Effect.map(SubscriptionRef.get(sessions), (items) =>
+        Effect.map(get, (items) =>
           Option.fromNullishOr(
             items.find((item) => item.notebookUri === notebookUri),
           ),
@@ -102,100 +115,67 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         if (Option.isNone(current)) {
           return yield* new SessionNotFoundError({ notebookUri });
         }
-        yield* SubscriptionRef.update(sessions, (items) =>
-          items.map((item) =>
-            item.notebookUri === notebookUri
-              ? { ...item, status: "restarting" as const }
-              : item,
-          ),
-        );
-        yield* marimo
-          .restartSession({
-            notebookUri,
-            executable: current.value.executable,
-            workingDirectory: current.value.workingDirectory,
-          })
-          .pipe(
-            Effect.tapError(() =>
-              SubscriptionRef.update(sessions, (items) =>
-                items.map((item) =>
-                  item.notebookUri === notebookUri ? current.value : item,
-                ),
+        return yield* Effect.acquireUseRelease(
+          SubscriptionRef.update(state, (current) => ({
+            ...current,
+            restarting: new Set([...current.restarting, notebookUri]),
+          })),
+          () =>
+            marimo
+              .restartSession({
+                notebookUri,
+                executable: current.value.executable,
+                workingDirectory: current.value.workingDirectory,
+              })
+              .pipe(Effect.flatMap(accept)),
+          () =>
+            SubscriptionRef.update(state, (current) => ({
+              ...current,
+              restarting: new Set(
+                [...current.restarting].filter((id) => id !== notebookUri),
               ),
-            ),
-          );
-        yield* SubscriptionRef.update(sessions, (items) =>
-          items.map((item) =>
-            item.notebookUri === notebookUri
-              ? { ...item, status: "idle" as const }
-              : item,
-          ),
+            })),
         );
-        return yield* refreshAfterMutation;
-      });
-
-      const shutdown = Effect.fn("LiveSessions.shutdown")(function* (
-        notebookUri: NotebookId,
-      ) {
-        yield* marimo.closeSession({ notebookUri });
-        return yield* refreshAfterMutation;
-      });
-
-      const move = Effect.fn("LiveSessions.move")(function* (
-        notebookUri: NotebookId,
-        newNotebookUri: NotebookId,
-      ) {
-        yield* marimo.moveSession({
-          notebookUri,
-          newNotebookUri,
-        });
-        return yield* refreshAfterMutation;
       });
 
       return {
-        get: SubscriptionRef.get(sessions),
-        changes: SubscriptionRef.changes(sessions),
+        get,
+        changes: SubscriptionRef.changes(state).pipe(
+          Stream.changes,
+          Stream.map(view),
+        ),
         find,
         refresh,
-        record: Effect.fn("LiveSessions.record")(function* (
-          session: SessionInfo,
-        ) {
-          yield* SubscriptionRef.update(sessions, (items) => {
-            const current = items.find(
-              (item) => item.notebookUri === session.notebookUri,
-            );
-            const next: SessionViewItem =
-              current?.status === "restarting"
-                ? { ...session, status: "restarting" }
-                : session;
-            return [
-              ...items.filter(
-                (item) => item.notebookUri !== session.notebookUri,
-              ),
-              next,
-            ].sort((a, b) => b.startedAt - a.startedAt);
-          });
-        }),
+        accept,
         restart,
-        shutdown,
-        restore: Effect.fn("LiveSessions.restore")(function* (
-          notebookUri: NotebookId,
-          executable: string,
-          workingDirectory: string,
-        ) {
-          yield* marimo.restartSession({
-            notebookUri,
-            executable,
-            workingDirectory,
-            createIfMissing: true,
-          });
-          return yield* refreshAfterMutation;
-        }),
-        shutdownAll: Effect.fn("LiveSessions.shutdownAll")(function* () {
-          yield* marimo.shutdownAllSessions({});
-          return yield* refreshAfterMutation;
-        }),
-        move,
+        shutdown: Effect.fn("LiveSessions.shutdown")(
+          (notebookUri: NotebookId) =>
+            marimo.closeSession({ notebookUri }).pipe(Effect.flatMap(accept)),
+        ),
+        restore: Effect.fn("LiveSessions.restore")(
+          (
+            notebookUri: NotebookId,
+            executable: string,
+            workingDirectory: string,
+          ) =>
+            marimo
+              .restartSession({
+                notebookUri,
+                executable,
+                workingDirectory,
+                createIfMissing: true,
+              })
+              .pipe(Effect.flatMap(accept)),
+        ),
+        shutdownAll: Effect.fn("LiveSessions.shutdownAll")(() =>
+          marimo.shutdownAllSessions({}).pipe(Effect.flatMap(accept)),
+        ),
+        move: Effect.fn("LiveSessions.move")(
+          (notebookUri: NotebookId, newNotebookUri: NotebookId) =>
+            marimo
+              .moveSession({ notebookUri, newNotebookUri })
+              .pipe(Effect.flatMap(accept)),
+        ),
       };
     }),
   },

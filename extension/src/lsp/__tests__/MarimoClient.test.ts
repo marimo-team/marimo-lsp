@@ -142,14 +142,9 @@ it.effect(
     const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const responses: Record<string, unknown> = {
       execute: {
-        sessionId: "00000000-0000-4000-8000-000000000001",
-        notebookUri: notebook,
-        filename: null,
-        executable: "/python",
-        workingDirectory: "/workspace",
-        startedAt: 1,
-        status: "running",
-        attached: true,
+        generation: 1,
+        revision: 1,
+        sessions: [],
       },
       "set-display-theme": { success: true },
     };
