@@ -3,7 +3,6 @@ import {
   Data,
   Effect,
   Exit,
-  Fiber,
   Layer,
   Option,
   PubSub,
@@ -12,7 +11,6 @@ import {
   type Schema,
   Scope,
   Stream,
-  SubscriptionRef,
 } from "effect";
 
 declare global {
@@ -45,29 +43,7 @@ import type { MarimoContextKey } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
-import { tokenFromSignal } from "../lib/tokenFromSignal.ts";
-
-type ActiveNotebookEditorSource = Pick<
-  typeof vscode.window,
-  "activeNotebookEditor" | "onDidChangeActiveNotebookEditor"
->;
-
-/** Subscribe before sampling so an already-active editor cannot be missed. */
-export const makeActiveNotebookEditorChanges = (
-  source: ActiveNotebookEditorSource,
-): Stream.Stream<Option.Option<vscode.NotebookEditor>> =>
-  Stream.callback<Option.Option<vscode.NotebookEditor>>((queue) =>
-    acquireDisposable(() => {
-      const subscription = source.onDidChangeActiveNotebookEditor((editor) =>
-        Queue.offerUnsafe(queue, Option.fromNullishOr(editor)),
-      );
-      Queue.offerUnsafe(
-        queue,
-        Option.fromNullishOr(source.activeNotebookEditor),
-      );
-      return subscription;
-    }),
-  );
+import * as Window from "./Window.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
   cause: unknown;
@@ -82,239 +58,6 @@ export class DebugSessionStartError extends Data.TaggedError(
 )<{
   readonly configuration: string | vscode.DebugConfiguration;
 }> {}
-
-export class Window extends Context.Service<Window>()("Window", {
-  make: Effect.gen(function* () {
-    const api = vscode.window;
-    const runSync = Effect.runSyncWith(yield* Effect.context());
-
-    const resolve = (kind: vscode.ColorThemeKind): "light" | "dark" =>
-      kind === vscode.ColorThemeKind.Dark ||
-      kind === vscode.ColorThemeKind.HighContrast
-        ? "dark"
-        : "light";
-
-    const colorThemeRef = yield* SubscriptionRef.make(
-      resolve(api.activeColorTheme.kind),
-    );
-    api.onDidChangeActiveColorTheme((theme) => {
-      runSync(SubscriptionRef.set(colorThemeRef, resolve(theme.kind)));
-    });
-
-    return {
-      createTerminal(
-        options: vscode.TerminalOptions,
-      ): Effect.Effect<
-        Pick<vscode.Terminal, "show" | "sendText">,
-        never,
-        Scope.Scope
-      > {
-        return acquireDisposable(() => api.createTerminal(options));
-      },
-      showSaveDialog(options?: vscode.SaveDialogOptions) {
-        return Effect.map(
-          Effect.promise(() => api.showSaveDialog(options)),
-          Option.fromNullishOr,
-        );
-      },
-      showInputBox(
-        options?: vscode.InputBoxOptions,
-      ): Effect.Effect<Option.Option<string>> {
-        return Effect.map(
-          Effect.promise((signal) =>
-            api.showInputBox(options, tokenFromSignal(signal)),
-          ),
-          Option.fromNullishOr,
-        );
-      },
-      showInformationMessage<T extends string>(
-        message: string,
-        options: vscode.MessageOptions & { items?: readonly T[] } = {},
-      ) {
-        const { items = [], ...rest } = options;
-        return Effect.map(
-          Effect.promise(() =>
-            api.showInformationMessage(message, rest, ...items),
-          ),
-          Option.fromNullishOr,
-        );
-      },
-      showWarningMessage<T extends string>(
-        message: string,
-        options: vscode.MessageOptions & { items?: readonly T[] } = {},
-      ) {
-        const { items = [], ...rest } = options;
-        return Effect.map(
-          Effect.promise(() => api.showWarningMessage(message, rest, ...items)),
-          Option.fromNullishOr,
-        );
-      },
-      showErrorMessage<T extends string>(
-        message: string,
-        options: vscode.MessageOptions & { items?: readonly T[] } = {},
-      ) {
-        const { items = [], ...rest } = options;
-        return Effect.map(
-          Effect.promise(() => api.showErrorMessage(message, rest, ...items)),
-          Option.fromNullishOr,
-        );
-      },
-      showQuickPick(
-        items: readonly string[],
-        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
-      ) {
-        return Effect.map(
-          Effect.promise((signal) =>
-            api.showQuickPick(items, options, tokenFromSignal(signal)),
-          ),
-          Option.fromNullishOr,
-        );
-      },
-      showQuickPickItems<T extends vscode.QuickPickItem>(
-        items: readonly T[],
-        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
-      ) {
-        return Effect.map(
-          Effect.promise((signal) =>
-            api.showQuickPick(items, options, tokenFromSignal(signal)),
-          ),
-          Option.fromNullishOr,
-        );
-      },
-      showQuickPickItemsMany<T extends vscode.QuickPickItem>(
-        items: readonly T[],
-        options: Omit<vscode.QuickPickOptions, "canPickMany"> = {},
-      ) {
-        return Effect.map(
-          Effect.promise((signal) =>
-            api.showQuickPick(
-              items,
-              { ...options, canPickMany: true },
-              tokenFromSignal(signal),
-            ),
-          ),
-          Option.fromNullishOr,
-        );
-      },
-      createOutputChannel(name: string) {
-        return acquireDisposable(() => api.createOutputChannel(name));
-      },
-      createLogOutputChannel(name: string) {
-        return acquireDisposable(() =>
-          api.createOutputChannel(name, { log: true }),
-        );
-      },
-      getActiveNotebookEditor: Effect.sync(() =>
-        Option.fromNullishOr(api.activeNotebookEditor),
-      ),
-      getVisibleNotebookEditors: Effect.sync(() => api.visibleNotebookEditors),
-      getVisibleTextEditors: Effect.sync(() => api.visibleTextEditors),
-      getActiveTextEditor: Effect.sync(() =>
-        Option.fromNullishOr(api.activeTextEditor),
-      ),
-      closeTextEditorTab(uri: vscode.Uri) {
-        return Option.fromNullishOr(
-          api.tabGroups.all
-            .flatMap((group) => group.tabs)
-            .find(
-              (tab) =>
-                tab.input instanceof vscode.TabInputText &&
-                tab.input.uri.toString() === uri.toString(),
-            ),
-        ).pipe(
-          Option.match({
-            onSome: (tab) => Effect.promise(() => api.tabGroups.close(tab)),
-            onNone: () => Effect.void,
-          }),
-        );
-      },
-      createTreeView<T>(viewId: string, options: vscode.TreeViewOptions<T>) {
-        return acquireDisposable(() => api.createTreeView(viewId, options));
-      },
-      createStatusBarItem(
-        id: string,
-        alignment: vscode.StatusBarAlignment,
-        priority?: number,
-      ) {
-        return acquireDisposable(() =>
-          api.createStatusBarItem(id, alignment, priority),
-        );
-      },
-      colorThemeChanges: SubscriptionRef.changes(colorThemeRef),
-      activeNotebookEditorChanges: makeActiveNotebookEditorChanges(api),
-      visibleNotebookEditorsChanges: Stream.callback<
-        ReadonlyArray<vscode.NotebookEditor>
-      >((queue) =>
-        acquireDisposable(() =>
-          api.onDidChangeVisibleNotebookEditors((e) =>
-            Queue.offerUnsafe(queue, e),
-          ),
-        ),
-      ),
-      visibleTextEditorsChanges: Stream.callback<
-        ReadonlyArray<vscode.TextEditor>
-      >((queue) =>
-        acquireDisposable(() =>
-          api.onDidChangeVisibleTextEditors((e) => Queue.offerUnsafe(queue, e)),
-        ),
-      ),
-      activeTextEditorChanges: Stream.callback<
-        Option.Option<vscode.TextEditor>
-      >((queue) =>
-        acquireDisposable(() =>
-          api.onDidChangeActiveTextEditor((e) =>
-            Queue.offerUnsafe(queue, Option.fromNullishOr(e)),
-          ),
-        ),
-      ),
-      showNotebookDocument(
-        doc: vscode.NotebookDocument,
-        options?: vscode.NotebookDocumentShowOptions,
-      ) {
-        return Effect.promise(() => api.showNotebookDocument(doc, options));
-      },
-      showTextDocument(doc: vscode.TextDocument) {
-        // Could return the vscode.TextEditor, but skipping it simplifies mocks/tests
-        return Effect.asVoid(Effect.promise(() => api.showTextDocument(doc)));
-      },
-      withProgress<A, E, R>(
-        options: {
-          location: vscode.ProgressLocation;
-          title: string;
-          cancellable: boolean;
-        },
-        fn: (
-          progress: vscode.Progress<{
-            message: string;
-            increment?: number;
-          }>,
-        ) => Effect.Effect<A, E, R>,
-      ) {
-        return Effect.gen(function* () {
-          const context = yield* Effect.context<R>();
-          const runPromise = Effect.runPromiseWith(context);
-          return yield* Effect.promise((signal) =>
-            api.withProgress(options, (progress, token) =>
-              runPromise(
-                Effect.gen(function* () {
-                  const fiber = yield* Effect.forkScoped(fn(progress));
-                  const kill = () => runPromise(Fiber.interrupt(fiber));
-                  yield* acquireDisposable(() =>
-                    token.onCancellationRequested(kill),
-                  );
-                  return yield* Fiber.join(fiber);
-                }).pipe(Effect.scoped),
-                { signal },
-              ),
-            ),
-          );
-        });
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 type ContextMap = {
   "marimo.hasLiveSessions": boolean;
@@ -340,7 +83,7 @@ export const withCommandContext = (command: MarimoCommand) => {
 
 export class Commands extends Context.Service<Commands>()("Commands", {
   make: Effect.gen(function* () {
-    const win = yield* Window;
+    const win = yield* Window.Service;
     const api = vscode.commands;
     // Pubsub of the commands run and their results
     // Failure is the command that failed, success is the command that succeeded
@@ -1355,7 +1098,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
 
     return {
       // namespaces
-      window: yield* Window,
+      window: yield* Window.Service,
       commands: yield* Commands,
       workspace: yield* Workspace,
       env: yield* Env,

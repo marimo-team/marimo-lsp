@@ -28,9 +28,9 @@ import {
   type NotebookLifecycleEvent,
   ParseUriError,
   VsCode,
-  Window,
   Workspace,
 } from "../platform/VsCode.ts";
+import * as Window from "../platform/Window.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
@@ -1660,7 +1660,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       visibleNotebookEditors?: Array<vscode.NotebookEditor>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
-      window?: Partial<Context.Service.Shape<typeof Window>>;
+      window?: Partial<Window.Interface>;
       commands?: Partial<Context.Service.Shape<typeof Commands>>;
       workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
       env?: Partial<Context.Service.Shape<typeof Env>>;
