@@ -10,10 +10,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import {
   decodeVariablesOperation,
   type NotebookId,
@@ -26,13 +23,12 @@ import type {
 
 type VariableStateKey = readonly [
   notebookId: NotebookId,
-  sessionId: NotebookDocumentSession["id"],
+  sessionId: NotebookDocumentSessions.Session["id"],
 ];
 
-const keyFor = (session: NotebookDocumentSession): VariableStateKey => [
-  session.notebookId,
-  session.id,
-];
+const keyFor = (
+  session: NotebookDocumentSessions.Session,
+): VariableStateKey => [session.notebookId, session.id];
 
 /**
  * Manages variable state across all notebooks.
@@ -47,7 +43,7 @@ export class NotebookVariables extends Context.Service<NotebookVariables>()(
   "NotebookVariables",
   {
     make: Effect.gen(function* () {
-      const documentSessions = yield* NotebookDocumentSessions;
+      const documentSessions = yield* NotebookDocumentSessions.Service;
 
       // Track variable declarations by exact document opening.
       const variablesRef = yield* SubscriptionRef.make(
@@ -59,10 +55,11 @@ export class NotebookVariables extends Context.Service<NotebookVariables>()(
         HashMap.empty<VariableStateKey, VariableValuesNotification>(),
       );
 
-      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+      const registeredSessionCleanups =
+        new WeakSet<NotebookDocumentSessions.Session>();
 
       const releaseSession = Effect.fn("NotebookVariables.releaseSession")(
-        function* (session: NotebookDocumentSession) {
+        function* (session: NotebookDocumentSessions.Session) {
           const notebookUri = session.notebookId;
           registeredSessionCleanups.delete(session);
           yield* SubscriptionRef.update(
@@ -82,7 +79,7 @@ export class NotebookVariables extends Context.Service<NotebookVariables>()(
 
       const registerSessionCleanup = Effect.fn(
         "NotebookVariables.registerSessionCleanup",
-      )((session: NotebookDocumentSession) =>
+      )((session: NotebookDocumentSessions.Session) =>
         Effect.suspend(() => {
           if (registeredSessionCleanups.has(session)) return Effect.void;
           registeredSessionCleanups.add(session);
@@ -147,7 +144,7 @@ export class NotebookVariables extends Context.Service<NotebookVariables>()(
          * Update variable declarations for a notebook
          */
         updateVariables(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           operation: VariablesNotification,
         ) {
           return Effect.uninterruptible(
@@ -204,7 +201,7 @@ export class NotebookVariables extends Context.Service<NotebookVariables>()(
          * Update variable values for a notebook
          */
         updateVariableValues(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           operation: VariableValuesNotification,
         ) {
           return Effect.uninterruptible(

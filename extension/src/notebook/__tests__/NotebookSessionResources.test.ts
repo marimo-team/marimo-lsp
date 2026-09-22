@@ -20,10 +20,7 @@ import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResou
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as NotebookConfiguration from "../../config/NotebookConfiguration.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import {
-  NotebookDocumentSessionEndedError,
-  NotebookDocumentSessions,
-} from "../NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
@@ -54,7 +51,7 @@ describe("NotebookSessionResources", () => {
       const stopped = yield* Deferred.make<void>();
 
       yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions;
+        const sessions = yield* NotebookDocumentSessions.Service;
         const resources = yield* NotebookSessionResources;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));
@@ -80,7 +77,7 @@ describe("NotebookSessionResources", () => {
         const exit = yield* Fiber.await(running);
         assert(Exit.isFailure(exit));
         const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookDocumentSessionEndedError);
+        assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
       }).pipe(Effect.provide(ctx.layer));
     }),
   );
@@ -91,7 +88,7 @@ describe("NotebookSessionResources", () => {
       const ran = yield* Ref.make(false);
 
       yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions;
+        const sessions = yield* NotebookDocumentSessions.Service;
         const resources = yield* NotebookSessionResources;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));
@@ -108,7 +105,7 @@ describe("NotebookSessionResources", () => {
           .pipe(Scope.provide(session.scope), Effect.exit);
         assert(Exit.isFailure(exit));
         const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookDocumentSessionEndedError);
+        assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
         expect(yield* Ref.get(ran)).toBe(false);
       }).pipe(Effect.provide(ctx.layer));
     }),
@@ -120,7 +117,7 @@ describe("NotebookSessionResources", () => {
       const tracked = yield* makeScopedResourceCounter();
 
       yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions;
+        const sessions = yield* NotebookDocumentSessions.Service;
         const resources = yield* NotebookSessionResources;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));

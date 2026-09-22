@@ -10,7 +10,7 @@ import {
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import refreshPackages from "../refreshPackages.ts";

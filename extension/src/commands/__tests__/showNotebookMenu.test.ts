@@ -5,7 +5,7 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { Constants } from "../../platform/Constants.ts";
@@ -288,7 +288,7 @@ describe("showNotebookMenu", () => {
         });
 
         yield* Effect.gen(function* () {
-          const sessions = yield* NotebookDocumentSessions;
+          const sessions = yield* NotebookDocumentSessions.Service;
           const session = Option.getOrThrow(
             sessions.forDocument(editor.notebook),
           );

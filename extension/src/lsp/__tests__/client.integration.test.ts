@@ -17,7 +17,7 @@ import {
   createTestNotebookDocument,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
@@ -28,7 +28,7 @@ const variablesLayer = Layer.effect(
   NotebookVariables.make,
 ).pipe(
   Layer.provide(
-    Layer.succeed(NotebookDocumentSessions, {
+    Layer.succeed(NotebookDocumentSessions.Service, {
       current: () => Option.none(),
       forDocument: () => Option.none(),
       active: Stream.empty,

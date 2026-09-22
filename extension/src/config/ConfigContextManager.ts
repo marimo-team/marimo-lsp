@@ -1,6 +1,6 @@
 import { Effect, Layer, Option, Scope, Stream, SubscriptionRef } from "effect";
 
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -16,7 +16,7 @@ import * as NotebookConfiguration from "./NotebookConfiguration.ts";
 export const ConfigContextManagerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
-    const documentSessions = yield* NotebookDocumentSessions;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources;
     const desiredConfiguration = yield* SubscriptionRef.make(
       Option.none<MarimoConfig>(),
@@ -81,7 +81,7 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
                 .pipe(
                   Scope.provide(session.scope),
                   Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
+                    "NotebookDocumentSessions.EndedError",
                     () => Effect.void,
                   ),
                 ),

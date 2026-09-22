@@ -12,7 +12,7 @@ import {
   marimoConfigFixture,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { ConfigContextManagerLive } from "../ConfigContextManager.ts";
 

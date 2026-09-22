@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Stream } from "effect";
 
 import { unreachable } from "../../assert.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DataTable } from "../../types.ts";
@@ -146,7 +146,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
     const treeView = yield* TreeView;
     const datasources = yield* NotebookDatasources;
     const editors = yield* NotebookEditorRegistry;
-    const documentSessions = yield* NotebookDocumentSessions;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
 
     const getDatabase = Effect.fn(function* (item: DatabaseItem | SchemaItem) {
       const connections = yield* datasources.getConnections(item.notebookUri);

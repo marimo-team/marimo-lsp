@@ -8,8 +8,7 @@ import {
 import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
-import type { NotebookDocumentSession } from "../../../notebook/NotebookDocumentSessions.ts";
-import { NotebookDocumentSessions } from "../../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
 import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
 import type {
   VariablesNotification,
@@ -20,7 +19,7 @@ import { NotebookVariables } from "../NotebookVariables.ts";
 const withTestCtx = () =>
   Effect.sync(() => {
     sessions.clear();
-    const documentSessions = Layer.succeed(NotebookDocumentSessions, {
+    const documentSessions = Layer.succeed(NotebookDocumentSessions.Service, {
       current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
       forDocument: (document) =>
         Option.fromNullishOr(
@@ -37,7 +36,7 @@ const withTestCtx = () =>
   });
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
-const sessions = new Map<NotebookId, NotebookDocumentSession>();
+const sessions = new Map<NotebookId, NotebookDocumentSessions.Session>();
 
 const sessionFor = (id: NotebookId) => {
   const existing = sessions.get(id);

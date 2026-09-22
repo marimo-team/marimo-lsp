@@ -28,7 +28,7 @@ import {
   runId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -1110,7 +1110,7 @@ describe("NotebookExecutions", () => {
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
     yield* Effect.yieldNow;
-    const sessions = yield* NotebookDocumentSessions;
+    const sessions = yield* NotebookDocumentSessions.Service;
     const session = sessions.forDocument(document);
     if (Option.isNone(session)) {
       return yield* Effect.die("Expected an open notebook document session");
@@ -2719,7 +2719,7 @@ describe("NotebookExecutions", () => {
         const error = yield* executions
           .open(first.session, { getDrive: Effect.succeed(Option.none()) })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("NotebookDocumentSessionEndedError");
+        expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
         yield* ctx.vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;

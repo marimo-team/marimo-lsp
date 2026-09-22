@@ -2,7 +2,7 @@ import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
@@ -69,7 +69,7 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
     return;
   }
 
-  const documentSessions = yield* NotebookDocumentSessions;
+  const documentSessions = yield* NotebookDocumentSessions.Service;
   const sessionResources = yield* NotebookSessionResources;
   const session = documentSessions.forDocument(
     notebook.value.rawNotebookDocument,
@@ -90,7 +90,7 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
     .pipe(
       Scope.provide(session.value.scope),
       Effect.map(Option.some),
-      Effect.catchTag("NotebookDocumentSessionEndedError", () =>
+      Effect.catchTag("NotebookDocumentSessions.EndedError", () =>
         Effect.succeed(Option.none()),
       ),
     );

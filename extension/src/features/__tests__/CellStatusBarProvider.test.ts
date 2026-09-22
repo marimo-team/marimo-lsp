@@ -13,7 +13,7 @@ import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
 import * as CellExecutions from "../../kernel/CellExecutions.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
@@ -56,7 +56,7 @@ const openExecutions = Effect.fn(function* (
 ) {
   yield* vscode.openNotebook(cell.notebook);
   yield* Effect.yieldNow;
-  const sessions = yield* NotebookDocumentSessions;
+  const sessions = yield* NotebookDocumentSessions.Service;
   const session = sessions.forDocument(cell.notebook);
   if (Option.isNone(session)) {
     return yield* Effect.die("Expected an open notebook document session");

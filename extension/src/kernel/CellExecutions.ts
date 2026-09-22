@@ -13,11 +13,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessionEndedError,
-  NotebookDocumentSessions,
-} from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
@@ -68,7 +64,7 @@ export interface NotebookExecutions {
 }
 
 interface NotebookEntry {
-  readonly session: NotebookDocumentSession;
+  readonly session: NotebookDocumentSessions.Session;
   readonly executions: NotebookExecutions;
   readonly updateSources: (
     sources: ReadonlyArray<CellSource>,
@@ -77,9 +73,9 @@ interface NotebookEntry {
 
 export interface Interface {
   readonly open: (
-    session: NotebookDocumentSession,
+    session: NotebookDocumentSessions.Session,
     binding: NotebookExecutionBinding,
-  ) => Effect.Effect<NotebookExecutions, NotebookDocumentSessionEndedError>;
+  ) => Effect.Effect<NotebookExecutions, NotebookDocumentSessions.EndedError>;
   readonly invalidate: (notebookId: NotebookId) => Effect.Effect<void>;
   readonly find: (
     document: vscode.NotebookDocument,
@@ -99,7 +95,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const editorRegistry = yield* NotebookEditorRegistry;
-    const documentSessions = yield* NotebookDocumentSessions;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
     const notebooks = new Map<NotebookId, NotebookEntry>();
     const opening = Semaphore.makeUnsafe(1);
     const allStaleCells = yield* SubscriptionRef.make(
@@ -236,7 +232,7 @@ export const layer = Layer.effect(
     });
 
     const open = Effect.fn("CellExecutions.open")(function* (
-      session: NotebookDocumentSession,
+      session: NotebookDocumentSessions.Session,
       binding: NotebookExecutionBinding,
     ) {
       return yield* opening.withPermit(
@@ -248,7 +244,7 @@ export const layer = Layer.effect(
               (current) => current === session,
             )
           ) {
-            return yield* new NotebookDocumentSessionEndedError({
+            return yield* new NotebookDocumentSessions.EndedError({
               notebookId,
             });
           }
@@ -275,7 +271,7 @@ export const layer = Layer.effect(
               (current) => current === session,
             )
           ) {
-            return yield* new NotebookDocumentSessionEndedError({
+            return yield* new NotebookDocumentSessions.EndedError({
               notebookId,
             });
           }

@@ -13,10 +13,7 @@ import {
 } from "effect";
 
 import * as MarimoClient from "../../lsp/MarimoClient.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
@@ -73,7 +70,7 @@ export class DatasourceExpansionError extends Data.TaggedError(
 )<{ readonly message: string }> {}
 
 interface PendingExpansion {
-  readonly session: NotebookDocumentSession;
+  readonly session: NotebookDocumentSessions.Session;
   readonly kernelSessionId: KernelSessionId;
   readonly deferred: Deferred.Deferred<void, DatasourceExpansionError>;
   readonly fiber: Fiber.Fiber<void, DatasourceExpansionError>;
@@ -81,7 +78,7 @@ interface PendingExpansion {
 
 type DatasourceStateKey = readonly [
   notebookId: NotebookId,
-  documentSessionId: NotebookDocumentSession["id"],
+  documentSessionId: NotebookDocumentSessions.Session["id"],
 ];
 
 interface DatasourceState {
@@ -90,10 +87,9 @@ interface DatasourceState {
   readonly datasets: Option.Option<DatasetsMap>;
 }
 
-const keyFor = (session: NotebookDocumentSession): DatasourceStateKey => [
-  session.notebookId,
-  session.id,
-];
+const keyFor = (
+  session: NotebookDocumentSessions.Session,
+): DatasourceStateKey => [session.notebookId, session.id];
 
 const EXPANSION_TIMEOUT = "30 seconds";
 
@@ -112,7 +108,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient.Service;
-      const documentSessions = yield* NotebookDocumentSessions;
+      const documentSessions = yield* NotebookDocumentSessions.Service;
 
       // One state entry per exact document opening. Kernel identity remains in
       // the value because a kernel can restart without reopening the document.
@@ -121,10 +117,11 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
       );
       const pendingByLocation = new Map<string, PendingExpansion>();
       const pendingByRequest = new Map<string, PendingExpansion>();
-      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+      const registeredSessionCleanups =
+        new WeakSet<NotebookDocumentSessions.Session>();
 
       const releaseSession = Effect.fn("NotebookDatasources.releaseSession")(
-        function* (session: NotebookDocumentSession) {
+        function* (session: NotebookDocumentSessions.Session) {
           const notebookUri = session.notebookId;
           registeredSessionCleanups.delete(session);
           for (const pending of [...pendingByRequest.values()]) {
@@ -151,7 +148,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
 
       const registerSessionCleanup = Effect.fn(
         "NotebookDatasources.registerSessionCleanup",
-      )((session: NotebookDocumentSession) =>
+      )((session: NotebookDocumentSessions.Session) =>
         Effect.suspend(() => {
           if (registeredSessionCleanups.has(session)) return Effect.void;
           registeredSessionCleanups.add(session);
@@ -169,7 +166,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
         JSON.stringify([notebookUri, connection, database, kind, schemaPath]);
 
       const requestExpansionWork = Effect.fn(function* (
-        session: NotebookDocumentSession,
+        session: NotebookDocumentSessions.Session,
         location: string,
         send: (
           requestId: string,
@@ -249,7 +246,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
       });
 
       const requestExpansion = Effect.fn(function* (
-        session: NotebookDocumentSession,
+        session: NotebookDocumentSessions.Session,
         location: string,
         send: (
           requestId: string,
@@ -277,7 +274,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
       };
 
       const isPendingExpansion = (
-        session: NotebookDocumentSession,
+        session: NotebookDocumentSessions.Session,
         kernelSessionId: KernelSessionId,
         requestId: string,
       ) => {
@@ -448,7 +445,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
          * Update data source connections for a notebook
          */
         updateConnections(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           kernelSessionId: KernelSessionId,
           operation: DataSourceConnectionsNotification,
         ) {
@@ -485,7 +482,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
         },
 
         updateSchemaList(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           kernelSessionId: KernelSessionId,
           operation: SqlSchemaListPreviewNotification,
         ) {
@@ -568,7 +565,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
         },
 
         updateTableList(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           kernelSessionId: KernelSessionId,
           operation: SqlTableListPreviewNotification,
         ) {
@@ -643,7 +640,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
         },
 
         loadSchemas(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           connection: string,
           database: string,
           schemaPath: readonly string[],
@@ -672,7 +669,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
         },
 
         loadTables(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           connection: string,
           database: string,
           schema: string,
@@ -706,7 +703,7 @@ export class NotebookDatasources extends Context.Service<NotebookDatasources>()(
          * Update datasets for a notebook
          */
         updateDatasets(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           kernelSessionId: KernelSessionId,
           operation: DatasetsNotification,
         ) {

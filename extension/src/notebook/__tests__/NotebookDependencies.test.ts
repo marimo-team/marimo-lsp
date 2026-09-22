@@ -24,7 +24,7 @@ import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
 import * as NotebookDependencies from "../NotebookDependencies.ts";
-import { NotebookDocumentSessions } from "../NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
@@ -92,7 +92,7 @@ const inNotebook = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
-    const sessions = yield* NotebookDocumentSessions;
+    const sessions = yield* NotebookDocumentSessions.Service;
     const resources = yield* NotebookSessionResources;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));

@@ -15,10 +15,7 @@ import {
 
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import * as NotebookDependencies from "./NotebookDependencies.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessionEndedError,
-} from "./NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "./NotebookDocumentSessions.ts";
 import { NotebookSession } from "./NotebookSession.ts";
 
 /**
@@ -26,8 +23,8 @@ import { NotebookSession } from "./NotebookSession.ts";
  * VS Code document carried by the session.
  */
 class NotebookSessionKey implements Equal.Equal {
-  readonly session: NotebookDocumentSession;
-  constructor(session: NotebookDocumentSession) {
+  readonly session: NotebookDocumentSessions.Session;
+  constructor(session: NotebookDocumentSessions.Session) {
     this.session = session;
   }
   [Equal.symbol](that: unknown): boolean {
@@ -58,11 +55,12 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
         // A document-session end is the authoritative eviction signal.
         idleTimeToLive: Duration.infinity,
       });
-      const registeredSessions = new WeakSet<NotebookDocumentSession>();
+      const registeredSessions =
+        new WeakSet<NotebookDocumentSessions.Session>();
 
       const registerSession = Effect.fn(
         "NotebookSessionResources.registerSession",
-      )((session: NotebookDocumentSession) =>
+      )((session: NotebookDocumentSessions.Session) =>
         Effect.uninterruptible(
           Effect.suspend(() => {
             if (registeredSessions.has(session)) return Effect.void;
@@ -75,7 +73,7 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
         ),
       );
 
-      const contextFor = (session: NotebookDocumentSession) =>
+      const contextFor = (session: NotebookDocumentSessions.Session) =>
         registerSession(session).pipe(
           Effect.andThen(
             resources.contextEffect(new NotebookSessionKey(session)),
@@ -83,11 +81,11 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
         );
 
       const runInSessionScope = <A, E, R>(
-        session: NotebookDocumentSession,
+        session: NotebookDocumentSessions.Session,
         makeEffect: (scope: Scope.Scope) => Effect.Effect<A, E, R>,
       ): Effect.Effect<
         A,
-        E | NotebookDocumentSessionEndedError,
+        E | NotebookDocumentSessions.EndedError,
         R | Scope.Scope
       > =>
         Effect.gen(function* () {
@@ -98,7 +96,7 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
             );
           }
           if (Predicate.isTagged(scope.state, "Closed")) {
-            return yield* new NotebookDocumentSessionEndedError({
+            return yield* new NotebookDocumentSessions.EndedError({
               notebookId: session.notebookId,
             });
           }
@@ -114,7 +112,7 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
             Exit.isFailure(exit) &&
             Cause.hasInterruptsOnly(exit.cause)
           ) {
-            return yield* new NotebookDocumentSessionEndedError({
+            return yield* new NotebookDocumentSessions.EndedError({
               notebookId: session.notebookId,
             });
           }
@@ -123,7 +121,7 @@ export class NotebookSessionResources extends Context.Service<NotebookSessionRes
 
       return {
         runScoped<A, E, R>(
-          session: NotebookDocumentSession,
+          session: NotebookDocumentSessions.Session,
           effect: Effect.Effect<A, E, R>,
         ) {
           return runInSessionScope(session, (scope) =>

@@ -4,10 +4,7 @@ import { Effect, Layer, Option, Stream } from "effect";
 import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookDocumentSession } from "../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import {
   MarimoNotebookCell,
@@ -56,8 +53,8 @@ function makeNotebookWithCells(
   return MarimoNotebookDocument.from(raw);
 }
 
-const sessions = new Map<NotebookId, NotebookDocumentSession>();
-const documentSessions = Layer.succeed(NotebookDocumentSessions, {
+const sessions = new Map<NotebookId, NotebookDocumentSessions.Session>();
+const documentSessions = Layer.succeed(NotebookDocumentSessions.Service, {
   current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
   forDocument: (document) =>
     Option.fromNullishOr(

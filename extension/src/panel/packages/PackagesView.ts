@@ -3,10 +3,7 @@ import { Effect, Layer, Option, Ref, Scope, Stream } from "effect";
 import refreshPackagesCommand from "../../commands/refreshPackages.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import * as NotebookDependencies from "../../notebook/NotebookDependencies.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -23,7 +20,7 @@ interface PackageTreeItem {
 }
 
 interface ActiveDependencies {
-  readonly session: NotebookDocumentSession;
+  readonly session: NotebookDocumentSessions.Session;
   readonly state: NotebookDependencies.State;
 }
 
@@ -37,7 +34,7 @@ interface ActiveDependencies {
 export const PackagesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
-    const documentSessions = yield* NotebookDocumentSessions;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources;
     const notebooks = yield* NotebookRuntime.Service;
     const code = yield* VsCode;
@@ -145,7 +142,7 @@ export const PackagesViewLive = Layer.effectDiscard(
                 .pipe(
                   Scope.provide(session.scope),
                   Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
+                    "NotebookDocumentSessions.EndedError",
                     () => Effect.void,
                   ),
                 ),
@@ -175,7 +172,7 @@ export const PackagesViewLive = Layer.effectDiscard(
               .pipe(
                 Scope.provide(session.value.scope),
                 Effect.catchTag(
-                  "NotebookDocumentSessionEndedError",
+                  "NotebookDocumentSessions.EndedError",
                   () => Effect.void,
                 ),
               );

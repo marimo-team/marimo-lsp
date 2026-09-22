@@ -24,10 +24,7 @@ import { SCRATCH_CELL_ID, SETUP_CELL_NAME } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { applyDocumentTransaction } from "../notebook/applyDocumentTransaction.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
@@ -188,7 +185,7 @@ interface NotebookState {
 }
 
 type SessionNotification = KernelNotification & {
-  readonly session: NotebookDocumentSession;
+  readonly session: NotebookDocumentSessions.Session;
 };
 
 export interface RuntimeSession {
@@ -207,7 +204,7 @@ type RuntimeWorkRequirements =
   | Constants
   | NotebookDatasources
   | NotebookEditorRegistry
-  | NotebookDocumentSessions
+  | NotebookDocumentSessions.Service
   | NotebookRenderer.Service
   | OutputChannel.Service
   | PythonEnvInvalidation.Service
@@ -306,10 +303,10 @@ export const layer = Layer.effect(
     const variables = yield* NotebookVariables;
     const datasources = yield* NotebookDatasources;
     const liveSessions = yield* LiveSessions;
-    const documentSessions = yield* NotebookDocumentSessions;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
     const operations = yield* PubSub.unbounded<SessionNotification>();
     const notebookStates = new Map<
-      NotebookId | NotebookDocumentSession,
+      NotebookId | NotebookDocumentSessions.Session,
       NotebookState
     >();
     const kernelSessions = new Map<NotebookId, KernelSessionId>(
@@ -415,7 +412,7 @@ export const layer = Layer.effect(
       );
 
     const makeDocumentHandle = (
-      session: NotebookDocumentSession,
+      session: NotebookDocumentSessions.Session,
       controller: Ref.Ref<Option.Option<NotebookController>>,
     ): NotebookDocumentHandle => ({
       execute: (request, executable) =>
@@ -458,7 +455,7 @@ export const layer = Layer.effect(
                   yield* reconcileKernelSession(notebookId);
                   return null;
                 }).pipe(
-                  Effect.catchTag("NotebookDocumentSessionEndedError", () =>
+                  Effect.catchTag("NotebookDocumentSessions.EndedError", () =>
                     Effect.fail(
                       new NoActiveKernelError({
                         notebookUri: session.notebookId,
@@ -658,7 +655,7 @@ export const layer = Layer.effect(
 
     const stateForDocumentSession = Effect.fn(
       "NotebookRuntime.stateForDocumentSession",
-    )(function* (session: NotebookDocumentSession) {
+    )(function* (session: NotebookDocumentSessions.Session) {
       return yield* Effect.uninterruptible(
         Effect.suspend(() => {
           const existing = notebookStates.get(session);
@@ -790,7 +787,7 @@ export const layer = Layer.effect(
                 session: message.session,
               }).pipe(
                 Effect.catchTag(
-                  "NotebookDocumentSessionEndedError",
+                  "NotebookDocumentSessions.EndedError",
                   () => Effect.void,
                 ),
                 Effect.catchCause(
@@ -1208,7 +1205,7 @@ function processOperation(
   options: {
     readonly notebook: NotebookHandle;
     readonly respondToStdin: RespondToStdin;
-    readonly session: NotebookDocumentSession;
+    readonly session: NotebookDocumentSessions.Session;
   },
 ) {
   return Effect.gen(function* () {
@@ -1339,7 +1336,7 @@ function processNotebookOperation(
   options: {
     readonly notebook: NotebookHandle;
     readonly respondToStdin: RespondToStdin;
-    readonly session: NotebookDocumentSession;
+    readonly session: NotebookDocumentSessions.Session;
     readonly kernelSessionId: KernelSessionId | undefined;
   },
 ) {

@@ -27,10 +27,7 @@ import {
   notebookId,
   requestId,
 } from "../../../lib/__tests__/branded.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
 import type {
   DataSourceConnectionsNotification,
   DatabaseSchema,
@@ -53,12 +50,12 @@ const SESSION = makeTestNotebookDocumentSession(
 const makeLayer = (
   send: (request: TestCommand) => Effect.Effect<unknown> = () =>
     Effect.succeed(null),
-  currentSession: () => NotebookDocumentSession = () => SESSION,
+  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
 ) =>
   Layer.effect(NotebookDatasources, NotebookDatasources.make).pipe(
     Layer.provide([
       makeTestMarimoClient({ send }),
-      Layer.succeed(NotebookDocumentSessions, {
+      Layer.succeed(NotebookDocumentSessions.Service, {
         current: (notebookUri) =>
           notebookUri === currentSession().notebookId
             ? Option.some(currentSession())
@@ -75,7 +72,7 @@ const makeLayer = (
   );
 
 const makeRecordingLayer = (
-  currentSession: () => NotebookDocumentSession = () => SESSION,
+  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
 ) => {
   const calls: TestCommand[] = [];
   const waiters = new Map<number, Deferred.Deferred<TestCommand>>();
