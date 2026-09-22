@@ -1,10 +1,10 @@
 import { Context, Effect, Layer } from "effect";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 
 export class Constants extends Context.Service<Constants>()("Constants", {
   make: Effect.gen(function* () {
-    const config = yield* Config;
+    const config = yield* Config.Service;
     const useManagedLanguageFeatures =
       yield* config.getManagedLanguageFeaturesEnabled;
 

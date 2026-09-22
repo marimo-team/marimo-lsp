@@ -11,7 +11,7 @@ import {
   Stream,
 } from "effect";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -318,7 +318,7 @@ export class TyLanguageServer extends Context.Service<TyLanguageServer>()(
  */
 const resolveTyBinary = Effect.fn(function* () {
   const code = yield* VsCode;
-  const config = yield* Config;
+  const config = yield* Config.Service;
 
   const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
 
@@ -460,7 +460,7 @@ export const makeTyMissingNotifier = Effect.fn(
  * Checks if the managed ty language server should be enabled.
  */
 const getTyDisabledReason = Effect.fn(function* () {
-  const config = yield* Config;
+  const config = yield* Config.Service;
 
   const managedFeaturesEnabled =
     yield* config.getManagedLanguageFeaturesEnabled;

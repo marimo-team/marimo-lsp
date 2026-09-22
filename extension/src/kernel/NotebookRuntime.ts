@@ -19,7 +19,7 @@ import {
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { SCRATCH_CELL_ID, SETUP_CELL_NAME } from "../constants.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import {
@@ -210,7 +210,7 @@ export interface RuntimeSessionEntry {
 
 type RuntimeWorkRequirements =
   | CellExecutions
-  | Config
+  | Config.Service
   | Constants
   | NotebookDatasources
   | NotebookEditorRegistry
@@ -266,7 +266,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
-      const config = yield* Config;
+      const config = yield* Config.Service;
       const marimo = yield* MarimoClient;
       const renderer = yield* NotebookRenderer.Service;
       const executions = yield* CellExecutions;

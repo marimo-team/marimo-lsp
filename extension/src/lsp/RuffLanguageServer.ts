@@ -10,7 +10,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -204,7 +204,7 @@ export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
  */
 const resolveRuffBinary = Effect.fn(function* () {
   const code = yield* VsCode;
-  const config = yield* Config;
+  const config = yield* Config.Service;
 
   const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
 
@@ -319,7 +319,7 @@ function getGlobalRuffSettings(
  */
 const getRuffDisabledReason = Effect.fn(function* () {
   const code = yield* VsCode;
-  const config = yield* Config;
+  const config = yield* Config.Service;
 
   const managedFeaturesEnabled =
     yield* config.getManagedLanguageFeaturesEnabled;

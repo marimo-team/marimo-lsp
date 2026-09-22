@@ -19,7 +19,7 @@ import {
 } from "effect";
 import * as lsp from "vscode-languageclient/node";
 
-import { Config, MarimoLspServer } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -190,7 +190,7 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
   {
     make: Effect.gen(function* () {
       const code = yield* VsCode;
-      const config = yield* Config;
+      const config = yield* Config.Service;
       const telemetry = yield* Telemetry;
 
       const lspServer = yield* config.lsp.server.pipe(
@@ -206,7 +206,7 @@ export class MarimoClient extends Context.Service<MarimoClient>()(
             yield* code.window.showErrorMessage(
               `${error.message} Falling back to the WASM language server.`,
             );
-            return MarimoLspServer.Wasm();
+            return Config.MarimoLspServer.Wasm();
           }),
         ),
       );
@@ -552,11 +552,11 @@ export const selectMarimoLspExecutable = Effect.fn("selectMarimoLspExecutable")(
     resolveUvBinary,
     searchDirectory = __dirname,
   }: {
-    readonly server: MarimoLspServer;
+    readonly server: Config.MarimoLspServer;
     readonly resolveUvBinary: Effect.Effect<string>;
     readonly searchDirectory?: string;
   }) {
-    return yield* MarimoLspServer.$match(server, {
+    return yield* Config.MarimoLspServer.$match(server, {
       Custom: ({ command: [executable, ...args] }) =>
         Effect.succeed(
           MarimoLspExecutable.Configured({

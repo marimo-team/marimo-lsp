@@ -6,7 +6,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { Config } from "../../config/Config.ts";
+import * as Config from "../../config/Config.ts";
 import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
 import { Uv, UvBin } from "../../python/Uv.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";

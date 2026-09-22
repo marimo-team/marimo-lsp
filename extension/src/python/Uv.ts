@@ -20,7 +20,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { Version } from "../lib/Version.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { Telemetry } from "../telemetry/Telemetry.ts";
@@ -118,7 +118,7 @@ class UvResolutionError extends Data.TaggedError("UvResolutionError")<{
 export class Uv extends Context.Service<Uv>()("Uv", {
   make: Effect.gen(function* () {
     const code = yield* VsCode;
-    const config = yield* Config;
+    const config = yield* Config.Service;
     const telemetry = yield* Telemetry;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const scope = yield* Effect.scope;

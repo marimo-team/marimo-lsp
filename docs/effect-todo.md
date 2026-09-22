@@ -23,7 +23,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 
 ### Configuration
 
-- [ ] `config/Config.ts`
+- [x] `config/Config.ts`
 - [ ] `config/NotebookConfiguration.ts`
 
 ### Kernel

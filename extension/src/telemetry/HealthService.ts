@@ -2,7 +2,7 @@ import * as NodeProcess from "node:process";
 
 import { Context, Effect, Layer, Option } from "effect";
 
-import { Config, MarimoLspServer } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
@@ -29,7 +29,7 @@ export class HealthService extends Context.Service<HealthService>()(
     make: Effect.gen(function* () {
       const uv = yield* Uv;
       const code = yield* VsCode;
-      const config = yield* Config;
+      const config = yield* Config.Service;
       const marimo = yield* MarimoClient;
       const notebooks = yield* NotebookRuntime;
       const pyExt = yield* PythonExtension;
@@ -52,7 +52,7 @@ export class HealthService extends Context.Service<HealthService>()(
 
           // LSP Status
           lines.push("Language Server (LSP):");
-          const uvBin = MarimoLspServer.$is("Python")(marimo.server)
+          const uvBin = Config.MarimoLspServer.$is("Python")(marimo.server)
             ? Option.some(yield* uv.bin)
             : Option.none();
           lines.push(
@@ -273,10 +273,10 @@ export function formatMarimoLspDiagnostics({
   server,
   uvBin,
 }: {
-  server: MarimoLspServer;
+  server: Config.MarimoLspServer;
   uvBin: Option.Option<UvBin>;
 }): readonly string[] {
-  return MarimoLspServer.$match(server, {
+  return Config.MarimoLspServer.$match(server, {
     Wasm: () => ["\tMode: WASM (bundled Pyodide)"],
     Custom: ({ command: [executable, ...args] }) => [
       "\tMode: Native (configured)",

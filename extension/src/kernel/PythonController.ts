@@ -3,7 +3,7 @@ import { Brand, Cause, Effect, Option, Redacted, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { extractExecuteCodeRequest } from "../lib/extractExecuteCodeRequest.ts";
 import { extractPythonError } from "../lib/extractPythonError.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
@@ -36,7 +36,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive;
     const outputPresenter = yield* VsCodeNotebookOutputPresenter;
-    const config = yield* Config;
+    const config = yield* Config.Service;
     const notebooks = yield* NotebookRuntime;
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer;

@@ -15,7 +15,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
 import { Constants } from "../platform/Constants.ts";

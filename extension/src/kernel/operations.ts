@@ -1,6 +1,6 @@
 import { Effect, Option } from "effect";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
@@ -16,7 +16,7 @@ export const handleMissingPackageAlert = Effect.fn("handleMissingPackageAlert")(
     controller: NotebookController,
   ) {
     const code = yield* VsCode;
-    const config = yield* Config;
+    const config = yield* Config.Service;
     const envInvalidation = yield* PythonEnvInvalidation.Service;
 
     if (operation.packages.length === 0) {

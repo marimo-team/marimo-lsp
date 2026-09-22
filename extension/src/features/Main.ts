@@ -1,6 +1,6 @@
 import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
 import { CellExecutions } from "../kernel/CellExecutions.ts";
 import { DebugAdapter } from "../kernel/DebugAdapter.ts";
