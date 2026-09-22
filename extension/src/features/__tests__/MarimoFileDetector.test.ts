@@ -6,12 +6,12 @@ import {
   createTestTextEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { MarimoFileDetectorLive } from "../MarimoFileDetector.ts";
+import * as MarimoFileDetector from "../MarimoFileDetector.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(MarimoFileDetectorLive),
+    Layer.provideMerge(MarimoFileDetector.layer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };

@@ -45,7 +45,7 @@ import * as CellMetadataBindings from "./CellMetadataBindings.ts";
 import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
 import * as Debug from "./Debug.ts";
 import * as MarimoCodeLensProvider from "./MarimoCodeLensProvider.ts";
-import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
+import * as MarimoFileDetector from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
 import { RegisterLanguageModelToolsLive } from "./RegisterLanguageModelTools.ts";
 import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
@@ -61,7 +61,7 @@ const MainLive = Layer.empty
     Layer.merge(RegisterLanguageModelToolsLive),
     Layer.merge(MarimoStatusBarLive),
     Layer.merge(PythonEnvironmentStatusBarLive),
-    Layer.merge(MarimoFileDetectorLive),
+    Layer.merge(MarimoFileDetector.layer),
     Layer.merge(MarimoCodeLensProvider.layer),
     Layer.merge(SessionsViewLive),
     Layer.merge(SessionFileLifecycleLive),
