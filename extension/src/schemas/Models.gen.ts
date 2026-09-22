@@ -865,8 +865,13 @@ export type SessionInfo = typeof SessionInfo.Type;
 
 /**
  * Snapshot of all live sessions owned by this language server.
+ *
+ * The client assigns a generation at initialization. Revisions order snapshots
+ * within that server, so responses and notifications can be consumed out of order.
  */
 export const ListSessionsResponse = Schema.Struct({
+  generation: Schema.Int,
+  revision: Schema.Int,
   sessions: Schema.Array(SessionInfo),
 }).annotate({ identifier: "ListSessionsResponse" });
 export type ListSessionsResponse = typeof ListSessionsResponse.Type;
@@ -1649,7 +1654,7 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
       kind: "execute",
       ...params,
     } satisfies typeof Execute.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, ListSessionsResponse);
   },
   updateUiElement: (params: Omit<typeof UpdateUiElement.Encoded, "kind">) => {
     const command = {
@@ -1712,21 +1717,21 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
       kind: "close-session",
       ...params,
     } satisfies typeof CloseSession.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, ListSessionsResponse);
   },
   restartSession: (params: Omit<typeof RestartSession.Encoded, "kind">) => {
     const command = {
       kind: "restart-session",
       ...params,
     } satisfies typeof RestartSession.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, ListSessionsResponse);
   },
   moveSession: (params: Omit<typeof MoveSession.Encoded, "kind">) => {
     const command = {
       kind: "move-session",
       ...params,
     } satisfies typeof MoveSession.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, ListSessionsResponse);
   },
   listSessions: (params: Omit<typeof ListSessions.Encoded, "kind">) => {
     const command = {
@@ -1742,7 +1747,7 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
       kind: "shutdown-all-sessions",
       ...params,
     } satisfies typeof ShutdownAllSessions.Encoded;
-    return dispatch(send, command, Schema.Null);
+    return dispatch(send, command, ListSessionsResponse);
   },
   executeScratchpad: (
     params: Omit<typeof ExecuteScratchpad.Encoded, "kind">,

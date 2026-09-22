@@ -134,13 +134,15 @@ export function makeTestNotebookRuntime(options: Options = {}) {
           const notebookId = MarimoNotebookDocument.from(document).id;
           return Effect.succeed({
             execute: (request, executable) =>
-              client.execute({
-                notebookUri: notebookId,
-                executable,
-                workingDirectory:
-                  options.runtimeSession?.workingDirectory ?? process.cwd(),
-                cells: request.cells,
-              }),
+              client
+                .execute({
+                  notebookUri: notebookId,
+                  executable,
+                  workingDirectory:
+                    options.runtimeSession?.workingDirectory ?? process.cwd(),
+                  cells: request.cells,
+                })
+                .pipe(Effect.as(null)),
           });
         };
 
@@ -201,10 +203,34 @@ function makeTestMarimoClientValue(
         ((request) =>
           Effect.succeed(
             request.kind === "list-sessions"
-              ? { sessions: [] }
+              ? { generation: 1, revision: 1, sessions: [] }
               : request.kind === "read-notebook-outputs"
                 ? { cells: [] }
-                : null,
+                : request.kind === "execute"
+                  ? {
+                      generation: 1,
+                      revision: 2,
+                      sessions: [
+                        {
+                          sessionId: TEST_KERNEL_SESSION_ID,
+                          notebookUri: request.notebookUri,
+                          filename: null,
+                          executable: request.executable,
+                          workingDirectory: request.workingDirectory,
+                          startedAt: 1,
+                          status: "running",
+                          attached: true,
+                        },
+                      ],
+                    }
+                  : [
+                        "close-session",
+                        "restart-session",
+                        "move-session",
+                        "shutdown-all-sessions",
+                      ].includes(request.kind)
+                    ? { generation: 1, revision: 3, sessions: [] }
+                    : null,
           )),
       kernelNotifications: options.kernelNotifications ?? Stream.never,
       documentAnalysis: options.documentAnalysis ?? Stream.never,

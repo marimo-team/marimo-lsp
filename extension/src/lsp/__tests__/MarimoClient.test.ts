@@ -141,7 +141,11 @@ it.effect(
   Effect.fn(function* () {
     const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
     const responses: Record<string, unknown> = {
-      execute: null,
+      execute: {
+        generation: 1,
+        revision: 1,
+        sessions: [],
+      },
       "set-display-theme": { success: true },
     };
     const marimo = makeMarimoCommands({

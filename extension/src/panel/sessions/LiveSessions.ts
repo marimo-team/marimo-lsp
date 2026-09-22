@@ -1,4 +1,5 @@
 import {
+  Cause,
   Context,
   Data,
   Effect,
@@ -11,7 +12,10 @@ import {
 
 import { MarimoClient } from "../../lsp/MarimoClient.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import { type SessionInfo, SessionsSnapshot } from "./schemas.ts";
+import {
+  type SessionInfo,
+  ListSessionsResponse,
+} from "../../schemas/Models.gen.ts";
 
 export class SessionNotFoundError extends Data.TaggedError(
   "SessionNotFoundError",
@@ -22,57 +26,83 @@ export type SessionViewItem = Omit<SessionInfo, "status"> & {
   readonly status: SessionViewStatus;
 };
 
-/** Authoritative live-session state shared by the tree and future renderers. */
+interface SessionState {
+  readonly snapshot: ListSessionsResponse;
+  readonly restarting: ReadonlySet<NotebookId>;
+}
+
+const view = ({
+  snapshot,
+  restarting,
+}: SessionState): ReadonlyArray<SessionViewItem> =>
+  snapshot.sessions.map((session) =>
+    restarting.has(session.notebookUri)
+      ? { ...session, status: "restarting" }
+      : session,
+  );
+
+/** Server snapshots are authoritative; pending restarts only affect presentation. */
 export class LiveSessions extends Context.Service<LiveSessions>()(
   "LiveSessions",
   {
     make: Effect.gen(function* () {
       const marimo = yield* MarimoClient;
-      const sessions = yield* SubscriptionRef.make<
-        ReadonlyArray<SessionViewItem>
-      >([]);
-
-      const applySnapshot = Effect.fn("LiveSessions.applySnapshot")(function* (
-        snapshot: unknown,
-      ) {
-        const decoded =
-          yield* Schema.decodeUnknownEffect(SessionsSnapshot)(snapshot);
-        yield* SubscriptionRef.set(sessions, decoded.sessions);
+      const state = yield* SubscriptionRef.make<SessionState>({
+        snapshot: { generation: -1, revision: 0, sessions: [] },
+        restarting: new Set(),
       });
 
-      const refresh = Effect.fn("LiveSessions.refresh")(function* () {
-        yield* applySnapshot(yield* marimo.listSessions({}));
-      });
+      const accept = Effect.fn("LiveSessions.accept")(
+        (snapshot: ListSessionsResponse) =>
+          SubscriptionRef.updateAndGet(state, (current) => {
+            const previous = current.snapshot;
+            if (
+              snapshot.generation < previous.generation ||
+              (snapshot.generation === previous.generation &&
+                snapshot.revision <= previous.revision)
+            ) {
+              return current;
+            }
+            return { ...current, snapshot };
+          }).pipe(Effect.map((current) => current.snapshot.sessions)),
+      );
+
+      const refresh = Effect.fn("LiveSessions.refresh")(() =>
+        marimo.listSessions({}).pipe(Effect.flatMap(accept)),
+      );
 
       yield* Effect.forkScoped(
         marimo.sessionChanges.pipe(
           Stream.runForEach((snapshot) =>
-            applySnapshot(snapshot).pipe(
+            Schema.decodeUnknownEffect(ListSessionsResponse)(snapshot).pipe(
+              Effect.flatMap(accept),
               Effect.catchCause((cause) =>
-                Effect.logWarning("Ignored invalid live-session snapshot").pipe(
-                  Effect.annotateLogs({ cause }),
-                ),
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning(
+                      "Ignored invalid live-session snapshot",
+                    ).pipe(Effect.annotateLogs({ cause })),
               ),
             ),
           ),
         ),
       );
 
-      // The forked consumer's subscription attaches within microseconds,
-      // while the list request's round trip is still in flight. LSP delivers
-      // messages in order, so any change notification that could slip in
-      // before the subscription is live was emitted before the server built
-      // the snapshot — the snapshot below supersedes whatever was missed.
+      // Subscribe first so changes during the initial query are not missed.
+      // Revisions order responses and notifications regardless of scheduling.
       yield* refresh().pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning("Failed to load initial live sessions").pipe(
-            Effect.annotateLogs({ cause }),
-          ),
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Failed to load initial live sessions").pipe(
+                Effect.annotateLogs({ cause }),
+              ),
         ),
       );
 
+      const get = SubscriptionRef.get(state).pipe(Effect.map(view));
       const find = (notebookUri: NotebookId) =>
-        Effect.map(SubscriptionRef.get(sessions), (items) =>
+        Effect.map(get, (items) =>
           Option.fromNullishOr(
             items.find((item) => item.notebookUri === notebookUri),
           ),
@@ -85,88 +115,67 @@ export class LiveSessions extends Context.Service<LiveSessions>()(
         if (Option.isNone(current)) {
           return yield* new SessionNotFoundError({ notebookUri });
         }
-        yield* SubscriptionRef.update(sessions, (items) =>
-          items.map((item) =>
-            item.notebookUri === notebookUri
-              ? { ...item, status: "restarting" as const }
-              : item,
-          ),
-        );
-        yield* marimo
-          .restartSession({
-            notebookUri,
-            executable: current.value.executable,
-            workingDirectory: current.value.workingDirectory,
-          })
-          .pipe(
-            Effect.tapError(() =>
-              SubscriptionRef.update(sessions, (items) =>
-                items.map((item) =>
-                  item.notebookUri === notebookUri ? current.value : item,
-                ),
+        return yield* Effect.acquireUseRelease(
+          SubscriptionRef.update(state, (current) => ({
+            ...current,
+            restarting: new Set([...current.restarting, notebookUri]),
+          })),
+          () =>
+            marimo
+              .restartSession({
+                notebookUri,
+                executable: current.value.executable,
+                workingDirectory: current.value.workingDirectory,
+              })
+              .pipe(Effect.flatMap(accept)),
+          () =>
+            SubscriptionRef.update(state, (current) => ({
+              ...current,
+              restarting: new Set(
+                [...current.restarting].filter((id) => id !== notebookUri),
               ),
-            ),
-          );
-        yield* SubscriptionRef.update(sessions, (items) =>
-          items.map((item) =>
-            item.notebookUri === notebookUri
-              ? { ...item, status: "idle" as const }
-              : item,
-          ),
+            })),
         );
-        yield* refresh().pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(
-              "Failed to reconcile live sessions after restart",
-            ).pipe(Effect.annotateLogs({ cause, notebookUri })),
-          ),
-        );
-        return undefined;
-      });
-
-      const shutdown = Effect.fn("LiveSessions.shutdown")(function* (
-        notebookUri: NotebookId,
-      ) {
-        yield* marimo.closeSession({ notebookUri });
-        yield* refresh();
-      });
-
-      const move = Effect.fn("LiveSessions.move")(function* (
-        notebookUri: NotebookId,
-        newNotebookUri: NotebookId,
-      ) {
-        yield* marimo.moveSession({
-          notebookUri,
-          newNotebookUri,
-        });
-        yield* refresh();
       });
 
       return {
-        get: SubscriptionRef.get(sessions),
-        changes: SubscriptionRef.changes(sessions),
+        get,
+        changes: SubscriptionRef.changes(state).pipe(
+          Stream.changes,
+          Stream.map(view),
+        ),
         find,
         refresh,
+        accept,
         restart,
-        shutdown,
-        restore: Effect.fn("LiveSessions.restore")(function* (
-          notebookUri: NotebookId,
-          executable: string,
-          workingDirectory: string,
-        ) {
-          yield* marimo.restartSession({
-            notebookUri,
-            executable,
-            workingDirectory,
-            createIfMissing: true,
-          });
-          yield* refresh();
-        }),
-        shutdownAll: Effect.fn("LiveSessions.shutdownAll")(function* () {
-          yield* marimo.shutdownAllSessions({});
-          yield* refresh();
-        }),
-        move,
+        shutdown: Effect.fn("LiveSessions.shutdown")(
+          (notebookUri: NotebookId) =>
+            marimo.closeSession({ notebookUri }).pipe(Effect.flatMap(accept)),
+        ),
+        restore: Effect.fn("LiveSessions.restore")(
+          (
+            notebookUri: NotebookId,
+            executable: string,
+            workingDirectory: string,
+          ) =>
+            marimo
+              .restartSession({
+                notebookUri,
+                executable,
+                workingDirectory,
+                createIfMissing: true,
+              })
+              .pipe(Effect.flatMap(accept)),
+        ),
+        shutdownAll: Effect.fn("LiveSessions.shutdownAll")(() =>
+          marimo.shutdownAllSessions({}).pipe(Effect.flatMap(accept)),
+        ),
+        move: Effect.fn("LiveSessions.move")(
+          (notebookUri: NotebookId, newNotebookUri: NotebookId) =>
+            marimo
+              .moveSession({ notebookUri, newNotebookUri })
+              .pipe(Effect.flatMap(accept)),
+        ),
       };
     }),
   },

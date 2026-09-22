@@ -112,7 +112,7 @@ export interface NotebookControllerSelection {
   readonly controller: NotebookController;
 }
 
-/** No controller is selected for the notebook. */
+/** No matching kernel session is bound to the notebook. */
 export class NoActiveKernelError extends Data.TaggedError(
   "NoActiveKernelError",
 )<{ readonly notebookUri: NotebookId }> {}
@@ -163,12 +163,19 @@ export interface NotebookHandle {
   readonly interrupt: WithNoActiveKernel<
     ReturnType<MarimoClientService["interrupt"]>
   >;
-  readonly restart: ReturnType<LiveSessionsShape["restart"]>;
-  readonly close: ReturnType<LiveSessionsShape["shutdown"]>;
+  readonly restart: Effect.Effect<
+    void,
+    Effect.Error<ReturnType<LiveSessionsShape["restart"]>>
+  >;
+  readonly close: Effect.Effect<
+    void,
+    Effect.Error<ReturnType<LiveSessionsShape["shutdown"]>>
+  >;
 }
 
 /** Operations scoped to one Notebook Document Session. */
 export interface NotebookDocumentHandle {
+  /** Resolves after dispatch and session binding; cells may still be running. */
   readonly execute: (
     request: Pick<CommandFields<"execute">, "cells">,
     executable: string,
@@ -292,11 +299,11 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       const reconcileKernelSession = Effect.fn(
         "NotebookRuntime.reconcileKernelSession",
       )(function* (notebookId: NotebookId) {
+        const sessions = yield* liveSessions.get;
+        const next = sessions.find(
+          (session) => session.notebookUri === notebookId,
+        )?.sessionId;
         const previous = kernelSessions.get(notebookId);
-        const current = yield* liveSessions.find(notebookId);
-        const next = Option.isSome(current)
-          ? current.value.sessionId
-          : undefined;
         if (previous === next) return;
 
         if (next === undefined) kernelSessions.delete(notebookId);
@@ -307,50 +314,48 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         }
       });
 
+      const refreshKernelSession = Effect.fn(
+        "NotebookRuntime.refreshKernelSession",
+      )((notebookId: NotebookId) =>
+        liveSessions
+          .refresh()
+          .pipe(Effect.andThen(reconcileKernelSession(notebookId))),
+      );
+
       const runInNotebook = executor.submit;
 
+      // Renderer requests have no session identity: they target the kernel at
+      // dequeue time, even across a restart. Stdin replies retain their identity.
       const runInKernelSession = <A, E, R extends RuntimeWorkRequirements>(
         notebookId: NotebookId,
-        sessionId: KernelSessionId,
-        effect: Effect.Effect<A, E, R>,
+        effect: (sessionId: KernelSessionId) => Effect.Effect<A, E, R>,
+        expectedSessionId?: KernelSessionId,
       ) =>
         runInNotebook(
           notebookId,
           Effect.gen(function* () {
-            if (kernelSessions.get(notebookId) !== sessionId) {
+            yield* reconcileKernelSession(notebookId);
+            const sessionId = kernelSessions.get(notebookId);
+            if (
+              sessionId === undefined ||
+              (expectedSessionId !== undefined &&
+                sessionId !== expectedSessionId)
+            ) {
               return yield* new NoActiveKernelError({
                 notebookUri: notebookId,
               });
             }
-            return yield* effect;
+            return yield* effect(sessionId);
           }),
         );
 
-      const runInCurrentKernelSession = <
-        A,
-        E,
-        R extends RuntimeWorkRequirements,
-      >(
+      const mutateKernelSession = <E>(
         notebookId: NotebookId,
-        effect: (sessionId: KernelSessionId) => Effect.Effect<A, E, R>,
-      ) =>
-        Effect.suspend(() => {
-          const sessionId = kernelSessions.get(notebookId);
-          if (sessionId === undefined) {
-            return Effect.fail(
-              new NoActiveKernelError({ notebookUri: notebookId }),
-            );
-          }
-          return runInKernelSession(notebookId, sessionId, effect(sessionId));
-        });
-
-      const mutateKernelSession = <A, E>(
-        notebookId: NotebookId,
-        effect: Effect.Effect<A, E>,
+        effect: Effect.Effect<unknown, E>,
       ) =>
         runInNotebook(
           notebookId,
-          effect.pipe(Effect.tap(() => reconcileKernelSession(notebookId))),
+          effect.pipe(Effect.andThen(reconcileKernelSession(notebookId))),
         );
 
       const respondToStdin: RespondToStdin = (
@@ -360,20 +365,21 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
       ) =>
         runInKernelSession(
           notebookId,
+          (currentSessionId) =>
+            Option.match(result, {
+              onSome: (text) =>
+                marimo.sendStdin({
+                  notebookUri: notebookId,
+                  kernelSessionId: currentSessionId,
+                  text,
+                }),
+              onNone: () =>
+                marimo.interrupt({
+                  notebookUri: notebookId,
+                  kernelSessionId: currentSessionId,
+                }),
+            }),
           sessionId,
-          Option.match(result, {
-            onSome: (text) =>
-              marimo.sendStdin({
-                notebookUri: notebookId,
-                kernelSessionId: sessionId,
-                text,
-              }),
-            onNone: () =>
-              marimo.interrupt({
-                notebookUri: notebookId,
-                kernelSessionId: sessionId,
-              }),
-          }),
         );
 
       const makeDocumentHandle = (
@@ -416,9 +422,9 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       })),
                       send,
                     );
-                    yield* liveSessions.refresh();
+                    yield* liveSessions.accept(result);
                     yield* reconcileKernelSession(notebookId);
-                    return result;
+                    return null;
                   }).pipe(
                     Effect.catchTag("NotebookDocumentSessionEndedError", () =>
                       Effect.fail(
@@ -519,8 +525,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                       code: sourceCode,
                       runId,
                     });
-                    yield* liveSessions.refresh();
-                    yield* reconcileKernelSession(notebookId);
+                    yield* refreshKernelSession(notebookId);
 
                     return Stream.fromSubscription(subscription).pipe(
                       // Only output owned by the requesting document session;
@@ -547,7 +552,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             }),
           ),
         updateUIElements: (request) =>
-          runInCurrentKernelSession(notebookId, (sessionId) =>
+          runInKernelSession(notebookId, (sessionId) =>
             marimo.updateUiElement({
               ...request,
               notebookUri: notebookId,
@@ -555,7 +560,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             }),
           ),
         updateModel: (request) =>
-          runInCurrentKernelSession(notebookId, (sessionId) =>
+          runInKernelSession(notebookId, (sessionId) =>
             marimo.setModelValue({
               ...request,
               notebookUri: notebookId,
@@ -563,7 +568,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             }),
           ),
         invokeFunction: (request) =>
-          runInCurrentKernelSession(notebookId, (sessionId) =>
+          runInKernelSession(notebookId, (sessionId) =>
             marimo.invokeFunction({
               ...request,
               notebookUri: notebookId,
@@ -571,14 +576,14 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
             }),
           ),
         deleteCell: (request) =>
-          runInCurrentKernelSession(notebookId, (sessionId) =>
+          runInKernelSession(notebookId, (sessionId) =>
             marimo.deleteCell({
               ...request,
               notebookUri: notebookId,
               kernelSessionId: sessionId,
             }),
           ),
-        interrupt: runInCurrentKernelSession(notebookId, (sessionId) =>
+        interrupt: runInKernelSession(notebookId, (sessionId) =>
           marimo.interrupt({
             notebookUri: notebookId,
             kernelSessionId: sessionId,
@@ -681,6 +686,8 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 ...kernelSessions.keys(),
                 ...snapshot.map((session) => session.notebookUri),
               ]);
+              // Admit work without waiting for busy notebooks. Each worker reads
+              // the latest accepted snapshot when it reaches the front of its queue.
               yield* Effect.forEach(
                 notebookIds,
                 (notebookUri) =>
@@ -690,7 +697,15 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                   ),
                 { discard: true },
               );
-            }),
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning(
+                      "Failed to reconcile kernel sessions",
+                    ).pipe(Effect.annotateLogs({ cause })),
+              ),
+            ),
           ),
         ),
       );
@@ -718,8 +733,7 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
                 if (
                   kernelSessions.get(message.notebookUri) !== message.sessionId
                 ) {
-                  yield* liveSessions.refresh();
-                  yield* reconcileKernelSession(message.notebookUri);
+                  yield* refreshKernelSession(message.notebookUri);
                 }
                 if (
                   kernelSessions.get(message.notebookUri) !== message.sessionId
@@ -1031,10 +1045,14 @@ export class NotebookRuntime extends Context.Service<NotebookRuntime>()(
         moveSession(notebookId: NotebookId, newNotebookId: NotebookId) {
           return runInNotebook(
             notebookId,
-            liveSessions.move(notebookId, newNotebookId).pipe(
-              Effect.tap(() => reconcileKernelSession(notebookId)),
-              Effect.tap(() => reconcileKernelSession(newNotebookId)),
-            ),
+            Effect.gen(function* () {
+              yield* liveSessions.move(notebookId, newNotebookId);
+              yield* reconcileKernelSession(notebookId);
+              yield* executor.post(
+                newNotebookId,
+                reconcileKernelSession(newNotebookId),
+              );
+            }),
           );
         },
         restoreSession(

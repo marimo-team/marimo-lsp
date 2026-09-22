@@ -101,7 +101,13 @@ async def test_wasm_server_drives_async_command_handler() -> None:
         if isinstance(message, dict) and message.get("id") == 1
     ]
     assert responses == snapshot(
-        [{"jsonrpc": "2.0", "id": 1, "result": {"sessions": []}}]
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"generation": 0, "revision": 1, "sessions": []},
+            }
+        ]
     )
     server.close()
 

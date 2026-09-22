@@ -479,6 +479,8 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
     server.protocol.notify.assert_called_once_with(
         "marimo/sessionsChanged",
         {
+            "generation": 0,
+            "revision": 1,
             "sessions": [
                 {
                     "sessionId": SESSION_ID,
@@ -490,7 +492,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
                     "status": "idle",
                     "attached": False,
                 }
-            ]
+            ],
         },
     )
 
@@ -851,3 +853,16 @@ def test_close_all_clears_collection_and_notifies_once() -> None:
     first.close.assert_called_once_with()
     second.close.assert_called_once_with()
     sessions._notify_changed.assert_called_once_with()
+
+
+def test_snapshots_order_queries_and_notifications() -> None:
+    server = Mock()
+    sessions = Sessions(server, kernels=Mock())
+    sessions.generation = 7
+    before = sessions.snapshot()
+    sessions._notify_changed()
+    notification = server.protocol.notify.call_args.args[1]
+    after = sessions.snapshot()
+
+    assert before.generation == notification["generation"] == after.generation == 7
+    assert before.revision < notification["revision"] < after.revision
