@@ -10,7 +10,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
-import { NotebookDatasources } from "../../panel/datasources/NotebookDatasources.ts";
+import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
@@ -24,7 +24,7 @@ const withTestCtx = Effect.gen(function* () {
   const layer = Layer.empty.pipe(
     Layer.provideMerge(CellMetadataBindingsLive),
     Layer.provide(CellMetadataUIBinding.layer),
-    Layer.provide(NotebookDatasources.layer),
+    Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provide(makeTestMarimoClient()),
     Layer.provide(Constants.layer),
     Layer.provide(vscode.layer),

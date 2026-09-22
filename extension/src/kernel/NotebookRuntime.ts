@@ -28,7 +28,7 @@ import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
-import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
+import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
 import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
 import { Constants } from "../platform/Constants.ts";
@@ -202,7 +202,7 @@ type RuntimeWorkRequirements =
   | CellExecutions.Service
   | Config.Service
   | Constants
-  | NotebookDatasources
+  | NotebookDatasources.Service
   | NotebookEditorRegistry.Service
   | NotebookDocumentSessions.Service
   | NotebookRenderer.Service
@@ -301,7 +301,7 @@ export const layer = Layer.effect(
     const renderer = yield* NotebookRenderer.Service;
     const executions = yield* CellExecutions.Service;
     const variables = yield* NotebookVariables;
-    const datasources = yield* NotebookDatasources;
+    const datasources = yield* NotebookDatasources.Service;
     const liveSessions = yield* LiveSessions;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const operations = yield* PubSub.unbounded<SessionNotification>();
@@ -1181,7 +1181,7 @@ export const defaultLayer = layer.pipe(
     NotebookVariables.layer,
     NotebookRenderer.layer,
     CellExecutions.defaultLayer,
-    NotebookDatasources.layer,
+    NotebookDatasources.defaultLayer,
     NotebookEditorRegistry.layer,
     PythonEnvInvalidation.layer,
     LiveSessions.layer,
@@ -1211,7 +1211,7 @@ function processOperation(
   return Effect.gen(function* () {
     const { notebookUri, notification: operation, sessionId } = message;
     const variables = yield* NotebookVariables;
-    const datasources = yield* NotebookDatasources;
+    const datasources = yield* NotebookDatasources.Service;
 
     switch (operation.op) {
       case "variables":

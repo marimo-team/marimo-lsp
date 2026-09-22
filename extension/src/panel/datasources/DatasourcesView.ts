@@ -6,11 +6,7 @@ import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.t
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DataTable } from "../../types.ts";
 import * as TreeView from "../TreeView.ts";
-import {
-  type DatasourceDatabase,
-  type DatasourceSchema,
-  NotebookDatasources,
-} from "./NotebookDatasources.ts";
+import * as NotebookDatasources from "./NotebookDatasources.ts";
 
 const IN_MEMORY_CONNECTION = "__in_memory";
 const IN_MEMORY_DATABASE = "default";
@@ -60,11 +56,11 @@ interface TableItem {
 }
 
 const findSchema = (
-  database: DatasourceDatabase,
+  database: NotebookDatasources.Database,
   path: readonly string[],
-): DatasourceSchema | undefined => {
+): NotebookDatasources.Schema | undefined => {
   let schemas = database.schemas;
-  let current: DatasourceSchema | undefined;
+  let current: NotebookDatasources.Schema | undefined;
   for (const name of path) {
     current = schemas.get(name);
     if (current === undefined) return undefined;
@@ -75,7 +71,7 @@ const findSchema = (
 
 const schemaItem = (
   parent: DatabaseItem | SchemaItem,
-  schema: DatasourceSchema,
+  schema: NotebookDatasources.Schema,
   path: readonly string[],
 ): SchemaItem => ({
   type: "schema",
@@ -144,7 +140,7 @@ const itemId = (item: DatasourceTreeItem): string => {
 export const DatasourcesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView.Service;
-    const datasources = yield* NotebookDatasources;
+    const datasources = yield* NotebookDatasources.Service;
     const editors = yield* NotebookEditorRegistry.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
 
@@ -167,7 +163,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
 
     const loadDatabaseSchemas = Effect.fn(function* (
       item: DatabaseItem,
-      database: DatasourceDatabase,
+      database: NotebookDatasources.Database,
     ) {
       const session = documentSessions.current(item.notebookUri);
       if (Option.isNone(session)) return [];

@@ -38,7 +38,7 @@ import {
   notebookId,
   variableName,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDatasources } from "../../panel/datasources/NotebookDatasources.ts";
+import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import { NotebookVariables } from "../../panel/variables/NotebookVariables.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import {
@@ -191,7 +191,7 @@ const withTestCtx = Effect.fn(function* (
     // Merged out (not just provided) so tests can observe the same service
     // instances NotebookRuntime writes to.
     Layer.provideMerge(NotebookVariables.layer),
-    Layer.provideMerge(NotebookDatasources.layer),
+    Layer.provideMerge(NotebookDatasources.defaultLayer),
     Layer.provide(
       makeTestMarimoClient({
         send(request) {
@@ -1177,7 +1177,7 @@ describe("NotebookRuntime state eviction", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables;
-        const datasources = yield* NotebookDatasources;
+        const datasources = yield* NotebookDatasources.Service;
 
         // One scheduler drain so NotebookRuntime's forked operations pipeline
         // subscribes to the mock PubSub before we publish (forked fibers only
