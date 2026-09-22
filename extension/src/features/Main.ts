@@ -49,7 +49,7 @@ import * as MarimoFileDetector from "./MarimoFileDetector.ts";
 import * as RegisterCommands from "./RegisterCommands.ts";
 import * as RegisterLanguageModelTools from "./RegisterLanguageModelTools.ts";
 import * as ReloadOnConfigChange from "./ReloadOnConfigChange.ts";
-import { ThemeSyncLive } from "./ThemeSync.ts";
+import * as ThemeSync from "./ThemeSync.ts";
 
 /**
  * Main application layer that wires together all services and layers
@@ -73,7 +73,7 @@ const MainLive = Layer.empty
     Layer.merge(AutoExport.layer),
     Layer.merge(ReloadOnConfigChange.layer),
     Layer.merge(ConfigContextManager.layer),
-    Layer.merge(ThemeSyncLive),
+    Layer.merge(ThemeSync.layer),
     Layer.merge(CellInputVisibilitySync.layer),
     Layer.merge(Debug.layer),
     Layer.merge(NotebookControllersLive),

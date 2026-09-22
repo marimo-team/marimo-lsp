@@ -5,11 +5,11 @@ import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import type { NotebookId } from "../schemas/MarimoNotebookDocument.ts";
 
-type ThemeSyncUpdate = Data.TaggedEnum<{
+type Update = Data.TaggedEnum<{
   Theme: { readonly theme: "light" | "dark" };
   ActiveNotebook: { readonly notebook: Option.Option<NotebookId> };
 }>;
-const ThemeSyncUpdate = Data.taggedEnum<ThemeSyncUpdate>();
+const Update = Data.taggedEnum<Update>();
 
 /**
  * Syncs VS Code's active color theme to all marimo kernel sessions so
@@ -18,7 +18,7 @@ const ThemeSyncUpdate = Data.taggedEnum<ThemeSyncUpdate>();
  * Reacts to both theme changes and new notebooks appearing, ensuring
  * every session always has the correct theme.
  */
-export const ThemeSyncLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const marimo = yield* MarimoClient.Service;
@@ -27,24 +27,24 @@ export const ThemeSyncLive = Layer.effectDiscard(
     // Each source has its own fiber that writes to one queue. A
     // `Stream.zipLatest` attaches its inner subscriptions too late and loses
     // updates.
-    const updates = yield* Queue.unbounded<ThemeSyncUpdate>();
+    const updates = yield* Queue.unbounded<Update>();
     yield* Effect.forkScoped(
       code.window.colorThemeChanges.pipe(
         Stream.changes,
         Stream.runForEach((theme) =>
-          Queue.offer(updates, ThemeSyncUpdate.Theme({ theme })),
+          Queue.offer(updates, Update.Theme({ theme })),
         ),
       ),
     );
     yield* Effect.forkScoped(
       editorRegistry.streamActiveNotebookChanges.pipe(
         Stream.runForEach((notebook) =>
-          Queue.offer(updates, ThemeSyncUpdate.ActiveNotebook({ notebook })),
+          Queue.offer(updates, Update.ActiveNotebook({ notebook })),
         ),
       ),
     );
 
-    const sendTheme = Effect.fn("ThemeSync.sync")(function* (
+    const sendTheme = Effect.fn("ThemeSync.sendTheme")(function* (
       theme: "light" | "dark",
     ) {
       yield* marimo.setDisplayTheme({ theme }).pipe(
@@ -65,7 +65,7 @@ export const ThemeSyncLive = Layer.effectDiscard(
         let theme = Option.none<"light" | "dark">();
         yield* Stream.fromQueue(updates).pipe(
           Stream.runForEach((update) =>
-            ThemeSyncUpdate.$match(update, {
+            Update.$match(update, {
               // `set-display-theme` updates all running sessions and has no
               // notebook URI. Send it even if no notebook is focused.
               Theme: (updated) => {
@@ -83,5 +83,5 @@ export const ThemeSyncLive = Layer.effectDiscard(
         );
       }),
     );
-  }),
+  }).pipe(Effect.withSpan("ThemeSync.layer")),
 );
