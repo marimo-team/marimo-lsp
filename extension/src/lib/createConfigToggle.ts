@@ -3,7 +3,7 @@ import { Effect, Option, Scope } from "effect";
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
@@ -36,7 +36,7 @@ export const createConfigToggle = <T extends string>({
   Effect.gen(function* () {
     const code = yield* VsCode;
     const documentSessions = yield* NotebookDocumentSessions.Service;
-    const sessionResources = yield* NotebookSessionResources;
+    const sessionResources = yield* NotebookSessionResources.Service;
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(

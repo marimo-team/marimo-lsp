@@ -12,7 +12,7 @@ import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import refreshPackages from "../refreshPackages.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");

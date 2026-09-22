@@ -21,7 +21,7 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import * as NotebookConfiguration from "../../config/NotebookConfiguration.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
@@ -52,7 +52,7 @@ describe("NotebookSessionResources", () => {
 
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources;
+        const resources = yield* NotebookSessionResources.Service;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));
         const session = current.value;
@@ -89,7 +89,7 @@ describe("NotebookSessionResources", () => {
 
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources;
+        const resources = yield* NotebookSessionResources.Service;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));
         const session = current.value;
@@ -118,7 +118,7 @@ describe("NotebookSessionResources", () => {
 
       yield* Effect.gen(function* () {
         const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources;
+        const resources = yield* NotebookSessionResources.Service;
         const current = sessions.current(NOTEBOOK_URI);
         assert(Option.isSome(current));
         const session = current.value;

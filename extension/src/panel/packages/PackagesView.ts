@@ -4,7 +4,7 @@ import refreshPackagesCommand from "../../commands/refreshPackages.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import * as NotebookDependencies from "../../notebook/NotebookDependencies.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
@@ -35,7 +35,7 @@ export const PackagesViewLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView;
     const documentSessions = yield* NotebookDocumentSessions.Service;
-    const sessionResources = yield* NotebookSessionResources;
+    const sessionResources = yield* NotebookSessionResources.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const code = yield* VsCode;
 

@@ -7,7 +7,7 @@ import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import { Constants } from "../../platform/Constants.ts";
 import { GitHubClient } from "../../platform/GitHubClient.ts";
 import * as OutputChannel from "../../platform/OutputChannel.ts";

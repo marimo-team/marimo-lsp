@@ -1,7 +1,7 @@
 import { Effect, Layer, Option, Scope, Stream, SubscriptionRef } from "effect";
 
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
 import * as NotebookConfiguration from "./NotebookConfiguration.ts";
@@ -17,7 +17,7 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const code = yield* VsCode;
     const documentSessions = yield* NotebookDocumentSessions.Service;
-    const sessionResources = yield* NotebookSessionResources;
+    const sessionResources = yield* NotebookSessionResources.Service;
     const desiredConfiguration = yield* SubscriptionRef.make(
       Option.none<MarimoConfig>(),
     );

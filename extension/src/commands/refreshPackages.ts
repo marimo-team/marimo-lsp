@@ -4,13 +4,13 @@ import { defineCommand } from "../commands.ts";
 import * as NotebookDependencies from "../notebook/NotebookDependencies.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.refreshPackages")(function* () {
   const editorRegistry = yield* NotebookEditorRegistry.Service;
   const documentSessions = yield* NotebookDocumentSessions.Service;
-  const sessionResources = yield* NotebookSessionResources;
+  const sessionResources = yield* NotebookSessionResources.Service;
   const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
   if (Option.isNone(activeNotebookUri)) {
     yield* Effect.logWarning("No active notebook to refresh packages");

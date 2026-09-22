@@ -13,7 +13,7 @@ import {
   notebookId,
 } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../../types.ts";
 import * as NotebookConfiguration from "../NotebookConfiguration.ts";
@@ -38,7 +38,7 @@ const inNotebook = <A, E, R>(
 ) =>
   Effect.gen(function* () {
     const sessions = yield* NotebookDocumentSessions.Service;
-    const resources = yield* NotebookSessionResources;
+    const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));
     return yield* resources
@@ -80,7 +80,7 @@ const configurationChanges = (
 ) =>
   Effect.gen(function* () {
     const sessions = yield* NotebookDocumentSessions.Service;
-    const resources = yield* NotebookSessionResources;
+    const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));
     return yield* resources

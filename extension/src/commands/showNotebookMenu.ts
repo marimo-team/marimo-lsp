@@ -3,7 +3,7 @@ import { Effect, Option, Scope } from "effect";
 import { defineCommand } from "../commands.ts";
 import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { configureAutoExport } from "./configureAutoExport.ts";
 import createSetupCell from "./createSetupCell.ts";
@@ -70,7 +70,7 @@ const handler = Effect.fn("command.showNotebookMenu")(function* (
   }
 
   const documentSessions = yield* NotebookDocumentSessions.Service;
-  const sessionResources = yield* NotebookSessionResources;
+  const sessionResources = yield* NotebookSessionResources.Service;
   const session = documentSessions.forDocument(
     notebook.value.rawNotebookDocument,
   );
