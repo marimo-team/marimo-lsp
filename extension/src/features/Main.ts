@@ -20,7 +20,7 @@ import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.t
 import * as PackagesView from "../panel/packages/PackagesView.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import * as SessionFileLifecycle from "../panel/sessions/SessionFileLifecycle.ts";
-import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
+import * as SessionsView from "../panel/sessions/SessionsView.ts";
 import * as TreeView from "../panel/TreeView.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
@@ -63,7 +63,7 @@ const MainLive = Layer.empty
     Layer.merge(PythonEnvironmentStatusBarLive),
     Layer.merge(MarimoFileDetector.layer),
     Layer.merge(MarimoCodeLensProvider.layer),
-    Layer.merge(SessionsViewLive),
+    Layer.merge(SessionsView.layer),
     Layer.merge(SessionFileLifecycle.layer),
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesView.layer),
