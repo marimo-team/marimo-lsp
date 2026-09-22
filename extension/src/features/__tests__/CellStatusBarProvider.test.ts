@@ -16,12 +16,12 @@ import * as CellExecutions from "../../kernel/CellExecutions.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
-import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
+import * as CellStatusBarProvider from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(CellStatusBarProviderLive),
+    Layer.provideMerge(CellStatusBarProvider.layer),
     Layer.provideMerge(CellExecutions.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provideMerge(vscode.layer),

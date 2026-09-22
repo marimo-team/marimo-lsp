@@ -42,7 +42,7 @@ import type * as Telemetry from "../telemetry/Telemetry.ts";
 import * as AutoExport from "./AutoExport.ts";
 import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
 import * as CellMetadataBindings from "./CellMetadataBindings.ts";
-import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
+import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
 import { DebugLayerLive } from "./DebugLayer.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
@@ -68,7 +68,7 @@ const MainLive = Layer.empty
     Layer.merge(VariablesViewLive),
     Layer.merge(DatasourcesViewLive),
     Layer.merge(PackagesViewLive),
-    Layer.merge(CellStatusBarProviderLive),
+    Layer.merge(CellStatusBarProvider.layer),
     Layer.merge(CellMetadataBindings.layer),
     Layer.merge(AutoExport.layer),
     Layer.merge(ReloadOnConfigChangeLive),
