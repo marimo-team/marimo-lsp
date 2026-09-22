@@ -6,10 +6,7 @@ import { SCRATCH_CELL_ID } from "../../constants.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import type { CellOperationNotification } from "../../types.ts";
-import {
-  consoleText,
-  scratchpadResultText,
-} from "../RegisterLanguageModelTools.ts";
+import * as RegisterLanguageModelTools from "../RegisterLanguageModelTools.ts";
 
 const makeOp = (
   console: CellOperationNotification["console"],
@@ -26,21 +23,23 @@ const out = (channel: "stdout" | "stderr" | "stdin", data: string) =>
 describe("consoleText", () => {
   it("concatenates stdout/stderr data in order", () => {
     const op = makeOp([out("stdout", "70"), out("stderr", "warn")]);
-    expect(consoleText(op)).toBe("70warn");
+    expect(RegisterLanguageModelTools.consoleText(op)).toBe("70warn");
   });
 
   it("accepts a single (non-array) console output", () => {
-    expect(consoleText(makeOp(out("stdout", "hi")))).toBe("hi");
+    expect(
+      RegisterLanguageModelTools.consoleText(makeOp(out("stdout", "hi"))),
+    ).toBe("hi");
   });
 
   it("skips non-stdout/stderr channels, matching SSE _format_console", () => {
     const op = makeOp([out("stdin", "Enter: "), out("stdout", "value")]);
-    expect(consoleText(op)).toBe("value");
+    expect(RegisterLanguageModelTools.consoleText(op)).toBe("value");
   });
 
   it("returns empty string when there is no console", () => {
-    expect(consoleText(makeOp(null))).toBe("");
-    expect(consoleText(makeOp(undefined))).toBe("");
+    expect(RegisterLanguageModelTools.consoleText(makeOp(null))).toBe("");
+    expect(RegisterLanguageModelTools.consoleText(makeOp(undefined))).toBe("");
   });
 });
 
@@ -71,7 +70,7 @@ describe("scratchpadResultText", () => {
 
       const text = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
-        return scratchpadResultText(
+        return RegisterLanguageModelTools.scratchpadResultText(
           [
             scratchOp([out("stdout", "scratch-stdout")], rendered("SCRATCH")),
             {
