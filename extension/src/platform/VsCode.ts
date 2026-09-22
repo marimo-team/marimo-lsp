@@ -2,7 +2,6 @@ import {
   Context,
   Data,
   Effect,
-  Exit,
   Layer,
   Option,
   Result,
@@ -28,117 +27,10 @@ import * as vscode from "vscode";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
 import * as Commands from "./Commands.ts";
+import * as Debug from "./Debug.ts";
 import * as Env from "./Env.ts";
 import * as Window from "./Window.ts";
 import * as Workspace from "./Workspace.ts";
-
-export class VsCodeError extends Data.TaggedError("VsCodeError")<{
-  cause: unknown;
-}> {}
-
-export class DebugSessionStartError extends Data.TaggedError(
-  "DebugSessionStartError",
-)<{
-  readonly configuration: string | vscode.DebugConfiguration;
-}> {}
-
-export class Debug extends Context.Service<Debug>()("Debug", {
-  make: Effect.sync(() => {
-    const api = vscode.debug;
-    return {
-      registerDebugConfigurationProvider(
-        debugType: string,
-        factory: vscode.DebugConfigurationProvider,
-      ) {
-        return acquireDisposable(() =>
-          api.registerDebugConfigurationProvider(debugType, factory),
-        ).pipe(Effect.asVoid);
-      },
-      registerDebugAdapterDescriptorFactory<R = never>(
-        debugType: string,
-        factory: {
-          createDebugAdapter(
-            session: vscode.DebugSession,
-            executable: vscode.DebugAdapterExecutable | undefined,
-          ): Effect.Effect<
-            Option.Option<Omit<vscode.DebugAdapter, "dispose">>,
-            never,
-            Scope.Scope | R
-          >;
-        },
-      ): Effect.Effect<void, never, Scope.Scope | R> {
-        return Effect.gen(function* () {
-          const context = yield* Effect.context<R>();
-          const runPromise = Effect.runPromiseWith(context);
-          const runFork = Effect.runForkWith(context);
-
-          yield* acquireDisposable(() =>
-            api.registerDebugAdapterDescriptorFactory(debugType, {
-              createDebugAdapterDescriptor: (session, executable) =>
-                runPromise(
-                  Effect.gen(function* () {
-                    const scope = yield* Scope.make();
-                    const adapter = yield* factory
-                      .createDebugAdapter(session, executable)
-                      .pipe(Scope.provide(scope));
-
-                    if (Option.isNone(adapter)) {
-                      yield* Scope.close(scope, Exit.void);
-                      return null;
-                    }
-
-                    return new vscode.DebugAdapterInlineImplementation(
-                      Object.assign(adapter.value, {
-                        dispose: () => runFork(Scope.close(scope, Exit.void)),
-                      }),
-                    );
-                  }),
-                ),
-            }),
-          );
-        });
-      },
-      startDebugging(
-        folder: vscode.WorkspaceFolder | undefined,
-        nameOrConfiguration: string | vscode.DebugConfiguration,
-      ) {
-        return Effect.tryPromise({
-          try: () => api.startDebugging(folder, nameOrConfiguration),
-          catch: (cause) => new VsCodeError({ cause }),
-        }).pipe(
-          Effect.filterOrFail(
-            (success) => success,
-            () =>
-              new DebugSessionStartError({
-                configuration: nameOrConfiguration,
-              }),
-          ),
-          Effect.asVoid,
-        );
-      },
-      stopDebugging(sessionId?: string) {
-        // Find the session by ID if provided, otherwise stop all
-        const session = sessionId
-          ? vscode.debug.activeDebugSession?.id === sessionId
-            ? vscode.debug.activeDebugSession
-            : undefined
-          : undefined;
-        return Effect.promise(() => api.stopDebugging(session));
-      },
-      onDidTerminateDebugSession(
-        listener: (session: vscode.DebugSession) => Effect.Effect<void>,
-      ) {
-        return acquireDisposable(() =>
-          api.onDidTerminateDebugSession((session) => {
-            void Effect.runPromise(listener(session));
-          }),
-        ).pipe(Effect.asVoid);
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 export class Notebooks extends Context.Service<Notebooks>()("Notebooks", {
   make: Effect.gen(function* () {
@@ -707,7 +599,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       commands: yield* Commands.Service,
       workspace: yield* Workspace.Service,
       env: yield* Env.Service,
-      debug: yield* Debug,
+      debug: yield* Debug.Service,
       notebooks: yield* Notebooks,
       auth: yield* Auth,
       languages: yield* Languages,

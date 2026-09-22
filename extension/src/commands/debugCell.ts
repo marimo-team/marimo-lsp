@@ -22,7 +22,7 @@ const handler = Effect.fn("command.debugCell")(
   flow(
     Effect.tapCause(Effect.logError),
     Effect.catchTags({
-      DebugSessionStartError: () =>
+      "Debug.SessionStartError": () =>
         showErrorAndPromptLogs(
           "Failed to start debug session. Is the kernel running?",
         ),

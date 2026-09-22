@@ -15,12 +15,9 @@ import {
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as Debug from "../platform/Debug.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
-import {
-  DebugSessionStartError,
-  VsCode,
-  VsCodeError,
-} from "../platform/VsCode.ts";
+import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import {
   type NotebookId,
@@ -118,13 +115,13 @@ export interface Interface {
 export type Error =
   | DebugpyActivationError
   | DebugSourceWriteError
-  | DebugSessionStartError
+  | Debug.SessionStartError
   | NotebookRuntime.ExecutableResolutionError
   | MarimoClient.StartError
   | MarimoClient.CommandError
   | NotebookFileRootError
   | Schema.SchemaError
-  | VsCodeError;
+  | Debug.Error;
 
 export class Service extends Context.Service<Service, Interface>()(
   "@marimo/DebugAdapter",
