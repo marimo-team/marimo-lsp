@@ -11,11 +11,7 @@ import {
 } from "../../__mocks__/TestVsCode.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import {
-  CellMetadataEditRejected,
-  CellMetadataTargetNotFound,
-  updateMarimoCellMetadata,
-} from "../updateMarimoCellMetadata.ts";
+import * as CellMetadata from "../CellMetadata.ts";
 
 it.effect(
   "replaces metadata while preserving cell content, outputs, and runtime state",
@@ -67,7 +63,7 @@ it.effect(
         });
         const cell = MarimoNotebookCell.from(document.cellAt(2));
 
-        yield* updateMarimoCellMetadata(cell, (current) => ({
+        yield* CellMetadata.update(cell, (current) => ({
           ...current,
           options: { ...current.options, hide_code: true },
         }));
@@ -123,7 +119,7 @@ it.effect("uses metadata defaults for a cell without metadata", () =>
     });
     const cell = MarimoNotebookCell.from(document.cellAt(0));
 
-    yield* updateMarimoCellMetadata(cell, (current) => ({
+    yield* CellMetadata.update(cell, (current) => ({
       ...current,
       options: { ...current.options, hide_code: true },
     })).pipe(Effect.provide(vscode.layer));
@@ -149,12 +145,12 @@ it.effect("fails when VS Code rejects the metadata edit", () =>
     });
     const cell = MarimoNotebookCell.from(document.cellAt(0));
 
-    const error = yield* updateMarimoCellMetadata(
-      cell,
-      (metadata) => metadata,
-    ).pipe(Effect.provide(vscode.layer), Effect.flip);
+    const error = yield* CellMetadata.update(cell, (metadata) => metadata).pipe(
+      Effect.provide(vscode.layer),
+      Effect.flip,
+    );
 
-    expect(error).toEqual(new CellMetadataEditRejected({ cell: 0 }));
+    expect(error).toEqual(new CellMetadata.EditRejected({ cell: 0 }));
   }),
 );
 
@@ -202,7 +198,7 @@ it.effect("resolves a stale cell handle by stable ID", () =>
     // Prime the stale wrapper's metadata cache before resolving the live cell.
     expect(Option.isSome(stale.metadata)).toBe(true);
 
-    yield* updateMarimoCellMetadata(stale, (current) => ({
+    yield* CellMetadata.update(stale, (current) => ({
       ...current,
       options: { ...current.options, hide_code: true },
     })).pipe(Effect.provide(vscode.layer));
@@ -249,12 +245,12 @@ it.effect("rejects a stale cell handle whose target is gone", () =>
       ),
     );
 
-    const error = yield* updateMarimoCellMetadata(
+    const error = yield* CellMetadata.update(
       stale,
       (metadata) => metadata,
     ).pipe(Effect.provide(vscode.layer), Effect.flip);
 
-    expect(error).toEqual(new CellMetadataTargetNotFound({ cell: 0 }));
+    expect(error).toEqual(new CellMetadata.TargetNotFound({ cell: 0 }));
     expect(yield* Ref.get(applied)).toBe(false);
   }),
 );

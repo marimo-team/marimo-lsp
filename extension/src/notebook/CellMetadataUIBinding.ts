@@ -10,7 +10,7 @@ import {
   MarimoNotebookDocument,
 } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
-import * as CellMetadata from "./updateMarimoCellMetadata.ts";
+import * as CellMetadata from "./CellMetadata.ts";
 
 /**
  * Configuration for a metadata binding
@@ -110,8 +110,7 @@ export interface Interface {
     bindingId: string,
   ) => Effect.Effect<
     void,
-    | CellMetadata.CellMetadataEditRejected
-    | CellMetadata.CellMetadataTargetNotFound
+    CellMetadata.EditRejected | CellMetadata.TargetNotFound
   >;
 }
 
@@ -250,7 +249,7 @@ export const layer = Layer.effect(
 
         assert(newValue !== undefined, "newValue should not be undefined");
 
-        yield* CellMetadata.updateMarimoCellMetadata(activeCell, (current) =>
+        const cellIndex = yield* CellMetadata.update(activeCell, (current) =>
           binding.setValue(current, newValue),
         ).pipe(Effect.provideService(VsCode, code));
 

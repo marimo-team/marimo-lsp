@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { updateMarimoCellMetadata } from "../notebook/updateMarimoCellMetadata.ts";
+import * as CellMetadata from "../notebook/CellMetadata.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 
@@ -12,7 +12,7 @@ const setCellCodeVisibility = Effect.fn("command.setCellCodeVisibility")(
   function* (cell: MarimoNotebookCell, hidden: boolean) {
     const code = yield* VsCode;
 
-    const index = yield* updateMarimoCellMetadata(cell, (metadata) => ({
+    const index = yield* CellMetadata.update(cell, (metadata) => ({
       ...metadata,
       options: { ...metadata.options, hide_code: hidden },
     }));
