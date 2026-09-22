@@ -18,15 +18,27 @@ declare global {
  * Note: `__marimoVsCode` (the raw vscode module) is set in VsCode.ts,
  * which is the only file allowed to import "vscode" directly.
  */
-export const DebugLayerLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     if (process.env.MARIMO_DEBUG !== "1") return;
 
-    globalThis.__marimoDebug = {
+    const debug = {
       cellExecutions: yield* CellExecutions.Service,
       notebookVariables: yield* NotebookVariables.Service,
       notebookEditorRegistry: yield* NotebookEditorRegistry.Service,
       notebookRuntime: yield* NotebookRuntime.Service,
     };
-  }),
+
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        globalThis.__marimoDebug = debug;
+      }),
+      () =>
+        Effect.sync(() => {
+          if (globalThis.__marimoDebug === debug) {
+            globalThis.__marimoDebug = undefined;
+          }
+        }),
+    );
+  }).pipe(Effect.withSpan("Debug.layer")),
 );

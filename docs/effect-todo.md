@@ -104,7 +104,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `features/CellInputVisibilitySync.ts`
 - [x] `features/CellMetadataBindings.ts`
 - [x] `features/CellStatusBarProvider.ts`
-- [ ] `features/DebugLayer.ts`
+- [x] `features/Debug.ts`
 - [ ] `features/MarimoCodeLensProvider.ts`
 - [ ] `features/MarimoFileDetector.ts`
 - [ ] `features/RegisterCommands.ts`

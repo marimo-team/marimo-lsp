@@ -43,7 +43,7 @@ import * as AutoExport from "./AutoExport.ts";
 import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
 import * as CellMetadataBindings from "./CellMetadataBindings.ts";
 import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
-import { DebugLayerLive } from "./DebugLayer.ts";
+import * as Debug from "./Debug.ts";
 import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
 import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
 import { RegisterCommandsLive } from "./RegisterCommands.ts";
@@ -75,7 +75,7 @@ const MainLive = Layer.empty
     Layer.merge(ConfigContextManager.layer),
     Layer.merge(ThemeSyncLive),
     Layer.merge(CellInputVisibilitySync.layer),
-    Layer.merge(DebugLayerLive),
+    Layer.merge(Debug.layer),
     Layer.merge(NotebookControllersLive),
   )
   .pipe(
