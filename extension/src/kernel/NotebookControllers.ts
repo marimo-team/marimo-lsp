@@ -35,7 +35,7 @@ import {
 } from "./PythonController.ts";
 import { createSandboxController } from "./SandboxController.ts";
 import * as VsCodeCellDrive from "./VsCodeCellDrive.ts";
-import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
+import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.ts";
 
 export interface NotebookController extends NotebookRuntime.NotebookController {
   readonly selectedNotebookChanges: Stream.Stream<{

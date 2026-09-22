@@ -20,14 +20,14 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import * as NotebookRuntime from "./NotebookRuntime.ts";
 import * as VsCodeCellDrive from "./VsCodeCellDrive.ts";
-import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
+import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.ts";
 
 export const createSandboxController = Effect.fn("createSandboxController")(
   function* () {
     const uv = yield* Uv;
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive.Service;
-    const outputPresenter = yield* VsCodeNotebookOutputPresenter;
+    const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
     const marimo = yield* MarimoClient;
     const notebooks = yield* NotebookRuntime.Service;
     const python = yield* PythonExtension;

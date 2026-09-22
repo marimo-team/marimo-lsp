@@ -33,7 +33,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 - [x] `kernel/DebugAdapter.ts`
 - [x] `kernel/NotebookRuntime.ts`
 - [x] `kernel/VsCodeCellDrive.ts`
-- [ ] `kernel/VsCodeNotebookOutputPresenter.ts`
+- [x] `kernel/VsCodeNotebookOutputPresenter.ts`
 
 ### Language servers
 

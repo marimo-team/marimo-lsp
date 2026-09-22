@@ -11,7 +11,7 @@ import {
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import * as CellOutputProjections from "../CellOutputProjections.ts";
-import { VsCodeNotebookOutputPresenter } from "../VsCodeNotebookOutputPresenter.ts";
+import * as VsCodeNotebookOutputPresenter from "../VsCodeNotebookOutputPresenter.ts";
 
 const savedReplay: CellOutputReplay = {
   kind: "saved",
@@ -77,9 +77,15 @@ it.effect(
       replaceOutputItems: async () => {},
       appendOutputItems: async () => {},
     };
-    const presenter = yield* VsCodeNotebookOutputPresenter.make.pipe(
-      Effect.provide(code.layer),
-      Effect.provideService(CellOutputProjections.Service, projections),
+    const presenter = yield* VsCodeNotebookOutputPresenter.Service.pipe(
+      Effect.provide(
+        VsCodeNotebookOutputPresenter.layer.pipe(
+          Layer.provide(code.layer),
+          Layer.provide(
+            Layer.succeed(CellOutputProjections.Service, projections),
+          ),
+        ),
+      ),
     );
 
     yield* presenter.present(
@@ -122,9 +128,15 @@ it.effect(
         CellOutputProjections.layer.pipe(Layer.provide(code.layer)),
       ),
     );
-    const presenter = yield* VsCodeNotebookOutputPresenter.make.pipe(
-      Effect.provide(code.layer),
-      Effect.provideService(CellOutputProjections.Service, projections),
+    const presenter = yield* VsCodeNotebookOutputPresenter.Service.pipe(
+      Effect.provide(
+        VsCodeNotebookOutputPresenter.layer.pipe(
+          Layer.provide(code.layer),
+          Layer.provide(
+            Layer.succeed(CellOutputProjections.Service, projections),
+          ),
+        ),
+      ),
     );
     let executions = 0;
 

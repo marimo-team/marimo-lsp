@@ -21,7 +21,7 @@ import type { Drive } from "./CellExecutions.ts";
 import { makeControllerSelectionChanges } from "./ControllerSelectionChanges.ts";
 import * as NotebookRuntime from "./NotebookRuntime.ts";
 import * as VsCodeCellDrive from "./VsCodeCellDrive.ts";
-import { VsCodeNotebookOutputPresenter } from "./VsCodeNotebookOutputPresenter.ts";
+import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.ts";
 
 const NotebookControllerId = Brand.nominal<NotebookControllerId>();
 export type NotebookControllerId = Brand.Branded<string, "ControllerId">;
@@ -35,7 +35,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const uv = yield* Uv;
     const code = yield* VsCode;
     const cellDrive = yield* VsCodeCellDrive.Service;
-    const outputPresenter = yield* VsCodeNotebookOutputPresenter;
+    const outputPresenter = yield* VsCodeNotebookOutputPresenter.Service;
     const config = yield* Config.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const validator = yield* EnvironmentValidator;
