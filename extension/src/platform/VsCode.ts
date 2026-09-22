@@ -17,39 +17,13 @@ import * as vscode from "vscode";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
+import * as Auth from "./Auth.ts";
 import * as Commands from "./Commands.ts";
 import * as Debug from "./Debug.ts";
 import * as Env from "./Env.ts";
 import * as Notebooks from "./Notebooks.ts";
 import * as Window from "./Window.ts";
 import * as Workspace from "./Workspace.ts";
-
-export class AuthError extends Data.TaggedError("AuthError")<{
-  cause: unknown;
-}> {}
-
-export class Auth extends Context.Service<Auth>()("Auth", {
-  make: Effect.sync(() => {
-    const api = vscode.authentication;
-    return {
-      getSession(
-        providerId: "github" | "microsoft", // could be custom but these are default
-        scopes: ReadonlyArray<string>,
-        options: vscode.AuthenticationGetSessionOptions,
-      ) {
-        return Effect.map(
-          Effect.tryPromise({
-            try: () => api.getSession(providerId, scopes, options),
-            catch: (cause) => new AuthError({ cause }),
-          }),
-          Option.fromNullishOr,
-        );
-      },
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
 
 export class Languages extends Context.Service<Languages>()("Languages", {
   make: Effect.gen(function* () {
@@ -537,7 +511,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
       env: yield* Env.Service,
       debug: yield* Debug.Service,
       notebooks: yield* Notebooks.Service,
-      auth: yield* Auth,
+      auth: yield* Auth.Service,
       languages: yield* Languages,
       Diagnostic: vscode.Diagnostic,
       DiagnosticSeverity: vscode.DiagnosticSeverity,
