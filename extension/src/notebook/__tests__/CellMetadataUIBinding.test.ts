@@ -12,14 +12,14 @@ import { commandId } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import { DEFAULT_SQL_ENGINE } from "../../features/CellMetadataBindings.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = CellMetadataUIBinding.layer.pipe(
-    Layer.provideMerge(Constants.layer),
+    Layer.provideMerge(Constants.defaultLayer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };
@@ -79,7 +79,7 @@ it.effect(
     const ctx = yield* withTestCtx;
     yield* Effect.gen(function* () {
       const service = yield* CellMetadataUIBinding.Service;
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const binding: CellMetadataUIBinding.MetadataBinding = {
         id: "test.sql",

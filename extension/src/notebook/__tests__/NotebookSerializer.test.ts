@@ -19,13 +19,13 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 
 const NotebookSerializerLive = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.layer),
   // These tests intentionally cover the cross-language serialization contract.
   Layer.provideMerge(TestMarimoClientProcess),
-  Layer.provideMerge(Constants.layer),
+  Layer.provideMerge(Constants.defaultLayer),
 );
 
 it.effect(
@@ -34,7 +34,7 @@ it.effect(
     const layer = Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
-      Layer.provideMerge(Constants.layer),
+      Layer.provideMerge(Constants.defaultLayer),
     );
 
     const exit = yield* Effect.gen(function* () {
@@ -62,7 +62,7 @@ it.effect(
     const layer = Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
-      Layer.provideMerge(Constants.layer),
+      Layer.provideMerge(Constants.defaultLayer),
       Layer.provideMerge(vscode.layer),
     );
 
@@ -109,7 +109,7 @@ it.effect(
             }),
         }),
       ),
-      Layer.provideMerge(Constants.layer),
+      Layer.provideMerge(Constants.defaultLayer),
       Layer.provideMerge(vscode.layer),
     );
 
@@ -156,7 +156,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "rejects invalid owned metadata instead of serializing defaults",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const invalidCell = yield* Effect.result(
           serializer.serializeEffect({
@@ -185,7 +185,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "serializes notebook cells to marimo format",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
@@ -231,7 +231,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "serializes markdown notebook cells to marimo format",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
@@ -297,7 +297,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
       { name: "empty options", metadata: { marimo: { options: {} } } },
     ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
       Effect.gen(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
@@ -319,7 +319,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "preserves an explicit hide_code=false for markdown",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const bytes = yield* serializer.serializeEffect({
           cells: [
@@ -378,7 +378,7 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
     it.effect(
       "deserializes mo.md() without f-strings to markdown cells",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 
@@ -436,7 +436,7 @@ if __name__ == "__main__":
     it.effect(
       "keeps mo.md() with f-strings as Python cells",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 
@@ -482,7 +482,7 @@ if __name__ == "__main__":
     it.effect(
       "round-trip markdown cells maintain mo.md() format",
       Effect.fn(function* () {
-        const { LanguageId } = yield* Constants;
+        const { LanguageId } = yield* Constants.Service;
         const serializer = yield* NotebookSerializer.Service;
         const source = `import marimo
 

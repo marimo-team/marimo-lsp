@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Schema } from "effect";
 
 import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   type MarimoCellMetadata,
@@ -46,7 +46,7 @@ function updateSqlMetadata(
 
 export const CellMetadataBindingsLive = Layer.effectDiscard(
   Effect.gen(function* () {
-    const { LanguageId } = yield* Constants;
+    const { LanguageId } = yield* Constants.Service;
     const bindingService = yield* CellMetadataUIBinding.Service;
     const code = yield* VsCode;
     const datasources = yield* NotebookDatasources.Service;

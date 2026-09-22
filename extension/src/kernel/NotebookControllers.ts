@@ -18,7 +18,7 @@ import type * as vscode from "vscode";
 import * as Config from "../config/Config.ts";
 import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
@@ -165,7 +165,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
   Layer.provide(Uv.layer),
   Layer.provide(OutputChannel.layer),
   Layer.provide(Config.layer),
-  Layer.provide(Constants.layer),
+  Layer.provide(Constants.defaultLayer),
   Layer.provide(EnvironmentValidator.layer),
   Layer.provide(NotebookSerializer.layer),
 );

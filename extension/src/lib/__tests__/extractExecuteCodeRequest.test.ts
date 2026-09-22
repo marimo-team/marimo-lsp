@@ -7,7 +7,7 @@ import {
   createNotebookUri,
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { extractExecuteCodeRequest } from "../extractExecuteCodeRequest.ts";
@@ -36,7 +36,7 @@ function createRawCell(
 describe("extractExecuteCodeRequest", () => {
   it.effect("includes enabled cells with stable ids", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const cellA = createRawCell(
         "x = 1",
@@ -56,12 +56,12 @@ describe("extractExecuteCodeRequest", () => {
         { cellId: "cell-a", code: "x = 1" },
         { cellId: "cell-b", code: "y = x + 1" },
       ]);
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("skips cells without a stable id", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const withId = createRawCell(
         "x = 1",
@@ -79,14 +79,14 @@ describe("extractExecuteCodeRequest", () => {
       expect(
         Option.getOrThrow(request).cells.map((cell) => cell.cellId),
       ).toEqual(["cell-a"]);
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   // Disabled cells still submit edited code to marimo. The runtime updates its
   // graph before enforcing the disabled config, matching marimo's editor.
   it.effect("includes disabled cells", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const enabled = createRawCell(
         "x = 1",
@@ -113,12 +113,12 @@ describe("extractExecuteCodeRequest", () => {
           { cellId: "cell-disabled", code: 'print("RAN")' },
         ],
       });
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("submits a selection containing only a disabled cell", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const disabled = createRawCell(
         'print("RAN")',
@@ -134,6 +134,6 @@ describe("extractExecuteCodeRequest", () => {
       expect(Option.getOrThrow(request)).toEqual({
         cells: [{ cellId: "cell-disabled", code: 'print("RAN")' }],
       });
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 });

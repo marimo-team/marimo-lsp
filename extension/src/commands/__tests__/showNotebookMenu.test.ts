@@ -8,7 +8,7 @@ import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { GitHubClient } from "../../platform/GitHubClient.ts";
 import * as OutputChannel from "../../platform/OutputChannel.ts";
 import {
@@ -19,8 +19,8 @@ import type { NotebookTarget } from "../Invocation.ts";
 import showNotebookMenu, { NOTEBOOK_MENU_ITEMS } from "../showNotebookMenu.ts";
 
 const constantsLayer = Layer.succeed(
-  Constants,
-  Constants.of({
+  Constants.Service,
+  Constants.Service.of({
     LanguageId: {
       Python: "mo-python",
       Sql: "sql",

@@ -25,7 +25,7 @@ import * as TreeView from "../panel/TreeView.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
 import * as Api from "../platform/Api.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { GitHubClient } from "../platform/GitHubClient.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { ExtensionContext, Storage } from "../platform/Storage.ts";
@@ -98,7 +98,7 @@ const MainLive = Layer.empty
     Layer.provide(TreeView.layer),
     Layer.provide(StatusBar.layer),
     Layer.provide(Storage.layer),
-    Layer.provide(Constants.layer),
+    Layer.provide(Constants.defaultLayer),
     Layer.provide(Config.layer),
     Layer.provide(OutputChannel.layer),
     Layer.provide(PythonEnvInvalidation.layer),

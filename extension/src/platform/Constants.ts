@@ -2,8 +2,21 @@ import { Context, Effect, Layer } from "effect";
 
 import * as Config from "../config/Config.ts";
 
-export class Constants extends Context.Service<Constants>()("Constants", {
-  make: Effect.gen(function* () {
+export interface Interface {
+  readonly LanguageId: {
+    readonly Python: "mo-python" | "python";
+    readonly Sql: "sql";
+    readonly Markdown: "markdown";
+  };
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/Constants",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
     const config = yield* Config.Service;
     const useManagedLanguageFeatures =
       yield* config.getManagedLanguageFeaturesEnabled;
@@ -21,10 +34,8 @@ export class Constants extends Context.Service<Constants>()("Constants", {
         (useManagedLanguageFeatures ? "Enabled" : "Disabled"),
     ).pipe(Effect.annotateLogs({ constants }));
 
-    return constants;
+    return Service.of(constants);
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(Config.layer),
-  );
-}
+);
+
+export const defaultLayer = layer.pipe(Layer.provide(Config.layer));

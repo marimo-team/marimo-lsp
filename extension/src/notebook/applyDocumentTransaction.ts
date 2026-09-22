@@ -11,7 +11,7 @@
 
 import { Effect, Option } from "effect";
 
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -62,7 +62,7 @@ export const applyDocumentTransaction = Effect.fn(
   transaction: DocumentTransactionNotification["transaction"],
 ) {
   const code = yield* VsCode;
-  const { LanguageId } = yield* Constants;
+  const { LanguageId } = yield* Constants.Service;
 
   const byId = new Map<string, MarimoNotebookCell>();
   const current: PlanCell[] = [];

@@ -10,7 +10,7 @@ import { formatControllerLabel } from "../lib/formatControllerLabel.ts";
 import { installPackages } from "../lib/installPackages.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { EnvironmentValidator } from "../python/EnvironmentValidator.ts";
 import { findVenvPath } from "../python/findVenvPath.ts";
@@ -40,7 +40,7 @@ export const createPythonController = Effect.fn("createPythonController")(
     const notebooks = yield* NotebookRuntime.Service;
     const validator = yield* EnvironmentValidator;
     const serializer = yield* NotebookSerializer.Service;
-    const { LanguageId } = yield* Constants;
+    const { LanguageId } = yield* Constants.Service;
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
 
     yield* Effect.annotateCurrentSpan("controllerId", options.id);

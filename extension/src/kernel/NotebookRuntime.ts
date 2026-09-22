@@ -31,7 +31,7 @@ import { readNotebookOutputs } from "../notebook/readNotebookOutputs.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
@@ -200,7 +200,7 @@ export interface RuntimeSessionEntry {
 type RuntimeWorkRequirements =
   | CellExecutions.Service
   | Config.Service
-  | Constants
+  | Constants.Service
   | NotebookDatasources.Service
   | NotebookEditorRegistry.Service
   | NotebookDocumentSessions.Service
@@ -1178,7 +1178,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide([
     Uv.layer,
     Config.layer,
-    Constants.layer,
+    Constants.defaultLayer,
     OutputChannel.layer,
     NotebookVariables.defaultLayer,
     NotebookRenderer.layer,

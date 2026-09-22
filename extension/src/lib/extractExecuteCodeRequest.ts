@@ -1,14 +1,14 @@
-import { type Context, Option } from "effect";
+import { Option } from "effect";
 import type * as vscode from "vscode";
 
-import type { Constants } from "../platform/Constants.ts";
+import type * as Constants from "../platform/Constants.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import { getCellExecutableCode } from "./getCellExecutableCode.ts";
 
 export function extractExecuteCodeRequest(
   rawCells: Array<vscode.NotebookCell>,
-  LanguageId: Context.Service.Shape<typeof Constants>["LanguageId"],
+  LanguageId: Constants.Interface["LanguageId"],
 ): Option.Option<{
   cells: Array<{ cellId: NotebookCellId; code: string }>;
 }> {

@@ -10,7 +10,7 @@ import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import { isProblematicFilename } from "../lib/validateNotebookFilename.ts";
 import { Version } from "../lib/Version.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
@@ -31,7 +31,7 @@ export const createSandboxController = Effect.fn("createSandboxController")(
     const marimo = yield* MarimoClient.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const python = yield* PythonExtension;
-    const { LanguageId } = yield* Constants;
+    const { LanguageId } = yield* Constants.Service;
 
     const runPromise = Effect.runPromiseWith(
       yield* Effect.context<OutputChannel.Service | VsCode>(),

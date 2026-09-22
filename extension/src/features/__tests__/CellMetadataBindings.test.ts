@@ -11,7 +11,7 @@ import {
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import {
@@ -26,7 +26,7 @@ const withTestCtx = Effect.gen(function* () {
     Layer.provide(CellMetadataUIBinding.layer),
     Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provide(makeTestMarimoClient()),
-    Layer.provide(Constants.layer),
+    Layer.provide(Constants.defaultLayer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };

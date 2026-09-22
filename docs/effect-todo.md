@@ -60,7 +60,7 @@ rg -n --glob '*.ts' 'ManagedRuntime\.make' extension/src
 ### Platform
 
 - [x] `platform/Api.ts`
-- [ ] `platform/Constants.ts`
+- [x] `platform/Constants.ts`
 - [ ] `platform/GitHubClient.ts`
 - [ ] `platform/Storage.ts`
 - [ ] `platform/VsCode.ts`: `Window`

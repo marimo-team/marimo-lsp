@@ -17,7 +17,7 @@ import {
 } from "../../kernel/NotebookControllers.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { VsCode } from "../../platform/VsCode.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
 
@@ -50,7 +50,7 @@ const withTestCtx = Effect.fn(function* (
   const controllers = NotebookControllersLive.pipe(Layer.provide(runtime));
 
   const layer = Layer.merge(runtime, controllers).pipe(
-    Layer.provide(Constants.layer),
+    Layer.provide(Constants.defaultLayer),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(python.layer),

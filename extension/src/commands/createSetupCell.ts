@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
 import { SETUP_CELL_NAME } from "../constants.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookTarget } from "./Invocation.ts";
@@ -12,7 +12,7 @@ const handler = Effect.fn("command.createSetupCell")(function* (
   target: Option.Option<NotebookTarget>,
 ) {
   const code = yield* VsCode;
-  const { LanguageId } = yield* Constants;
+  const { LanguageId } = yield* Constants.Service;
   if (Option.isNone(target)) {
     yield* code.window.showInformationMessage(
       "No marimo notebook is currently open",

@@ -15,7 +15,7 @@ import type * as vscode from "vscode";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
-import { Constants } from "../platform/Constants.ts";
+import * as Constants from "../platform/Constants.ts";
 import { VsCode } from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -92,7 +92,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const marimo = yield* MarimoClient.Service;
-    const constants = yield* Constants;
+    const constants = yield* Constants.Service;
     const code = yield* Effect.serviceOption(VsCode);
 
     const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
@@ -257,7 +257,7 @@ export const layer = Layer.effect(
       deserializeEffect,
     });
   }),
-).pipe(Layer.provide([Constants.layer]));
+).pipe(Layer.provide([Constants.defaultLayer]));
 
 function logDeserializeFailure(cause: Cause.Cause<unknown>) {
   if (Cause.hasInterruptsOnly(cause)) return Effect.void;
@@ -310,7 +310,7 @@ function notebookDataToNotebookDocument(
   {
     LanguageId,
   }: {
-    LanguageId: Constants["Service"]["LanguageId"];
+    LanguageId: Constants.Interface["LanguageId"];
   },
 ): Effect.Effect<typeof Api.NotebookDocument.Encoded, Schema.SchemaError> {
   const { cells, metadata = {} } = notebook;

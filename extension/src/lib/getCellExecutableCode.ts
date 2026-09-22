@@ -1,8 +1,8 @@
 import { SQLParser } from "@marimo-team/smart-cells";
-import { type Context, Option } from "effect";
+import { Option } from "effect";
 
 import { assert } from "../assert.ts";
-import type { Constants } from "../platform/Constants.ts";
+import type * as Constants from "../platform/Constants.ts";
 import type { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
@@ -10,7 +10,7 @@ import type { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
  */
 export function getCellExecutableCode(
   cell: MarimoNotebookCell,
-  LanguageId: Context.Service.Shape<typeof Constants>["LanguageId"],
+  LanguageId: Constants.Interface["LanguageId"],
 ): string {
   const languageId = cell.document.languageId;
   const meta = cell.metadata;

@@ -7,7 +7,7 @@ import {
   createNotebookUri,
   createTestNotebookDocument,
 } from "../../__mocks__/TestVsCode.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
@@ -37,7 +37,7 @@ function createMockCell(
 describe("getCellExecutableCode", () => {
   it.effect("should transform SQL cell with custom dataframe name", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
         marimo: {
@@ -61,12 +61,12 @@ describe("getCellExecutableCode", () => {
       expect(code).toContain("my_results = mo.sql(");
       // Should not use default _df
       expect(code).not.toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("should use default metadata when SQL cell has no metadata", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
         marimoRuntime: { stableId: "test-cell-id" },
@@ -77,12 +77,12 @@ describe("getCellExecutableCode", () => {
 
       // Should use default _df when no metadata
       expect(code).toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("should pass through Python cells unchanged", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const pythonCode = "x = 1 + 2";
       const cell = createMockCell(notebookUri, "python", pythonCode, {
@@ -92,12 +92,12 @@ describe("getCellExecutableCode", () => {
       const code = getCellExecutableCode(cell, LanguageId);
 
       expect(code).toBe(pythonCode);
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("should handle SQL metadata with output=False", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const cell = createMockCell(notebookUri, "sql", "CREATE TABLE test", {
         marimo: {
@@ -119,12 +119,12 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("result = mo.sql(");
       expect(code).toContain("output=False");
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 
   it.effect("should handle SQL metadata with custom engine", () =>
     Effect.gen(function* () {
-      const { LanguageId } = yield* Constants;
+      const { LanguageId } = yield* Constants.Service;
 
       const cell = createMockCell(notebookUri, "sql", "SELECT 1", {
         marimo: {
@@ -146,6 +146,6 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("df = mo.sql(");
       expect(code).toContain("engine=postgres_conn");
-    }).pipe(Effect.provide(Constants.layer)),
+    }).pipe(Effect.provide(Constants.defaultLayer)),
   );
 });
