@@ -11,10 +11,7 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import {
-  isPathInsideDirectory,
-  NotebookControllersLive,
-} from "../../kernel/NotebookControllers.ts";
+import * as NotebookControllers from "../../kernel/NotebookControllers.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as Constants from "../../platform/Constants.ts";
@@ -47,7 +44,7 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make();
   const python = yield* TestPythonExtension.make(options.initialEnvs ?? []);
   const runtime = makeTestNotebookRuntime();
-  const controllers = NotebookControllersLive.pipe(Layer.provide(runtime));
+  const controllers = NotebookControllers.layer.pipe(Layer.provide(runtime));
 
   const layer = Layer.merge(runtime, controllers).pipe(
     Layer.provide(Constants.defaultLayer),
@@ -83,13 +80,13 @@ it.effect(
 
 it("distinguishes uv cache descendants from shared path prefixes", () => {
   expect(
-    isPathInsideDirectory(
+    NotebookControllers.isPathInside(
       "/home/user/.cache/uv/archive-v0/env/bin/python",
       "/home/user/.cache/uv",
     ),
   ).toBe(true);
   expect(
-    isPathInsideDirectory(
+    NotebookControllers.isPathInside(
       "/home/user/.cache/uv-other/bin/python",
       "/home/user/.cache/uv",
     ),

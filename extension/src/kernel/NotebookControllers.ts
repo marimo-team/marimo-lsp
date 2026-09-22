@@ -37,7 +37,7 @@ import { createSandboxController } from "./SandboxController.ts";
 import * as VsCodeCellDrive from "./VsCodeCellDrive.ts";
 import * as VsCodeNotebookOutputPresenter from "./VsCodeNotebookOutputPresenter.ts";
 
-export interface NotebookController extends NotebookRuntime.NotebookController {
+interface Controller extends NotebookRuntime.NotebookController {
   readonly selectedNotebookChanges: Stream.Stream<{
     notebook: vscode.NotebookDocument;
     selected: boolean;
@@ -48,7 +48,7 @@ export interface NotebookController extends NotebookRuntime.NotebookController {
   ) => Effect.Effect<void>;
 }
 
-const outputPresentationLive = Layer.merge(
+const outputPresentationLayer = Layer.merge(
   VsCodeCellDrive.layer,
   VsCodeNotebookOutputPresenter.layer,
 ).pipe(Layer.provide(CellOutputProjections.layer));
@@ -62,7 +62,7 @@ interface NotebookControllerHandle {
  * Creates the VS Code controllers available to marimo notebooks and attaches
  * controller selections to NotebookRuntime.
  */
-export const NotebookControllersLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const uv = yield* Uv.Service;
     const code = yield* VsCode.Service;
@@ -87,7 +87,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
     yield* Effect.addFinalizer(() =>
       SynchronizedRef.updateEffect(
         handlesRef,
-        Effect.fn(function* (map) {
+        Effect.fnUntraced(function* (map) {
           yield* Effect.forEach(
             HashMap.values(map),
             ({ scope }) => Scope.close(scope, Exit.void),
@@ -98,7 +98,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
       ),
     );
 
-    const refresh = Effect.fn("NotebookControllers.refresh")(function* () {
+    const refresh = Effect.gen(function* () {
       const envs = yield* pyExt.knownEnvironments;
       const filteredEnvs = envs.filter(
         (env) =>
@@ -126,11 +126,11 @@ export const NotebookControllersLive = Layer.effectDiscard(
         handlesRef,
         notebooks,
       });
-    });
+    }).pipe(Effect.withSpan("NotebookControllers.refresh"));
 
-    yield* refresh();
+    yield* refresh;
     yield* Effect.forkScoped(
-      pyExt.environmentChanges.pipe(Stream.runForEach(refresh)),
+      pyExt.environmentChanges.pipe(Stream.runForEach(() => refresh)),
     );
 
     // Subscribe to notebook editor changes to update affinity
@@ -145,7 +145,7 @@ export const NotebookControllersLive = Layer.effectDiscard(
           ),
         ),
         Stream.runForEach((notebook) =>
-          updateNotebookAffinityEffect({
+          updateNotebookAffinity({
             notebook,
             sandboxController,
             handlesRef,
@@ -159,9 +159,9 @@ export const NotebookControllersLive = Layer.effectDiscard(
     yield* Effect.forkScoped(
       trackControllerSelections(sandboxController, notebooks),
     );
-  }),
+  }).pipe(Effect.withSpan("NotebookControllers.layer")),
 ).pipe(
-  Layer.provide(outputPresentationLive),
+  Layer.provide(outputPresentationLayer),
   Layer.provide(Uv.layer),
   Layer.provide(OutputChannel.layer),
   Layer.provide(Config.layer),
@@ -170,84 +170,83 @@ export const NotebookControllersLive = Layer.effectDiscard(
   Layer.provide(NotebookSerializer.layer),
 );
 
-const updateNotebookAffinityEffect = Effect.fn("updateNotebookAffinity")(
-  function* (options: {
-    notebook: MarimoNotebookDocument;
-    sandboxController: NotebookController;
-    handlesRef: SynchronizedRef.SynchronizedRef<
-      HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
-    >;
-    code: VsCode.Interface;
-  }) {
-    const { notebook, sandboxController, handlesRef, code } = options;
-    const handles = yield* SynchronizedRef.get(handlesRef);
-    const preferredControllerIds = new Set<string>();
+const updateNotebookAffinity = Effect.fn(
+  "NotebookControllers.updateNotebookAffinity",
+)(function* (options: {
+  notebook: MarimoNotebookDocument;
+  sandboxController: Controller;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+  code: VsCode.Interface;
+}) {
+  const { notebook, sandboxController, handlesRef, code } = options;
+  const handles = yield* SynchronizedRef.get(handlesRef);
+  const preferredControllerIds = new Set<string>();
 
-    // Check if header includes "/// script"
-    if (notebook.header.includes("/// script")) {
+  // Check if header includes "/// script"
+  if (notebook.header.includes("/// script")) {
+    yield* Effect.logDebug(
+      "Setting affinity to sandbox controller (script header detected)",
+    ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
+
+    preferredControllerIds.add(sandboxController.id);
+  } else {
+    // Check for venv next to notebook
+    const notebookDir = NodePath.dirname(notebook.uri.fsPath);
+    const venvPath = findVenvPath(NodePath.join(notebookDir, ".venv"));
+
+    if (Option.isSome(venvPath)) {
       yield* Effect.logDebug(
-        "Setting affinity to sandbox controller (script header detected)",
-      ).pipe(Effect.annotateLogs({ notebookUri: notebook.uri.toString() }));
+        "Setting affinity to venv controller (venv detected)",
+      ).pipe(
+        Effect.annotateLogs({
+          notebookUri: notebook.id,
+          venvPath: venvPath.value,
+        }),
+      );
 
-      preferredControllerIds.add(sandboxController.id);
-    } else {
-      // Check for venv next to notebook
-      const notebookDir = NodePath.dirname(notebook.uri.fsPath);
-      const venvPath = findVenvPath(NodePath.join(notebookDir, ".venv"));
-
-      if (Option.isSome(venvPath)) {
-        yield* Effect.logDebug(
-          "Setting affinity to venv controller (venv detected)",
-        ).pipe(
-          Effect.annotateLogs({
-            notebookUri: notebook.id,
-            venvPath: venvPath.value,
-          }),
-        );
-
-        // Find controllers with matching venv paths. The venv path should
-        // contain the Python executable.
-        for (const handle of HashMap.values(handles)) {
-          const controllerVenv = findVenvPath(handle.controller.executable);
-          if (
-            Option.isSome(controllerVenv) &&
-            controllerVenv.value === venvPath.value
-          ) {
-            preferredControllerIds.add(handle.controller.id);
-          }
+      // Find controllers with matching venv paths. The venv path should
+      // contain the Python executable.
+      for (const handle of HashMap.values(handles)) {
+        const controllerVenv = findVenvPath(handle.controller.executable);
+        if (
+          Option.isSome(controllerVenv) &&
+          controllerVenv.value === venvPath.value
+        ) {
+          preferredControllerIds.add(handle.controller.id);
         }
-      } else {
-        yield* Effect.logDebug(
-          "No affinity preference set (no script header or venv)",
-        ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
       }
+    } else {
+      yield* Effect.logDebug(
+        "No affinity preference set (no script header or venv)",
+      ).pipe(Effect.annotateLogs({ notebookUri: notebook.id }));
     }
+  }
 
-    const controllers = [
-      sandboxController,
-      ...Array.from(HashMap.values(handles), (handle) => handle.controller),
-    ];
-    yield* Effect.forEach(
-      controllers,
-      (controller) =>
-        controller.updateNotebookAffinity(
-          notebook.rawNotebookDocument,
-          preferredControllerIds.has(controller.id)
-            ? code.NotebookControllerAffinity.Preferred
-            : code.NotebookControllerAffinity.Default,
-        ),
-      { discard: true },
-    );
-  },
-);
+  const controllers = [
+    sandboxController,
+    ...Array.from(HashMap.values(handles), (handle) => handle.controller),
+  ];
+  yield* Effect.forEach(
+    controllers,
+    (controller) =>
+      controller.updateNotebookAffinity(
+        notebook.rawNotebookDocument,
+        preferredControllerIds.has(controller.id)
+          ? code.NotebookControllerAffinity.Preferred
+          : code.NotebookControllerAffinity.Default,
+      ),
+    { discard: true },
+  );
+});
 
-const trackControllerSelections = (
-  controller: NotebookController,
-  notebooks: NotebookRuntime.Interface,
-) =>
-  controller.selectedNotebookChanges.pipe(
+const trackControllerSelections = Effect.fn(
+  "NotebookControllers.trackControllerSelections",
+)(function* (controller: Controller, notebooks: NotebookRuntime.Interface) {
+  yield* controller.selectedNotebookChanges.pipe(
     Stream.runForEach(
-      Effect.fn(function* (e) {
+      Effect.fn("NotebookControllers.trackControllerSelection")(function* (e) {
         if (!e.selected) {
           // NB: We don't delete from selections when deselected
           // because another controller will overwrite it when selected
@@ -264,6 +263,7 @@ const trackControllerSelections = (
       }),
     ),
   );
+});
 
 const createOrUpdateController = Effect.fn(
   "NotebookControllers.createOrUpdate",
@@ -283,7 +283,7 @@ const createOrUpdateController = Effect.fn(
 
   yield* SynchronizedRef.updateEffect(
     handlesRef,
-    Effect.fn(function* (map) {
+    Effect.fnUntraced(function* (map) {
       const existing = HashMap.get(map, controllerId);
 
       // Just update description if we already have a controller
@@ -319,76 +319,76 @@ const createOrUpdateController = Effect.fn(
   );
 });
 
-const pruneStaleControllers = Effect.fn("pruneStaleControllers")(
-  function* (options: {
-    envs: ReadonlyArray<py.Environment>;
-    handlesRef: SynchronizedRef.SynchronizedRef<
-      HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
-    >;
-    notebooks: NotebookRuntime.Interface;
-  }) {
-    const { envs, handlesRef, notebooks } = options;
-    yield* Effect.logTrace("Checking for stale controllers");
-    const desiredControllerIds = new Set(
-      envs.map((env) => PythonController.getId(env)),
-    );
-    const code = yield* VsCode.Service;
-    const selectedControllerIds = new Set<string>();
-    const documents = yield* code.workspace.getNotebookDocuments;
-    for (const rawDocument of documents) {
-      const notebook = MarimoNotebookDocument.tryFrom(rawDocument);
-      if (Option.isNone(notebook)) continue;
-      const handle = yield* notebooks.forNotebook(notebook.value.id);
-      const controller = yield* handle.getController;
-      if (Option.isSome(controller)) {
-        selectedControllerIds.add(controller.value.id);
-      }
+const pruneStaleControllers = Effect.fn(
+  "NotebookControllers.pruneStaleControllers",
+)(function* (options: {
+  envs: ReadonlyArray<py.Environment>;
+  handlesRef: SynchronizedRef.SynchronizedRef<
+    HashMap.HashMap<NotebookControllerId, NotebookControllerHandle>
+  >;
+  notebooks: NotebookRuntime.Interface;
+}) {
+  const { envs, handlesRef, notebooks } = options;
+  yield* Effect.logTrace("Checking for stale controllers");
+  const desiredControllerIds = new Set(
+    envs.map((env) => PythonController.getId(env)),
+  );
+  const code = yield* VsCode.Service;
+  const selectedControllerIds = new Set<string>();
+  const documents = yield* code.workspace.getNotebookDocuments;
+  for (const rawDocument of documents) {
+    const notebook = MarimoNotebookDocument.tryFrom(rawDocument);
+    if (Option.isNone(notebook)) continue;
+    const handle = yield* notebooks.forNotebook(notebook.value.id);
+    const controller = yield* handle.getController;
+    if (Option.isSome(controller)) {
+      selectedControllerIds.add(controller.value.id);
     }
+  }
 
-    yield* SynchronizedRef.updateEffect(
-      handlesRef,
-      Effect.fn(function* (map) {
-        // Check which controllers can be disposed
-        const toRemove: Array<NotebookControllerHandle> = [];
-        for (const [controllerId, handle] of map) {
-          if (desiredControllerIds.has(controllerId)) {
-            continue;
-          }
-
-          if (selectedControllerIds.has(handle.controller.id)) {
-            yield* Effect.annotateLogs(
-              Effect.logWarning("Controller in use. Skipping removal."),
-              { controllerId: handle.controller.id },
-            );
-            continue;
-          }
-
-          toRemove.push(handle);
+  yield* SynchronizedRef.updateEffect(
+    handlesRef,
+    Effect.fnUntraced(function* (map) {
+      // Check which controllers can be disposed
+      const toRemove: Array<NotebookControllerHandle> = [];
+      for (const [controllerId, handle] of map) {
+        if (desiredControllerIds.has(controllerId)) {
+          continue;
         }
 
-        // Close scopes for controllers to be removed
-        yield* Effect.forEach(
-          toRemove,
-          (handle) => Scope.close(handle.scope, Exit.void),
-          { discard: true },
-        );
+        if (selectedControllerIds.has(handle.controller.id)) {
+          yield* Effect.annotateLogs(
+            Effect.logWarning("Controller in use. Skipping removal."),
+            { controllerId: handle.controller.id },
+          );
+          continue;
+        }
 
-        const update = toRemove.reduce(
-          (acc, handle) => HashMap.remove(acc, handle.controller.id),
-          map,
-        );
+        toRemove.push(handle);
+      }
 
-        // Remove all disposed controllers in one update
-        yield* Effect.annotateLogs(
-          Effect.logTrace("Completed stale controller removal"),
-          { removedCount: toRemove.length },
-        );
+      // Close scopes for controllers to be removed
+      yield* Effect.forEach(
+        toRemove,
+        (handle) => Scope.close(handle.scope, Exit.void),
+        { discard: true },
+      );
 
-        return update;
-      }),
-    );
-  },
-);
+      const update = toRemove.reduce(
+        (acc, handle) => HashMap.remove(acc, handle.controller.id),
+        map,
+      );
+
+      // Remove all disposed controllers in one update
+      yield* Effect.annotateLogs(
+        Effect.logTrace("Completed stale controller removal"),
+        { removedCount: toRemove.length },
+      );
+
+      return update;
+    }),
+  );
+});
 
 /**
  * Determines if the given Python environment is located within the uv cache directory.
@@ -413,13 +413,13 @@ function isInUvCache(
 
   try {
     const envPath = options.code.Uri.file(env.path).fsPath;
-    return isPathInsideDirectory(envPath, options.uvCacheDir.value.fsPath);
+    return isPathInside(envPath, options.uvCacheDir.value.fsPath);
   } catch {
     return false;
   }
 }
 
-export function isPathInsideDirectory(
+export function isPathInside(
   candidatePath: string,
   directoryPath: string,
 ): boolean {

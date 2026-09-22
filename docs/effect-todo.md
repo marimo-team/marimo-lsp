@@ -111,7 +111,7 @@ the layer scope. Export `layer`, import the module as a namespace, and remove
 - [x] `features/RegisterLanguageModelTools.ts`
 - [x] `features/ReloadOnConfigChange.ts`
 - [x] `features/ThemeSync.ts`
-- [ ] `kernel/NotebookControllers.ts`
+- [x] `kernel/NotebookControllers.ts`
 - [ ] `panel/datasources/DatasourcesView.ts`
 - [ ] `panel/packages/PackagesView.ts`
 - [ ] `panel/sessions/SessionFileLifecycle.ts`

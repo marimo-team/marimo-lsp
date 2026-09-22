@@ -4,7 +4,7 @@ import * as Config from "../config/Config.ts";
 import * as ConfigContextManager from "../config/ConfigContextManager.ts";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
-import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
+import * as NotebookControllers from "../kernel/NotebookControllers.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import type * as MarimoClient from "../lsp/MarimoClient.ts";
 import type * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
@@ -76,7 +76,7 @@ const MainLive = Layer.empty
     Layer.merge(ThemeSync.layer),
     Layer.merge(CellInputVisibilitySync.layer),
     Layer.merge(Debug.layer),
-    Layer.merge(NotebookControllersLive),
+    Layer.merge(NotebookControllers.layer),
   )
   .pipe(
     Layer.provideMerge(Api.layer),
