@@ -3,11 +3,11 @@ import { Option } from "effect";
 
 import { MarimoLspServer } from "../../config/Config.ts";
 import * as Uv from "../../python/Uv.ts";
-import { formatMarimoLspDiagnostics } from "../HealthService.ts";
+import * as HealthService from "../HealthService.ts";
 
 it("reports the bundled WASM runtime without uv diagnostics", () => {
   expect(
-    formatMarimoLspDiagnostics({
+    HealthService.formatMarimoLspDiagnostics({
       server: MarimoLspServer.Wasm(),
       uvBin: Option.none(),
     }),
@@ -16,7 +16,7 @@ it("reports the bundled WASM runtime without uv diagnostics", () => {
 
 it("reports the uv-provisioned native runtime", () => {
   expect(
-    formatMarimoLspDiagnostics({
+    HealthService.formatMarimoLspDiagnostics({
       server: MarimoLspServer.Python(),
       uvBin: Option.some(
         Uv.UvBin.Bundled({
@@ -35,7 +35,7 @@ it("reports the uv-provisioned native runtime", () => {
 
 it("reports the configured native runtime", () => {
   expect(
-    formatMarimoLspDiagnostics({
+    HealthService.formatMarimoLspDiagnostics({
       server: MarimoLspServer.Custom({
         command: ["/opt/marimo-lsp", "--stdio"],
       }),

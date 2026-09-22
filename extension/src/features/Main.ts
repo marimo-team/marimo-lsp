@@ -37,7 +37,7 @@ import * as Uv from "../python/Uv.ts";
 import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
 import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../statusbar/StatusBar.ts";
-import { HealthService } from "../telemetry/HealthService.ts";
+import * as HealthService from "../telemetry/HealthService.ts";
 import type { Telemetry } from "../telemetry/Telemetry.ts";
 import { AutoExportLive } from "./AutoExport.ts";
 import { CellInputVisibilitySyncLive } from "./CellInputVisibilitySync.ts";
