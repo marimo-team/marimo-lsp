@@ -5,10 +5,8 @@ import {
   Exit,
   Layer,
   Option,
-  PubSub,
   Queue,
   Result,
-  type Schema,
   Scope,
   Stream,
 } from "effect";
@@ -28,21 +26,9 @@ declare global {
 // oxlint-disable-next-line marimo/vscode-type-only
 import * as vscode from "vscode";
 
-import {
-  type CommandArguments,
-  type CommandDefinition,
-  commandId,
-  decodeCommandArguments,
-  decodeCommandResult,
-  type MarimoCommand,
-  type VscodeBuiltinCommand,
-  type VscodeCommandArgs,
-  type VscodeCommandResult,
-} from "../commands.ts";
-import type { MarimoContextKey } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
+import * as Commands from "./Commands.ts";
 import * as Window from "./Window.ts";
 
 export class VsCodeError extends Data.TaggedError("VsCodeError")<{
@@ -58,157 +44,6 @@ export class DebugSessionStartError extends Data.TaggedError(
 )<{
   readonly configuration: string | vscode.DebugConfiguration;
 }> {}
-
-type ContextMap = {
-  "marimo.hasLiveSessions": boolean;
-  "marimo.config.runtime.on_cell_change": "autorun" | "lazy";
-  "marimo.config.runtime.auto_reload": "off" | "lazy" | "autorun";
-  "marimo.isPythonFileMarimoNotebook": boolean;
-  "marimo.notebook.hasStaleCells": boolean;
-  "marimo.notebook.hasKernel": boolean;
-};
-
-export const withCommandContext = (command: MarimoCommand) => {
-  const wireId = commandId(command);
-  return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(
-      Effect.tapCause((cause) =>
-        isExpectedCancellation(cause) ? Effect.void : Effect.logError(cause),
-      ),
-      Effect.annotateLogs({
-        "command.id": wireId,
-      }),
-    );
-};
-
-export class Commands extends Context.Service<Commands>()("Commands", {
-  make: Effect.gen(function* () {
-    const win = yield* Window.Service;
-    const api = vscode.commands;
-    // Pubsub of the commands run and their results
-    // Failure is the command that failed, success is the command that succeeded
-    const commandPubSub =
-      yield* PubSub.unbounded<Result.Result<string, string>>();
-
-    function execute<
-      CallArgs extends CommandArguments,
-      HandlerArgs extends CommandArguments,
-      Result,
-      DecodeRequirements,
-    >(
-      command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
-      ...args: CallArgs
-    ): Effect.Effect<Result, Schema.SchemaError> {
-      return Effect.promise(() =>
-        api.executeCommand(commandId(command), ...args),
-      ).pipe(Effect.flatMap((result) => decodeCommandResult(command, result)));
-    }
-
-    function executeVSCode<C extends VscodeBuiltinCommand>(
-      command: C,
-      ...args: VscodeCommandArgs<C>
-    ): Effect.Effect<VscodeCommandResult<C>> {
-      return Effect.promise(() =>
-        api.executeCommand<VscodeCommandResult<C>>(command, ...args),
-      );
-    }
-
-    function registerImplementation<A, E, R>(
-      wireId: string,
-      invoke: (args: ReadonlyArray<unknown>) => Effect.Effect<A, E, R>,
-    ) {
-      return Effect.gen(function* () {
-        const runPromise = Effect.runPromiseWith(yield* Effect.context<R>());
-        const callback = (...args: unknown[]) =>
-          invoke(args).pipe(
-            Effect.tap(() =>
-              PubSub.publish(commandPubSub, Result.succeed(wireId)),
-            ),
-            Effect.catchCause(
-              Effect.fn(function* (cause) {
-                // Skip logging for interruptions/cancellations (e.g., user
-                // cancels a progress dialog, VS Code disposes resources
-                // during kernel restart). These are expected and not errors.
-                if (isExpectedCancellation(cause)) {
-                  yield* PubSub.publish(commandPubSub, Result.fail(wireId));
-                  return;
-                }
-                yield* PubSub.publish(commandPubSub, Result.fail(wireId));
-                yield* win.showWarningMessage(
-                  `Something went wrong in ${JSON.stringify(wireId)}. See marimo logs for more info.`,
-                );
-              }),
-            ),
-            runPromise,
-          );
-
-        yield* acquireDisposable(() => api.registerCommand(wireId, callback));
-      });
-    }
-
-    function register<
-      CallArgs extends CommandArguments,
-      HandlerArgs extends CommandArguments,
-      Result,
-      DecodeRequirements,
-      E,
-      HandlerRequirements,
-    >(
-      definition: CommandDefinition<
-        CallArgs,
-        HandlerArgs,
-        Result,
-        DecodeRequirements,
-        E,
-        HandlerRequirements
-      >,
-    ) {
-      const { command, invoke } = definition;
-      const wireId = commandId(command);
-      return registerImplementation(wireId, (args) =>
-        decodeCommandArguments(command, args).pipe(
-          Effect.flatMap((decoded) => invoke(...decoded)),
-          Effect.flatMap((result) => decodeCommandResult(command, result)),
-          withCommandContext(command),
-        ),
-      );
-    }
-
-    function bind<
-      CallArgs extends CommandArguments,
-      HandlerArgs extends CommandArguments,
-      Result,
-      DecodeRequirements,
-    >(
-      command: MarimoCommand<CallArgs, HandlerArgs, Result, DecodeRequirements>,
-      title: string,
-      ...args: CallArgs
-    ): vscode.Command {
-      return {
-        command: commandId(command),
-        title,
-        arguments: [...args],
-      };
-    }
-
-    return {
-      subscribeToCommands: PubSub.subscribe(commandPubSub),
-      execute,
-      executeVSCode,
-      bind,
-      setContext<K extends MarimoContextKey>(key: K, value: ContextMap[K]) {
-        return Effect.promise(() =>
-          api.executeCommand("setContext", key, value),
-        );
-      },
-      register,
-    };
-  }),
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(Window.layer),
-  );
-}
 
 export interface NotebookLifecycleEvent {
   readonly type: "opened" | "closed";
@@ -1099,7 +934,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
     return {
       // namespaces
       window: yield* Window.Service,
-      commands: yield* Commands,
+      commands: yield* Commands.Service,
       workspace: yield* Workspace,
       env: yield* Env,
       debug: yield* Debug,
@@ -1196,7 +1031,7 @@ export class VsCode extends Context.Service<VsCode>()("VsCode", {
     Layer.provide([
       Window.layer,
       Workspace.layer,
-      Commands.layer,
+      Commands.defaultLayer,
       Env.layer,
       Debug.layer,
       Notebooks.layer,

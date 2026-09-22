@@ -21,8 +21,8 @@ import type * as vscode from "vscode";
 import { commandId, decodeCommandResult } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
+import * as Commands from "../platform/Commands.ts";
 import {
-  Commands,
   Env,
   FileSystemError,
   type NotebookLifecycleEvent,
@@ -1661,7 +1661,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
       window?: Partial<Window.Interface>;
-      commands?: Partial<Context.Service.Shape<typeof Commands>>;
+      commands?: Partial<Commands.Interface>;
       workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
       env?: Partial<Context.Service.Shape<typeof Env>>;
       installedExtensions?: ReadonlyArray<string>;

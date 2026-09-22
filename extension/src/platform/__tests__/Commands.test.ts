@@ -6,7 +6,7 @@ import newMarimoNotebook from "../../commands/newMarimoNotebook.ts";
 import openTutorial from "../../commands/openTutorial.ts";
 import restartKernel from "../../commands/restartKernel.ts";
 import runStale from "../../commands/runStale.ts";
-import { withCommandContext } from "../VsCode.ts";
+import { withCommandContext } from "../Commands.ts";
 
 class InvalidCommandArgument extends Data.TaggedError(
   "InvalidCommandArgument",
