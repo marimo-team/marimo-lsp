@@ -12,11 +12,7 @@ const IN_MEMORY_CONNECTION = "__in_memory";
 const IN_MEMORY_DATABASE = "default";
 const IN_MEMORY_SCHEMA = "default";
 
-type DatasourceTreeItem =
-  | ConnectionItem
-  | DatabaseItem
-  | SchemaItem
-  | TableItem;
+type Item = ConnectionItem | DatabaseItem | SchemaItem | TableItem;
 
 interface ConnectionItem {
   readonly type: "connection";
@@ -98,7 +94,7 @@ const tableItem = (
   numColumns: table.num_columns,
 });
 
-const itemId = (item: DatasourceTreeItem): string => {
+const itemId = (item: Item): string => {
   switch (item.type) {
     case "connection":
       return JSON.stringify([item.notebookUri, item.type, item.connectionName]);
@@ -137,14 +133,16 @@ const itemId = (item: DatasourceTreeItem): string => {
  * Displays recursive SQL schemas and loads deferred schemas/tables when their
  * parent is expanded. In-memory datasets remain an eager synthetic branch.
  */
-export const DatasourcesViewLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const treeView = yield* TreeView.Service;
     const datasources = yield* NotebookDatasources.Service;
     const editors = yield* NotebookEditorRegistry.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
 
-    const getDatabase = Effect.fn(function* (item: DatabaseItem | SchemaItem) {
+    const getDatabase = Effect.fn("DatasourcesView.getDatabase")(function* (
+      item: DatabaseItem | SchemaItem,
+    ) {
       const connections = yield* datasources.getConnections(item.notebookUri);
       if (Option.isNone(connections)) return undefined;
       return connections.value.connections
@@ -161,10 +159,9 @@ export const DatasourcesViewLive = Layer.effectDiscard(
         ),
       );
 
-    const loadDatabaseSchemas = Effect.fn(function* (
-      item: DatabaseItem,
-      database: NotebookDatasources.Database,
-    ) {
+    const loadDatabaseSchemas = Effect.fn(
+      "DatasourcesView.loadDatabaseSchemas",
+    )(function* (item: DatabaseItem, database: NotebookDatasources.Database) {
       const session = documentSessions.current(item.notebookUri);
       if (Option.isNone(session)) return [];
       if (!database.schemasResolved) {
@@ -181,7 +178,7 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       let current = yield* getDatabase(item);
       if (current === undefined) return [];
 
-      const children: DatasourceTreeItem[] = [];
+      const children: Item[] = [];
       for (const schema of current.schemas.values()) {
         if (schema.name !== "") {
           children.push(schemaItem(item, schema, [schema.name]));
@@ -216,154 +213,157 @@ export const DatasourcesViewLive = Layer.effectDiscard(
       return children;
     });
 
-    const loadSchemaChildren = Effect.fn(function* (item: SchemaItem) {
-      const database = yield* getDatabase(item);
-      const schema = database && findSchema(database, item.schemaPath);
-      if (schema === undefined) return [];
+    const loadSchemaChildren = Effect.fn("DatasourcesView.loadSchemaChildren")(
+      function* (item: SchemaItem) {
+        const database = yield* getDatabase(item);
+        const schema = database && findSchema(database, item.schemaPath);
+        if (schema === undefined) return [];
 
-      const loads: Array<Effect.Effect<unknown>> = [];
-      const session = documentSessions.current(item.notebookUri);
-      if (Option.isNone(session)) return [];
-      if (!schema.childSchemasResolved) {
-        loads.push(
-          ignoreExpansionError(
-            datasources.loadSchemas(
-              session.value,
-              item.connectionName,
-              item.databaseName,
-              item.schemaPath,
+        const loads: Array<Effect.Effect<unknown>> = [];
+        const session = documentSessions.current(item.notebookUri);
+        if (Option.isNone(session)) return [];
+        if (!schema.childSchemasResolved) {
+          loads.push(
+            ignoreExpansionError(
+              datasources.loadSchemas(
+                session.value,
+                item.connectionName,
+                item.databaseName,
+                item.schemaPath,
+              ),
             ),
-          ),
-        );
-      }
-      if (!schema.tablesResolved) {
-        loads.push(
-          ignoreExpansionError(
-            datasources.loadTables(
-              session.value,
-              item.connectionName,
-              item.databaseName,
-              item.schemaName,
-              item.schemaPath,
+          );
+        }
+        if (!schema.tablesResolved) {
+          loads.push(
+            ignoreExpansionError(
+              datasources.loadTables(
+                session.value,
+                item.connectionName,
+                item.databaseName,
+                item.schemaName,
+                item.schemaPath,
+              ),
             ),
-          ),
-        );
-      }
-      yield* Effect.all(loads, { concurrency: "unbounded", discard: true });
+          );
+        }
+        yield* Effect.all(loads, { concurrency: "unbounded", discard: true });
 
-      const currentDatabase = yield* getDatabase(item);
-      const current =
-        currentDatabase && findSchema(currentDatabase, item.schemaPath);
-      if (current === undefined) return [];
-      return [
-        ...[...current.childSchemas.values()].map((child) =>
-          schemaItem(item, child, [...item.schemaPath, child.name]),
-        ),
-        ...[...current.tables.values()].map((table) =>
-          tableItem(item, table, item.schemaPath),
-        ),
-      ];
-    });
+        const currentDatabase = yield* getDatabase(item);
+        const current =
+          currentDatabase && findSchema(currentDatabase, item.schemaPath);
+        if (current === undefined) return [];
+        return [
+          ...[...current.childSchemas.values()].map((child) =>
+            schemaItem(item, child, [...item.schemaPath, child.name]),
+          ),
+          ...[...current.tables.values()].map((table) =>
+            tableItem(item, table, item.schemaPath),
+          ),
+        ];
+      },
+    );
 
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-datasources",
-      getChildren: (element?: DatasourceTreeItem) =>
-        Effect.gen(function* () {
-          if (element === undefined) {
-            const active = yield* editors.getActiveNotebookUri;
-            if (Option.isNone(active)) return [];
-            const notebookUri = active.value;
-            const connections = yield* datasources.getConnections(notebookUri);
-            const datasets = yield* datasources.getDatasets(notebookUri);
-            const items: ConnectionItem[] = [];
+      getChildren: Effect.fn("DatasourcesView.getChildren")(function* (
+        element?: Item,
+      ) {
+        if (element === undefined) {
+          const active = yield* editors.getActiveNotebookUri;
+          if (Option.isNone(active)) return [];
+          const notebookUri = active.value;
+          const connections = yield* datasources.getConnections(notebookUri);
+          const datasets = yield* datasources.getDatasets(notebookUri);
+          const items: ConnectionItem[] = [];
 
-            if (Option.isSome(connections)) {
-              for (const connection of connections.value.connections.values()) {
-                items.push({
-                  type: "connection",
-                  notebookUri,
-                  connectionName: connection.name,
-                  displayName: connection.display_name,
-                  dialect: connection.dialect,
-                });
-              }
-            }
-            if (Option.isSome(datasets) && datasets.value.tables.size > 0) {
+          if (Option.isSome(connections)) {
+            for (const connection of connections.value.connections.values()) {
               items.push({
                 type: "connection",
                 notebookUri,
-                connectionName: IN_MEMORY_CONNECTION,
-                displayName: "In-memory",
-                dialect: "python",
+                connectionName: connection.name,
+                displayName: connection.display_name,
+                dialect: connection.dialect,
               });
             }
-            return items;
           }
+          if (Option.isSome(datasets) && datasets.value.tables.size > 0) {
+            items.push({
+              type: "connection",
+              notebookUri,
+              connectionName: IN_MEMORY_CONNECTION,
+              displayName: "In-memory",
+              dialect: "python",
+            });
+          }
+          return items;
+        }
 
-          if (element.type === "connection") {
-            if (element.connectionName === IN_MEMORY_CONNECTION) {
-              return [
-                {
-                  type: "database" as const,
-                  notebookUri: element.notebookUri,
-                  connectionName: element.connectionName,
-                  databaseName: IN_MEMORY_DATABASE,
-                  dialect: "python",
-                },
-              ];
-            }
-            const connections = yield* datasources.getConnections(
+        if (element.type === "connection") {
+          if (element.connectionName === IN_MEMORY_CONNECTION) {
+            return [
+              {
+                type: "database" as const,
+                notebookUri: element.notebookUri,
+                connectionName: element.connectionName,
+                databaseName: IN_MEMORY_DATABASE,
+                dialect: "python",
+              },
+            ];
+          }
+          const connections = yield* datasources.getConnections(
+            element.notebookUri,
+          );
+          const connection = Option.isSome(connections)
+            ? connections.value.connections.get(element.connectionName)
+            : undefined;
+          if (connection === undefined) return [];
+          return [...connection.databases.values()].map((database) => ({
+            type: "database" as const,
+            notebookUri: element.notebookUri,
+            connectionName: element.connectionName,
+            databaseName: database.name,
+            dialect: database.dialect,
+          }));
+        }
+
+        if (element.type === "database") {
+          if (element.connectionName === IN_MEMORY_CONNECTION) {
+            return [
+              {
+                type: "schema" as const,
+                notebookUri: element.notebookUri,
+                connectionName: element.connectionName,
+                databaseName: element.databaseName,
+                schemaPath: [IN_MEMORY_SCHEMA],
+                schemaName: IN_MEMORY_SCHEMA,
+              },
+            ];
+          }
+          const database = yield* getDatabase(element);
+          return database === undefined
+            ? []
+            : yield* loadDatabaseSchemas(element, database);
+        }
+
+        if (element.type === "schema") {
+          if (element.connectionName === IN_MEMORY_CONNECTION) {
+            const datasets = yield* datasources.getDatasets(
               element.notebookUri,
             );
-            const connection = Option.isSome(connections)
-              ? connections.value.connections.get(element.connectionName)
-              : undefined;
-            if (connection === undefined) return [];
-            return [...connection.databases.values()].map((database) => ({
-              type: "database" as const,
-              notebookUri: element.notebookUri,
-              connectionName: element.connectionName,
-              databaseName: database.name,
-              dialect: database.dialect,
-            }));
+            return Option.isSome(datasets)
+              ? [...datasets.value.tables.values()].map((table) =>
+                  tableItem(element, table, element.schemaPath),
+                )
+              : [];
           }
+          return yield* loadSchemaChildren(element);
+        }
 
-          if (element.type === "database") {
-            if (element.connectionName === IN_MEMORY_CONNECTION) {
-              return [
-                {
-                  type: "schema" as const,
-                  notebookUri: element.notebookUri,
-                  connectionName: element.connectionName,
-                  databaseName: element.databaseName,
-                  schemaPath: [IN_MEMORY_SCHEMA],
-                  schemaName: IN_MEMORY_SCHEMA,
-                },
-              ];
-            }
-            const database = yield* getDatabase(element);
-            return database === undefined
-              ? []
-              : yield* loadDatabaseSchemas(element, database);
-          }
-
-          if (element.type === "schema") {
-            if (element.connectionName === IN_MEMORY_CONNECTION) {
-              const datasets = yield* datasources.getDatasets(
-                element.notebookUri,
-              );
-              return Option.isSome(datasets)
-                ? [...datasets.value.tables.values()].map((table) =>
-                    tableItem(element, table, element.schemaPath),
-                  )
-                : [];
-            }
-            return yield* loadSchemaChildren(element);
-          }
-
-          return [];
-        }),
-      getTreeItem: (element: DatasourceTreeItem) =>
+        return [];
+      }),
+      getTreeItem: (element: Item) =>
         Effect.succeed({
           id: itemId(element),
           label:
@@ -420,5 +420,5 @@ export const DatasourcesViewLive = Layer.effectDiscard(
     );
 
     yield* Effect.logDebug("Datasources view initialized");
-  }),
+  }).pipe(Effect.withSpan("DatasourcesView.layer")),
 );

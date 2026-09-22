@@ -15,7 +15,7 @@ import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
 import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
 import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
 import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
-import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
+import * as DatasourcesView from "../panel/datasources/DatasourcesView.ts";
 import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
 import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
 import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
@@ -66,7 +66,7 @@ const MainLive = Layer.empty
     Layer.merge(SessionsViewLive),
     Layer.merge(SessionFileLifecycleLive),
     Layer.merge(VariablesViewLive),
-    Layer.merge(DatasourcesViewLive),
+    Layer.merge(DatasourcesView.layer),
     Layer.merge(PackagesViewLive),
     Layer.merge(CellStatusBarProvider.layer),
     Layer.merge(CellMetadataBindings.layer),
