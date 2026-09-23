@@ -299,7 +299,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 #### Features
 
-- [ ] `features/__tests__/AutoExport.test.ts`
+- [x] `features/__tests__/AutoExport.test.ts`
 - [x] `features/__tests__/CellInputVisibilitySync.test.ts`
 - [x] `features/__tests__/CellMetadataBindings.test.ts`
 - [ ] `features/__tests__/CellStatusBarProvider.test.ts`

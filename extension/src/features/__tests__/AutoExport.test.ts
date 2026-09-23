@@ -1,353 +1,166 @@
-import { describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  PubSub,
-  Ref,
-  Stream,
-} from "effect";
-import { TestClock } from "effect/testing";
+import * as Vitest from "@effect/vitest";
+import { Effect, Fiber } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import {
-  makeTestNotebookRuntime,
-  type TestCommand,
-} from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import { kernelSessionId } from "../../lib/__tests__/branded.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
-import * as Workspace from "../../platform/Workspace.ts";
-import {
-  MarimoNotebookCell,
-  MarimoNotebookDocument,
-} from "../../schemas/MarimoNotebookDocument.ts";
-import type { KernelNotification } from "../../types.ts";
+import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import * as AutoExport from "../AutoExport.ts";
+import * as TestAutoExport from "./TestAutoExport.ts";
 
-const controller: NotebookRuntime.NotebookController = {
-  id: "test-controller",
-  drive: () => () => Effect.void,
-  presentOutputs: () => Effect.void,
-  resolveExecutable: () => Effect.succeed("/usr/bin/python"),
-};
-const SESSION_ID = kernelSessionId("00000000-0000-4000-8000-000000000001");
+const outputUriIt = EffectTest.make(TestVsCode.layer);
 
-const withTestCtx = Effect.fn(function* (
-  options: {
-    readonly autoDownload?: ReadonlyArray<"html" | "ipynb" | "markdown">;
-    readonly send?: (request: TestCommand) => Effect.Effect<string>;
-    readonly hasOutputs?: boolean;
-    readonly hasRuntimeSession?: boolean;
-  } = {},
-) {
-  const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-  const writes = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
-  const directories = yield* Ref.make<ReadonlyArray<string>>([]);
-  const operations = yield* PubSub.unbounded<KernelNotification>();
-
-  const output = {
-    items: [
-      {
-        data: new TextEncoder().encode("2"),
-        mime: "text/plain",
-      },
-    ],
-  };
-  const cellOutputs = options.hasOutputs === false ? [] : [output];
-  const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
-    data: {
-      metadata: MarimoNotebookDocument.createMetadata({
-        appOptions: {
-          managed: {
-            autoDownload: [...(options.autoDownload ?? ["html", "ipynb"])],
-          },
-          passthrough: {},
-        },
-      }),
-      cells: [
-        {
-          kind: 2,
-          value: "1 + 1",
-          languageId: "python",
-          metadata: MarimoNotebookCell.createMetadata({
-            marimoRuntime: { stableId: "cell-1" },
-          }),
-          outputs: cellOutputs,
-        },
-      ],
-    },
-  });
-  const notebook = MarimoNotebookDocument.from(editor.notebook);
-
-  const vscode = yield* TestVsCode.make({
-    initialDocuments: [editor.notebook],
-    workspace: {
-      fs: {
-        createDirectory: (uri) =>
-          Ref.update(directories, (current) => [...current, uri.toString()]),
-        readFile: (uri) =>
-          Effect.fail(
-            new Workspace.FileSystemError({
-              cause: new Error(`ENOENT: ${uri.toString()}`),
-            }),
-          ),
-        writeFile: (uri, contents) =>
-          Ref.update(writes, (current) => {
-            const next = new Map(current);
-            next.set(uri.toString(), new TextDecoder().decode(contents));
-            return next;
-          }),
-      },
-    },
-  });
-
-  const runtime = makeTestNotebookRuntime({
-    initialControllers: [{ notebookUri: notebook.id, controller }],
-    runtimeSession:
-      options.hasRuntimeSession === false
-        ? undefined
-        : { executable: "/usr/bin/python", workingDirectory: "/test" },
-    kernelNotifications: Stream.fromPubSub(operations),
-    send: (request) =>
-      Ref.update(calls, (current) => [...current, request]).pipe(
-        Effect.andThen(
-          options.send?.(request) ??
-            Effect.succeed(
-              request.kind === "export-html"
-                ? "<html>report</html>"
-                : request.kind === "export-markdown"
-                  ? "# Report"
-                  : "{}",
-            ),
-        ),
-      ),
-  });
-
-  const layer = AutoExport.layer.pipe(
-    Layer.provide(runtime),
-    Layer.provide(vscode.layer),
-  );
-
-  return {
-    calls,
-    cellOutputs,
-    directories,
-    editor,
-    layer,
-    notebook,
-    operations,
-    vscode,
-    writes,
-  };
-});
-
-describe("outputUri", () => {
-  it.effect(
+Vitest.describe("outputUri", () => {
+  outputUriIt.effect(
     "writes beside the notebook under __marimo__",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-      const uri = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        return AutoExport.outputUri(code, ctx.notebook, "html");
-      }).pipe(Effect.provide(ctx.vscode.layer));
+      const code = yield* VsCode.Service;
+      const document = TestVsCode.createTestNotebookDocument("/test/report.py");
+      const notebook = MarimoNotebookDocument.from(document);
 
-      expect(uri.path).toBe("/test/__marimo__/report.html");
+      const uri = AutoExport.outputUri(code, notebook, "html");
+
+      Vitest.expect(uri.path).toBe("/test/__marimo__/report.html");
     }),
   );
 });
 
-describe("AutoExport", () => {
-  it.effect(
+const it = EffectTest.make(TestAutoExport.layer);
+const markdownIt = EffectTest.make(
+  TestAutoExport.layerWith({ autoDownload: ["markdown"] }),
+);
+const noRuntimeIt = EffectTest.make(
+  TestAutoExport.layerWith({ hasRuntimeSession: false }),
+);
+const noOutputsIt = EffectTest.make(
+  TestAutoExport.layerWith({ hasOutputs: false }),
+);
+const blockedHtmlIt = EffectTest.make(
+  TestAutoExport.layerWith({ blockHtmlExport: true }),
+);
+
+const requestKinds = (snapshot: TestAutoExport.Snapshot) =>
+  snapshot.requests.map((request) => request.kind);
+
+Vitest.describe("AutoExport", () => {
+  markdownIt.effect(
     "exports Markdown to an md file",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx({ autoDownload: ["markdown"] });
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      yield* fixture.tick;
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust(AutoExport.interval);
-
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-markdown",
-        ]);
-        expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
-          "file:///test/__marimo__/report.md": "# Report",
-        });
-      }).pipe(Effect.provide(ctx.layer));
+      const snapshot = yield* fixture.snapshot;
+      Vitest.expect(requestKinds(snapshot)).toEqual(["export-markdown"]);
+      Vitest.expect(Object.fromEntries(snapshot.writes)).toEqual({
+        "file:///test/__marimo__/report.md": "# Report",
+      });
     }),
   );
 
-  it.effect(
+  noRuntimeIt.effect(
     "waits for a live runtime session before creating exports",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx({ hasRuntimeSession: false });
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      yield* fixture.tick;
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust(AutoExport.interval);
-
-        expect(yield* Ref.get(ctx.calls)).toEqual([]);
-        expect(yield* Ref.get(ctx.directories)).toEqual([]);
-        expect(yield* Ref.get(ctx.writes)).toEqual(new Map());
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* fixture.snapshot).toEqual({
+        requests: [],
+        directories: [],
+        writes: new Map(),
+      });
     }),
   );
 
   it.effect(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      yield* fixture.tick;
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust(AutoExport.interval);
+      const first = yield* fixture.snapshot;
+      Vitest.expect(requestKinds(first)).toEqual([
+        "export-html",
+        "export-ipynb",
+      ]);
+      Vitest.expect(Object.fromEntries(first.writes)).toEqual({
+        "file:///test/__marimo__/report.html": "<html>report</html>",
+        "file:///test/__marimo__/report.ipynb": "{}",
+      });
+      Vitest.expect(first.directories).toEqual(["file:///test/__marimo__"]);
 
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-html",
-          "export-ipynb",
-        ]);
-        expect(Object.fromEntries(yield* Ref.get(ctx.writes))).toEqual({
-          "file:///test/__marimo__/report.html": "<html>report</html>",
-          "file:///test/__marimo__/report.ipynb": "{}",
-        });
-        expect(yield* Ref.get(ctx.directories)).toEqual([
-          "file:///test/__marimo__",
-        ]);
+      yield* fixture.tick;
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toHaveLength(2);
 
-        yield* TestClock.adjust(AutoExport.interval);
-        expect(yield* Ref.get(ctx.calls)).toHaveLength(2);
-
-        yield* PubSub.publish(ctx.operations, {
-          notebookUri: ctx.notebook.id,
-          sessionId: SESSION_ID,
-          notification: { op: "completed-run", run_id: null },
-        });
-        yield* TestClock.adjust(AutoExport.interval);
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-html",
-          "export-ipynb",
-          "export-html",
-          "export-ipynb",
-        ]);
-      }).pipe(Effect.provide(ctx.layer));
+      yield* fixture.completeRun;
+      yield* fixture.tick;
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+        "export-html",
+        "export-ipynb",
+        "export-html",
+        "export-ipynb",
+      ]);
     }),
   );
 
   it.effect(
     "exports a notebook once when it has multiple visible editors",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      yield* fixture.activate;
+      yield* fixture.tick;
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust(AutoExport.interval);
-
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-html",
-          "export-ipynb",
-        ]);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+        "export-html",
+        "export-ipynb",
+      ]);
     }),
   );
 
-  it.effect(
+  noOutputsIt.effect(
     "waits for cell output before exporting HTML",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx({ hasOutputs: false });
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      yield* fixture.tick;
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+        "export-ipynb",
+      ]);
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* TestClock.adjust(AutoExport.interval);
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-ipynb",
-        ]);
+      yield* fixture.addOutput;
+      yield* fixture.completeRun;
+      yield* fixture.tick;
 
-        ctx.cellOutputs.push({
-          items: [
-            {
-              data: new TextEncoder().encode("2"),
-              mime: "text/plain",
-            },
-          ],
-        });
-        yield* PubSub.publish(ctx.operations, {
-          notebookUri: ctx.notebook.id,
-          sessionId: SESSION_ID,
-          notification: { op: "completed-run", run_id: null },
-        });
-        yield* TestClock.adjust(AutoExport.interval);
-
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-ipynb",
-          "export-html",
-          "export-ipynb",
-        ]);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+        "export-ipynb",
+        "export-html",
+        "export-ipynb",
+      ]);
     }),
   );
 
-  it.effect(
+  blockedHtmlIt.effect(
     "does not credit an in-flight export to a reopened notebook",
     Effect.fn(function* () {
-      const exportStarted = yield* Deferred.make<void>();
-      const releaseExport = yield* Deferred.make<void>();
-      const ctx = yield* withTestCtx({
-        send: (request) =>
-          request.kind === "export-html"
-            ? Deferred.succeed(exportStarted, undefined).pipe(
-                Effect.andThen(Deferred.await(releaseExport)),
-                Effect.as("<html>old report</html>"),
-              )
-            : Effect.succeed("{}"),
-      });
+      const fixture = yield* TestAutoExport.Service;
+      yield* fixture.activate;
+      const firstTick = yield* Effect.forkChild(fixture.tick);
+      yield* fixture.htmlExportStarted;
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        const firstTick = yield* Effect.forkChild(
-          TestClock.adjust(AutoExport.interval),
-        );
-        yield* Deferred.await(exportStarted);
+      yield* fixture.reopen;
+      yield* fixture.releaseHtmlExport;
+      yield* Fiber.join(firstTick);
+      yield* fixture.tick;
 
-        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow;
-        const reopened = TestVsCode.makeNotebookEditor("/test/report.py", {
-          data: {
-            metadata: MarimoNotebookDocument.createMetadata({
-              appOptions: {
-                managed: { autoDownload: ["html", "ipynb"] },
-                passthrough: {},
-              },
-            }),
-            cells: [
-              {
-                kind: 2,
-                value: "2 + 2",
-                languageId: "python",
-                metadata: MarimoNotebookCell.createMetadata({
-                  marimoRuntime: { stableId: "cell-1" },
-                }),
-                outputs: ctx.cellOutputs,
-              },
-            ],
-          },
-        });
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(reopened));
-        yield* Effect.yieldNow;
-
-        yield* Deferred.succeed(releaseExport, undefined);
-        yield* Fiber.join(firstTick);
-        yield* TestClock.adjust(AutoExport.interval);
-
-        expect((yield* Ref.get(ctx.calls)).map((call) => call.kind)).toEqual([
-          "export-html",
-          "export-ipynb",
-          "export-html",
-          "export-ipynb",
-        ]);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+        "export-html",
+        "export-ipynb",
+        "export-html",
+        "export-ipynb",
+      ]);
     }),
   );
 });
