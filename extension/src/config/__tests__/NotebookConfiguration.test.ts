@@ -1,22 +1,17 @@
-import { assert, describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Deferred, Effect, Fiber, Option, Scope, Stream } from "effect";
 
-import {
-  createTestNotebookDocument,
-  TestVsCode,
-  Uri,
-} from "../../__mocks__/TestVsCode.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   marimoConfigFixture,
-  mergeMarimoConfig,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { MarimoConfig } from "../../types.ts";
 import * as NotebookConfiguration from "../NotebookConfiguration.ts";
+import * as TestNotebookConfiguration from "./TestNotebookConfiguration.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const NOTEBOOK_URI_1 = notebookId("file:///test/notebook1.py");
@@ -32,6 +27,16 @@ const AUTO_RELOAD_CONFIG = marimoConfigFixture({
   runtime: { on_cell_change: "autorun", auto_reload: "autorun" },
 });
 
+const it = EffectTest.make(
+  TestNotebookConfiguration.layerWith(
+    new Map([
+      [NOTEBOOK_URI, AUTORUN_CONFIG],
+      [NOTEBOOK_URI_1, AUTORUN_CONFIG],
+      [NOTEBOOK_URI_2, AUTO_RELOAD_CONFIG],
+    ]),
+  ),
+);
+
 const inNotebook = <A, E, R>(
   notebookUri: NotebookId,
   effect: Effect.Effect<A, E, R>,
@@ -40,7 +45,7 @@ const inNotebook = <A, E, R>(
     const sessions = yield* NotebookDocumentSessions.Service;
     const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
-    assert(Option.isSome(session));
+    Vitest.assert(Option.isSome(session));
     return yield* resources
       .runScoped(session.value, effect)
       .pipe(Scope.provide(session.value.scope));
@@ -82,7 +87,7 @@ const configurationChanges = (
     const sessions = yield* NotebookDocumentSessions.Service;
     const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
-    assert(Option.isSome(session));
+    Vitest.assert(Option.isSome(session));
     return yield* resources
       .runScoped(
         session.value,
@@ -103,160 +108,75 @@ const configurationChanges = (
       .pipe(Scope.provide(session.value.scope));
   });
 
-const withTestCtx = Effect.fn(function* (
-  options: {
-    configStore?: Map<string, MarimoConfig>;
-    beforeGetResponse?: (notebookUri: string) => Effect.Effect<void>;
-    beforeUpdateResponse?: (notebookUri: string) => Effect.Effect<void>;
-  } = {},
-) {
-  const { configStore = new Map<string, MarimoConfig>() } = options;
-  const initialDocuments = Array.from(configStore.keys(), (uri) =>
-    createTestNotebookDocument(Uri.parse(uri)),
-  );
-  const vscode = yield* TestVsCode.make({ initialDocuments });
-
-  const runtime = makeTestNotebookRuntime({
-    send: Effect.fn(function* (request) {
-      if (request.kind === "get-configuration") {
-        const config = configStore.get(request.notebookUri);
-        if (config === undefined) {
-          return yield* Effect.die(
-            `Config not found for ${request.notebookUri}`,
-          );
-        }
-        if (options.beforeGetResponse) {
-          yield* options.beforeGetResponse(request.notebookUri);
-        }
-        return { config };
-      }
-
-      if (request.kind === "update-configuration") {
-        if (options.beforeUpdateResponse) {
-          yield* options.beforeUpdateResponse(request.notebookUri);
-        }
-        const existing = configStore.get(request.notebookUri);
-        if (existing === undefined) {
-          return yield* Effect.die(
-            `Config not found for ${request.notebookUri}`,
-          );
-        }
-        const config = mergeMarimoConfig(existing, request.config);
-        configStore.set(request.notebookUri, config);
-        return config;
-      }
-
-      return yield* Effect.die(`Unexpected marimo command: ${request.kind}`);
-    }),
-  });
-  const documentSessions = NotebookDocumentSessions.layer.pipe(
-    Layer.provide(vscode.layer),
-  );
-  const sessionResources = NotebookSessionResources.layer.pipe(
-    Layer.provide(documentSessions),
-    Layer.provide(runtime),
-  );
-
-  return {
-    vscode,
-    initialDocuments,
-    layer: Layer.mergeAll(vscode.layer, documentSessions, sessionResources),
-    setConfig(uri: NotebookId, config: MarimoConfig) {
-      configStore.set(uri, config);
-      return Effect.void;
-    },
-  };
+const requestCount = Effect.fn(function* (kind: string) {
+  const test = yield* TestNotebookConfiguration.Service;
+  return (yield* test.requests).filter((request) => request.kind === kind)
+    .length;
 });
 
-describe("NotebookConfiguration", () => {
-  it.effect("fetches once and caches within a document session", () =>
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-      });
+Vitest.describe("NotebookConfiguration", () => {
+  it.effect(
+    "fetches once and caches within a document session",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
 
-      yield* Effect.gen(function* () {
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
-        yield* ctx.setConfig(NOTEBOOK_URI, marimoConfigFixture({}));
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
+      yield* test.setConfig(NOTEBOOK_URI, marimoConfigFixture({}));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
     }),
   );
 
-  it.effect("shares an in-flight lookup", () =>
-    Effect.gen(function* () {
-      const requestStarted = yield* Deferred.make<void>();
-      const releaseRequest = yield* Deferred.make<void>();
-      let requests = 0;
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-        beforeGetResponse: () =>
-          Effect.sync(() => {
-            requests += 1;
-          }).pipe(
-            Effect.andThen(Deferred.succeed(requestStarted, undefined)),
-            Effect.andThen(Deferred.await(releaseRequest)),
-          ),
-      });
+  it.effect(
+    "shares an in-flight lookup",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const pause = yield* test.pauseNextGet;
+      const lookups = yield* Effect.forkChild(
+        Effect.all([getConfig(NOTEBOOK_URI), getConfig(NOTEBOOK_URI)], {
+          concurrency: "unbounded",
+        }),
+      );
 
-      yield* Effect.gen(function* () {
-        const lookups = yield* Effect.forkChild(
-          Effect.all([getConfig(NOTEBOOK_URI), getConfig(NOTEBOOK_URI)], {
-            concurrency: "unbounded",
-          }),
-        );
-        yield* Deferred.await(requestStarted);
-        expect(requests).toBe(1);
-        yield* Deferred.succeed(releaseRequest, undefined);
-        expect(yield* Fiber.join(lookups)).toEqual([
-          AUTORUN_CONFIG,
-          AUTORUN_CONFIG,
-        ]);
-      }).pipe(Effect.provide(ctx.layer));
+      yield* pause.started;
+      Vitest.expect(yield* requestCount("get-configuration")).toBe(1);
+      yield* pause.release;
+      Vitest.expect(yield* Fiber.join(lookups)).toEqual([
+        AUTORUN_CONFIG,
+        AUTORUN_CONFIG,
+      ]);
     }),
   );
 
-  it.effect("updates the cached value and publishes changes", () =>
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
+  it.effect(
+    "updates the cached value and publishes changes",
+    Effect.fn(function* () {
+      const ready = yield* Deferred.make<void>();
+      const collected = yield* Effect.forkChild(
+        configurationChanges(NOTEBOOK_URI, 4, ready),
+      );
+      yield* Deferred.await(ready);
+
+      yield* updateConfig(NOTEBOOK_URI, {
+        runtime: { on_cell_change: "lazy" },
+      });
+      yield* updateConfig(NOTEBOOK_URI, {
+        runtime: { on_cell_change: "autorun" },
       });
 
-      yield* Effect.gen(function* () {
-        const ready = yield* Deferred.make<void>();
-        const collected = yield* Effect.forkChild(
-          configurationChanges(NOTEBOOK_URI, 4, ready),
-        );
-        yield* Deferred.await(ready);
-
-        yield* updateConfig(NOTEBOOK_URI, {
-          runtime: { on_cell_change: "lazy" },
-        });
-        yield* updateConfig(NOTEBOOK_URI, {
-          runtime: { on_cell_change: "autorun" },
-        });
-
-        const changes = yield* Fiber.join(collected);
-        expect(changes[0]?._tag).toBe("None");
-        expect(changes[1]).toEqual(Option.some(AUTORUN_CONFIG));
-        expect(changes[2]).toEqual(Option.some(LAZY_CONFIG));
-        expect(changes[3]).toEqual(Option.some(AUTORUN_CONFIG));
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      const changes = yield* Fiber.join(collected);
+      Vitest.expect(changes[0]?._tag).toBe("None");
+      Vitest.expect(changes[1]).toEqual(Option.some(AUTORUN_CONFIG));
+      Vitest.expect(changes[2]).toEqual(Option.some(LAZY_CONFIG));
+      Vitest.expect(changes[3]).toEqual(Option.some(AUTORUN_CONFIG));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
     }),
   );
 
-  it.effect("does not publish a lookup superseded by an update", () =>
-    Effect.gen(function* () {
-      const requestStarted = yield* Deferred.make<void>();
-      const releaseRequest = yield* Deferred.make<void>();
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-        beforeGetResponse: () =>
-          Deferred.succeed(requestStarted, undefined).pipe(
-            Effect.andThen(Deferred.await(releaseRequest)),
-          ),
-      });
+  it.effect(
+    "does not publish a lookup superseded by an update",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const pause = yield* test.pauseNextGet;
 
       yield* inNotebook(
         NOTEBOOK_URI,
@@ -264,167 +184,129 @@ describe("NotebookConfiguration", () => {
           Effect.flatMap((configuration) =>
             Effect.gen(function* () {
               const stale = yield* configuration.get.pipe(Effect.forkChild);
-              yield* Deferred.await(requestStarted);
+              yield* pause.started;
 
-              expect(
+              Vitest.expect(
                 yield* configuration.update({
                   runtime: { on_cell_change: "lazy" },
                 }),
               ).toEqual(LAZY_CONFIG);
-              yield* Deferred.succeed(releaseRequest, undefined);
-              expect(yield* Fiber.join(stale)).toEqual(AUTORUN_CONFIG);
+              yield* pause.release;
+              Vitest.expect(yield* Fiber.join(stale)).toEqual(AUTORUN_CONFIG);
 
               const current = yield* configuration.changes.pipe(
                 Stream.take(1),
                 Stream.runHead,
               );
-              expect(Option.getOrThrow(current)).toEqual(
+              Vitest.expect(Option.getOrThrow(current)).toEqual(
                 Option.some(LAZY_CONFIG),
               );
-              expect(yield* configuration.get).toEqual(LAZY_CONFIG);
+              Vitest.expect(yield* configuration.get).toEqual(LAZY_CONFIG);
             }),
           ),
         ),
-      ).pipe(Effect.provide(ctx.layer));
+      );
     }),
   );
 
-  it.effect("serializes configuration updates", () =>
-    Effect.gen(function* () {
-      const firstStarted = yield* Deferred.make<void>();
-      const releaseFirst = yield* Deferred.make<void>();
-      let updates = 0;
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-        beforeUpdateResponse: () =>
-          Effect.sync(() => {
-            updates += 1;
-            return updates;
-          }).pipe(
-            Effect.flatMap((update) =>
-              update === 1
-                ? Deferred.succeed(firstStarted, undefined).pipe(
-                    Effect.andThen(Deferred.await(releaseFirst)),
-                  )
-                : Effect.void,
-            ),
-          ),
-      });
+  it.effect(
+    "serializes configuration updates",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const pause = yield* test.pauseNextUpdate;
+      const first = yield* updateConfig(NOTEBOOK_URI, {
+        runtime: { on_cell_change: "lazy" },
+      }).pipe(Effect.forkChild);
+      yield* pause.started;
+      const second = yield* updateConfig(NOTEBOOK_URI, {
+        runtime: {
+          on_cell_change: "autorun",
+          auto_reload: "autorun",
+        },
+      }).pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+      Vitest.expect(yield* requestCount("update-configuration")).toBe(1);
 
-      yield* Effect.gen(function* () {
-        const first = yield* updateConfig(NOTEBOOK_URI, {
-          runtime: { on_cell_change: "lazy" },
-        }).pipe(Effect.forkChild);
-        yield* Deferred.await(firstStarted);
-        const second = yield* updateConfig(NOTEBOOK_URI, {
-          runtime: {
-            on_cell_change: "autorun",
-            auto_reload: "autorun",
-          },
-        }).pipe(Effect.forkChild);
-        yield* Effect.yieldNow;
-        expect(updates).toBe(1);
-
-        yield* Deferred.succeed(releaseFirst, undefined);
-        yield* Fiber.join(first);
-        yield* Fiber.join(second);
-        expect(updates).toBe(2);
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTO_RELOAD_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      yield* pause.release;
+      yield* Fiber.join(first);
+      yield* Fiber.join(second);
+      Vitest.expect(yield* requestCount("update-configuration")).toBe(2);
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTO_RELOAD_CONFIG);
     }),
   );
 
-  it.effect("does not recache a lookup invalidated while in flight", () =>
-    Effect.gen(function* () {
-      const requestStarted = yield* Deferred.make<void>();
-      const releaseRequest = yield* Deferred.make<void>();
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-        beforeGetResponse: () =>
-          Deferred.succeed(requestStarted, undefined).pipe(
-            Effect.andThen(Deferred.await(releaseRequest)),
-          ),
-      });
+  it.effect(
+    "does not recache a lookup invalidated while in flight",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const pause = yield* test.pauseNextGet;
+      const pending = yield* Effect.forkChild(getConfig(NOTEBOOK_URI));
+      yield* pause.started;
+      yield* invalidateConfig(NOTEBOOK_URI);
+      yield* test.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+      yield* pause.release;
 
-      yield* Effect.gen(function* () {
-        const pending = yield* Effect.forkChild(getConfig(NOTEBOOK_URI));
-        yield* Deferred.await(requestStarted);
-        yield* invalidateConfig(NOTEBOOK_URI);
-        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
-        yield* Deferred.succeed(releaseRequest, undefined);
-
-        expect(yield* Fiber.join(pending)).toEqual(AUTORUN_CONFIG);
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* Fiber.join(pending)).toEqual(AUTORUN_CONFIG);
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
     }),
   );
 
-  it.effect("evicts resources when a document session ends", () =>
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-      });
+  it.effect(
+    "evicts resources when a document session ends",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const document = Option.getOrThrow(test.document(NOTEBOOK_URI));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
 
-      yield* Effect.gen(function* () {
-        const document = ctx.initialDocuments[0];
-        assert(document !== undefined);
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
+      yield* test.vscode.closeNotebook(document);
+      yield* test.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+      const replacement = TestVsCode.createTestNotebookDocument(
+        TestVsCode.Uri.parse(NOTEBOOK_URI),
+      );
+      yield* test.vscode.openNotebook(replacement);
+      yield* Effect.yieldNow;
 
-        yield* ctx.vscode.closeNotebook(document);
-        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
-        const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
-        yield* ctx.vscode.openNotebook(replacement);
-        yield* Effect.yieldNow;
-
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
     }),
   );
 
-  it.effect("ignores a delayed close from a replaced document", () =>
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx({
-        configStore: new Map([[NOTEBOOK_URI, AUTORUN_CONFIG]]),
-      });
+  it.effect(
+    "ignores a delayed close from a replaced document",
+    Effect.fn(function* () {
+      const test = yield* TestNotebookConfiguration.Service;
+      const first = Option.getOrThrow(test.document(NOTEBOOK_URI));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
 
-      yield* Effect.gen(function* () {
-        const first = ctx.initialDocuments[0];
-        assert(first !== undefined);
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
+      yield* test.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
+      const replacement = TestVsCode.createTestNotebookDocument(
+        TestVsCode.Uri.parse(NOTEBOOK_URI),
+      );
+      yield* test.vscode.openNotebook(replacement);
+      yield* Effect.yieldNow;
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
 
-        yield* ctx.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
-        const replacement = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
-        yield* ctx.vscode.openNotebook(replacement);
-        yield* Effect.yieldNow;
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
-
-        yield* ctx.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
-        yield* ctx.vscode.closeNotebook(first);
-        yield* Effect.yieldNow;
-        expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      yield* test.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
+      yield* test.vscode.closeNotebook(first);
+      yield* Effect.yieldNow;
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
     }),
   );
 
-  it.effect("isolates concurrent notebook sessions", () =>
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx({
-        configStore: new Map([
-          [NOTEBOOK_URI_1, AUTORUN_CONFIG],
-          [NOTEBOOK_URI_2, AUTO_RELOAD_CONFIG],
-        ]),
+  it.effect(
+    "isolates concurrent notebook sessions",
+    Effect.fn(function* () {
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI_1)).toEqual(AUTORUN_CONFIG);
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI_2)).toEqual(
+        AUTO_RELOAD_CONFIG,
+      );
+
+      yield* updateConfig(NOTEBOOK_URI_1, {
+        runtime: { on_cell_change: "lazy" },
       });
-
-      yield* Effect.gen(function* () {
-        expect(yield* getConfig(NOTEBOOK_URI_1)).toEqual(AUTORUN_CONFIG);
-        expect(yield* getConfig(NOTEBOOK_URI_2)).toEqual(AUTO_RELOAD_CONFIG);
-
-        yield* updateConfig(NOTEBOOK_URI_1, {
-          runtime: { on_cell_change: "lazy" },
-        });
-        expect(yield* getConfig(NOTEBOOK_URI_1)).toEqual(LAZY_CONFIG);
-        expect(yield* getConfig(NOTEBOOK_URI_2)).toEqual(AUTO_RELOAD_CONFIG);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI_1)).toEqual(LAZY_CONFIG);
+      Vitest.expect(yield* getConfig(NOTEBOOK_URI_2)).toEqual(
+        AUTO_RELOAD_CONFIG,
+      );
     }),
   );
 });

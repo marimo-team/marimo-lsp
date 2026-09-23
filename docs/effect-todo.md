@@ -295,7 +295,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 - [x] `config/__tests__/Config.test.ts` — keeps the no-VS-Code fallback layer
   local to the test that exercises it.
-- [ ] `config/__tests__/NotebookConfiguration.test.ts`
+- [x] `config/__tests__/NotebookConfiguration.test.ts`
 
 #### Features
 
