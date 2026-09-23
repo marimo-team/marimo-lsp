@@ -336,7 +336,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 #### Language servers
 
-- [ ] `lsp/__tests__/MarimoClient.test.ts`
+- [x] `lsp/__tests__/MarimoClient.test.ts`
 - [x] `lsp/__tests__/TyLanguageServer.test.ts`
 - [x] `lsp/__tests__/client.integration.test.ts`
 - [x] `lsp/__tests__/clientCleanup.test.ts` — keeps per-test logger layers local.

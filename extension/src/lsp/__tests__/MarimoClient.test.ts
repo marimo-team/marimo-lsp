@@ -3,8 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
-import { Effect, Exit, Option, Ref, Stream } from "effect";
-import { vi } from "vite-plus/test";
+import { Effect, Exit, Fiber, Option, Ref, Stream } from "effect";
 
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -13,6 +12,7 @@ import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
 import * as MarimoClient from "../MarimoClient.ts";
 import * as TestCustomLspFailure from "./TestCustomLspFailure.ts";
+import * as TestMarimoNotifications from "./TestMarimoNotifications.ts";
 
 const notebook = notebookId("notebook-a");
 
@@ -82,13 +82,15 @@ Vitest.describe("custom language-server failures", () => {
 Vitest.it.effect(
   "does not fail scope cleanup when language-client disposal rejects",
   Effect.fn(function* () {
-    const dispose = vi.fn(() =>
-      Promise.reject(new Error("client is startFailed")),
-    );
+    let disposals = 0;
+    const dispose = () => {
+      disposals += 1;
+      return Promise.reject(new Error("client is startFailed"));
+    };
 
     yield* MarimoClient.disposeLanguageClient({ dispose });
 
-    Vitest.expect(dispose).toHaveBeenCalledOnce();
+    Vitest.expect(disposals).toBe(1);
   }),
 );
 
@@ -230,7 +232,7 @@ Vitest.describe("generated command client", () => {
 });
 
 Vitest.describe("findMarimoLspExecutable", () => {
-  Vitest.it.effect("uses a compatible Python range for the bundled LSP", () =>
+  Vitest.it.live("uses a compatible Python range for the bundled LSP", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -313,7 +315,7 @@ Vitest.describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  Vitest.it.effect("resolves uv only for the Python server variant", () =>
+  Vitest.it.live("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -341,66 +343,91 @@ Vitest.describe("selectMarimoLspExecutable", () => {
   );
 });
 
-Vitest.it.effect(
-  "subscribes to kernel notifications",
-  Effect.fn(function* () {
-    let requestedNotification: string | undefined;
-    const marimo = MarimoClient.makeCommands({
-      send: () => Effect.void,
-      // Stream.suspend defers to subscription time, so the assertion below
-      // still observes that draining `kernelNotifications` evaluated the
-      // transport.
-      kernelNotifications: Stream.suspend(() => {
-        requestedNotification = "marimo/kernelNotification";
-        return Stream.empty;
-      }),
-    });
+Vitest.describe("notification streams", () => {
+  const it = EffectTest.make(TestMarimoNotifications.layer);
 
-    yield* marimo.kernelNotifications.pipe(Stream.runDrain);
+  it.effect(
+    "subscribes to kernel notifications",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      yield* notifications.drainCommandNotifications;
 
-    Vitest.assert.strictEqual(
-      requestedNotification,
-      "marimo/kernelNotification",
-    );
-  }),
-);
+      Vitest.expect(
+        (yield* notifications.snapshot).commandNotificationsRequested,
+      ).toBe(true);
+    }),
+  );
 
-Vitest.it.effect(
-  "broadcasts kernel notifications without replacing the transport handler",
-  Effect.fn(function* () {
-    let registrations = 0;
-    let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* MarimoClient.makeKernelNotificationStream(
-      (handler) => {
-        registrations += 1;
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
+  it.effect(
+    "broadcasts kernel notifications without replacing the transport handler",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const first = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      const second = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      yield* notifications.awaitKernelSubscriptions(2);
 
-    const message = {
-      notebookUri: notebook,
-      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
-      notification: { op: "completed-run", run_id: null },
-    } as const;
-    const [first, second] = yield* Effect.all(
-      [
-        operations.pipe(Stream.take(1), Stream.runHead),
-        operations.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          Vitest.assert.ok(notify);
-          notify(message);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
+      const message = {
+        notebookUri: notebook,
+        sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        notification: { op: "completed-run", run_id: null },
+      } as const;
+      yield* notifications.publishKernel(message);
 
-    Vitest.assert.strictEqual(registrations, 1);
-    Vitest.assert.deepStrictEqual(first, Option.some(message));
-    Vitest.assert.deepStrictEqual(second, Option.some(message));
-  }),
-);
+      Vitest.expect((yield* notifications.snapshot).kernelRegistrations).toBe(
+        1,
+      );
+      Vitest.expect(yield* Fiber.join(first)).toEqual(Option.some(message));
+      Vitest.expect(yield* Fiber.join(second)).toEqual(Option.some(message));
+    }),
+  );
+
+  it.effect(
+    "decodes document analysis on its own channel",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const received = yield* notifications.takeDocumentAnalysis.pipe(
+        Effect.forkChild,
+      );
+      yield* notifications.awaitDocumentSubscriptions(1);
+      const snapshot: DocumentAnalysis = {
+        notebookUri: notebook,
+        analysis: { op: "variables", variables: [] },
+      };
+
+      yield* notifications.publishDocumentAnalysis({
+        notebookUri: notebook,
+        analysis: { op: "datasets" },
+      });
+      yield* notifications.publishDocumentAnalysis(snapshot);
+
+      Vitest.expect(yield* Fiber.join(received)).toEqual(Option.some(snapshot));
+    }),
+  );
+
+  it.effect(
+    "requires a kernel session ID even for kernel variable snapshots",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const received = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      yield* notifications.awaitKernelSubscriptions(1);
+      const kernelSnapshot: KernelNotification = {
+        notebookUri: notebook,
+        sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        notification: { op: "variables", variables: [] },
+      };
+
+      yield* notifications.publishKernel({
+        ...kernelSnapshot,
+        sessionId: undefined,
+      });
+      yield* notifications.publishKernel(kernelSnapshot);
+
+      Vitest.expect(yield* Fiber.join(received)).toEqual(
+        Option.some(kernelSnapshot),
+      );
+    }),
+  );
+});
 
 Vitest.it.effect(
   "disposes the transport notification handler with its scope",
@@ -416,70 +443,5 @@ Vitest.it.effect(
     );
 
     Vitest.expect(disposals).toBe(1);
-  }),
-);
-
-Vitest.it.effect(
-  "decodes document analysis on its own channel",
-  Effect.fn(function* () {
-    let notify: ((message: unknown) => void) | undefined;
-    const analyses = yield* MarimoClient.makeDocumentAnalysisStream(
-      (handler) => {
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
-    const snapshot: DocumentAnalysis = {
-      notebookUri: notebook,
-      analysis: { op: "variables", variables: [] },
-    };
-
-    const [received] = yield* Effect.all(
-      [
-        analyses.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          Vitest.assert.ok(notify);
-          notify({ notebookUri: notebook, analysis: { op: "datasets" } });
-          notify(snapshot);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
-
-    Vitest.assert.deepStrictEqual(received, Option.some(snapshot));
-  }),
-);
-
-Vitest.it.effect(
-  "requires a kernel session ID even for kernel variable snapshots",
-  Effect.fn(function* () {
-    let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* MarimoClient.makeKernelNotificationStream(
-      (handler) => {
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
-    const kernelSnapshot: KernelNotification = {
-      notebookUri: notebook,
-      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
-      notification: { op: "variables", variables: [] },
-    };
-
-    const [received] = yield* Effect.all(
-      [
-        operations.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          Vitest.assert.ok(notify);
-          notify({ ...kernelSnapshot, sessionId: undefined });
-          notify(kernelSnapshot);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
-
-    Vitest.assert.deepStrictEqual(received, Option.some(kernelSnapshot));
   }),
 );
