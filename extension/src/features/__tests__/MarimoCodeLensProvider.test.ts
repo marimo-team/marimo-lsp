@@ -1,10 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import {
-  createTestTextDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as MarimoCodeLensProvider from "../MarimoCodeLensProvider.ts";
 
 // ============================================================================
@@ -94,29 +92,22 @@ describe("findAppLine", () => {
 // ============================================================================
 
 describe("MarimoCodeLensProvider.layer", () => {
-  const withTestCtx = Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
-    const layer = Layer.empty.pipe(
+  const effectIt = EffectTest.make(
+    Layer.empty.pipe(
       Layer.provideMerge(MarimoCodeLensProvider.layer),
-      Layer.provide(vscode.layer),
-    );
-    return { vscode, layer };
-  });
+      Layer.provide(TestVsCode.layer),
+    ),
+  );
 
-  it.effect(
-    "registers CodeLens provider successfully",
-    Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-      yield* Effect.provide(Effect.void, ctx.layer);
+  effectIt.effect("registers CodeLens provider successfully", () =>
+    Effect.sync(() => {
       // If we get here without errors, the provider was registered successfully
       expect(true).toBe(true);
     }),
   );
 
-  it.effect(
-    "happy path: provides CodeLens for valid marimo file",
-    Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+  effectIt.effect("happy path: provides CodeLens for valid marimo file", () =>
+    Effect.sync(() => {
       const pythonCode = `import marimo
 
 app = marimo.App()
@@ -125,14 +116,11 @@ app = marimo.App()
 def _():
     return
 `;
-      const _document = createTestTextDocument(
+      const _document = TestVsCode.createTestTextDocument(
         "/test/notebook.py",
         "python",
         pythonCode,
       );
-
-      yield* Effect.provide(Effect.void, ctx.layer);
-
       // The provider is registered and will be called by VSCode
       // We verify the layer builds and the detection logic works
       expect(MarimoCodeLensProvider.isAppText(pythonCode)).toBe(true);

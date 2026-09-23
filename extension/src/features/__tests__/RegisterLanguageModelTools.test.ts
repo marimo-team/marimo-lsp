@@ -1,12 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { SCRATCH_CELL_ID } from "../../constants.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import type { CellOperationNotification } from "../../types.ts";
 import * as RegisterLanguageModelTools from "../RegisterLanguageModelTools.ts";
+
+const effectIt = EffectTest.make(TestVsCode.layer);
 
 const makeOp = (
   console: CellOperationNotification["console"],
@@ -63,25 +66,21 @@ describe("scratchpadResultText", () => {
       timestamp: 0,
     }) as const;
 
-  it.effect(
+  effectIt.effect(
     "renders the scratch cell's own value, not a cascade cell's",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.make({});
-
-      const text = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        return RegisterLanguageModelTools.scratchpadResultText(
-          [
-            scratchOp([out("stdout", "scratch-stdout")], rendered("SCRATCH")),
-            {
-              ...makeOp([out("stdout", "cascade-stdout")]),
-              status: "idle",
-              output: rendered("CASCADE"),
-            },
-          ],
-          code,
-        );
-      }).pipe(Effect.provide(vscode.layer));
+      const code = yield* VsCode.Service;
+      const text = RegisterLanguageModelTools.scratchpadResultText(
+        [
+          scratchOp([out("stdout", "scratch-stdout")], rendered("SCRATCH")),
+          {
+            ...makeOp([out("stdout", "cascade-stdout")]),
+            status: "idle",
+            output: rendered("CASCADE"),
+          },
+        ],
+        code,
+      );
 
       // The scratch cell gives its rendered value and its console.
       expect(text).toContain("SCRATCH");

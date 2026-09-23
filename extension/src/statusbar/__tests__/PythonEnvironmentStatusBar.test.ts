@@ -1,8 +1,9 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref } from "effect";
+import { expect } from "@effect/vitest";
+import { Context, Effect, Layer, Option, Ref } from "effect";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as PythonEnvironmentStatusBar from "../PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../StatusBar.ts";
 
@@ -15,123 +16,112 @@ import * as StatusBar from "../StatusBar.ts";
  * - "onPythonRelated" (default): We show when marimo notebook is active
  */
 
-const withTestCtx = Effect.gen(function* () {
-  const vscode = yield* TestVsCode.make();
-  const pythonExt = yield* TestPythonExtension.make([
-    TestPythonExtension.makeGlobalEnv("/usr/bin/python3"),
-  ]);
+interface TestStatusBarInterface {
+  readonly visible: Effect.Effect<boolean>;
+}
 
-  const visible = yield* Ref.make(false);
-  const statusBarLayer = Layer.succeed(StatusBar.Service, {
-    createSimpleStatusBarItem() {
-      return Effect.die("Not implemented in test");
-    },
-    createStatusBarItem: () =>
-      Effect.succeed({
-        setText: () => Effect.void,
-        setTooltip: () => Effect.void,
-        setColor: () => Effect.void,
-        setBackgroundColor: () => Effect.void,
-        setCommand: () => Effect.void,
-        show: Ref.set(visible, true),
-        hide: Ref.set(visible, false),
-      }),
-  });
+class TestStatusBar extends Context.Service<
+  TestStatusBar,
+  TestStatusBarInterface
+>()("@marimo/test/StatusBar") {}
 
-  return {
-    vscode,
-    statusBarVisible: visible,
-    layer: PythonEnvironmentStatusBar.layer.pipe(
-      Layer.provide(vscode.layer),
-      Layer.provide(pythonExt.layer),
-      Layer.provide(statusBarLayer),
+const statusBarLayer = Layer.unwrap(
+  Ref.make(false).pipe(
+    Effect.map((visible) =>
+      Layer.merge(
+        Layer.mock(StatusBar.Service, {
+          createStatusBarItem: () =>
+            Effect.succeed({
+              setText: () => Effect.void,
+              setTooltip: () => Effect.void,
+              setColor: () => Effect.void,
+              setBackgroundColor: () => Effect.void,
+              setCommand: () => Effect.void,
+              show: Ref.set(visible, true),
+              hide: Ref.set(visible, false),
+            }),
+        }),
+        Layer.succeed(TestStatusBar, { visible: Ref.get(visible) }),
+      ),
     ),
-  };
-});
+  ),
+);
+
+const it = EffectTest.make(
+  Layer.empty.pipe(
+    Layer.provideMerge(PythonEnvironmentStatusBar.layer),
+    Layer.provideMerge(statusBarLayer),
+    Layer.provide(
+      TestPythonExtension.layerWith([
+        TestPythonExtension.makeGlobalEnv("/usr/bin/python3"),
+      ]),
+    ),
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
 it.effect(
   "should show status bar when marimo notebook is active",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx;
-    yield* Effect.gen(function* () {
-      const marimoEditor = TestVsCode.makeNotebookEditor(
-        "/test/notebook_mo.py",
-      );
-      yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
-      yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
+    const vscode = yield* TestVsCode.Service;
+    const statusBar = yield* TestStatusBar;
+    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    yield* vscode.openNotebook(marimoEditor.notebook);
+    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* Effect.yieldNow;
-
-      const isVisible = yield* Ref.get(ctx.statusBarVisible);
-      expect(isVisible).toBe(true);
-    }).pipe(Effect.provide(ctx.layer));
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(true);
   }),
 );
 
 it.effect(
   "should hide status bar when Jupyter notebook becomes active",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx;
-    yield* Effect.gen(function* () {
-      // Start with marimo notebook active
-      const marimoEditor = TestVsCode.makeNotebookEditor(
-        "/test/notebook_mo.py",
-      );
-      yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
-      yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
+    const vscode = yield* TestVsCode.Service;
+    const statusBar = yield* TestStatusBar;
+    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    yield* vscode.openNotebook(marimoEditor.notebook);
+    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* Effect.yieldNow;
-      expect(yield* Ref.get(ctx.statusBarVisible)).toBe(true);
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(true);
 
-      // Switch to Jupyter notebook
-      const jupyterEditor = TestVsCode.makeNotebookEditor(
-        "/test/notebook.ipynb",
-        {
-          notebookType: "jupyter-notebook",
-        },
-      );
-      yield* ctx.vscode.addNotebookDocument(jupyterEditor.notebook);
-      yield* ctx.vscode.setActiveNotebookEditor(Option.some(jupyterEditor));
+    const jupyterEditor = TestVsCode.makeNotebookEditor(
+      "/test/notebook.ipynb",
+      { notebookType: "jupyter-notebook" },
+    );
+    yield* vscode.openNotebook(jupyterEditor.notebook);
+    yield* vscode.setActiveNotebookEditor(Option.some(jupyterEditor));
 
-      yield* Effect.yieldNow;
-      expect(yield* Ref.get(ctx.statusBarVisible)).toBe(false);
-    }).pipe(Effect.provide(ctx.layer));
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(false);
   }),
 );
 
 it.effect(
   "should hide status bar when no notebook is active",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx;
-    yield* Effect.gen(function* () {
-      // Start with marimo notebook active
-      const marimoEditor = TestVsCode.makeNotebookEditor(
-        "/test/notebook_mo.py",
-      );
-      yield* ctx.vscode.addNotebookDocument(marimoEditor.notebook);
-      yield* ctx.vscode.setActiveNotebookEditor(Option.some(marimoEditor));
+    const vscode = yield* TestVsCode.Service;
+    const statusBar = yield* TestStatusBar;
+    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    yield* vscode.openNotebook(marimoEditor.notebook);
+    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
-      yield* Effect.yieldNow;
-      expect(yield* Ref.get(ctx.statusBarVisible)).toBe(true);
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(true);
 
-      // Switch to no active notebook (e.g., user opens a text file)
-      yield* ctx.vscode.setActiveNotebookEditor(Option.none());
+    yield* vscode.setActiveNotebookEditor(Option.none());
 
-      yield* Effect.yieldNow;
-      expect(yield* Ref.get(ctx.statusBarVisible)).toBe(false);
-    }).pipe(Effect.provide(ctx.layer));
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(false);
   }),
 );
 
 it.effect(
   "should hide status bar initially when no marimo notebook is open",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx;
-    yield* Effect.gen(function* () {
-      yield* Effect.yieldNow;
-
-      const isVisible = yield* Ref.get(ctx.statusBarVisible);
-      expect(isVisible).toBe(false);
-    }).pipe(Effect.provide(ctx.layer));
+    const statusBar = yield* TestStatusBar;
+    yield* Effect.yieldNow;
+    expect(yield* statusBar.visible).toBe(false);
   }),
 );

@@ -1,13 +1,9 @@
-import { expect, it } from "@effect/vitest";
+import { assert, expect } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  createNotebookCell,
-  createNotebookUri,
-  createTestNotebookDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
@@ -16,20 +12,18 @@ import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import * as CellMetadataBindings from "../CellMetadataBindings.ts";
 
-const withTestCtx = Effect.gen(function* () {
-  const vscode = yield* TestVsCode.make();
-  const layer = Layer.empty.pipe(
+const it = EffectTest.make(
+  Layer.empty.pipe(
     Layer.provideMerge(CellMetadataBindings.layer),
     Layer.provide(CellMetadataUIBinding.layer),
     Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provide(makeTestMarimoClient()),
     Layer.provide(Constants.defaultLayer),
-    Layer.provide(vscode.layer),
-  );
-  return { vscode, layer };
-});
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
-const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
 
 // Mock cell factory
 function createMockCell(
@@ -37,8 +31,8 @@ function createMockCell(
   languageId: string = "python",
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  return createNotebookCell(
-    createTestNotebookDocument(uri),
+  return TestVsCode.createNotebookCell(
+    TestVsCode.createTestNotebookDocument(uri),
     {
       kind: 1, // Code
       value: "SELECT * FROM table",
@@ -50,87 +44,71 @@ function createMockCell(
 }
 
 it.effect("should register SQL dataframeName binding", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx;
-      yield* Effect.gen(function* () {
-        const providers =
-          yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        expect(providers.length).toBeGreaterThan(0);
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  ),
+  Effect.gen(function* () {
+    const vscode = yield* TestVsCode.Service;
+    const providers = yield* vscode.statusBarProviders;
+    expect(providers.length).toBeGreaterThan(0);
+  }),
 );
 
 it.effect("should only show SQL dataframeName binding for SQL cells", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx;
-      yield* Effect.gen(function* () {
-        const sqlCell = createMockCell(notebookUri, "sql", {});
-        const pythonCell = createMockCell(notebookUri, "python", {});
+  Effect.gen(function* () {
+    const vscode = yield* TestVsCode.Service;
+    const sqlCell = createMockCell(notebookUri, "sql", {});
+    const pythonCell = createMockCell(notebookUri, "python", {});
+    const providers = yield* vscode.statusBarProviders;
+    const provider = providers[0];
+    assert(provider !== undefined);
 
-        const providers =
-          yield* ctx.vscode.getRegisteredStatusBarItemProviders();
+    const sqlItems = yield* provider.provideCellStatusBarItems(sqlCell);
+    expect(sqlItems.length).toBeGreaterThan(0);
 
-        const sqlItems = yield* providers[0].provideCellStatusBarItems(sqlCell);
-        expect(sqlItems.length).toBeGreaterThan(0);
-
-        const pythonItems =
-          yield* providers[0].provideCellStatusBarItems(pythonCell);
-        expect(pythonItems.length).toBe(0);
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  ),
+    const pythonItems = yield* provider.provideCellStatusBarItems(pythonCell);
+    expect(pythonItems.length).toBe(0);
+  }),
 );
 
 it.effect("should display dataframeName from SQL metadata", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx;
-      yield* Effect.gen(function* () {
-        const cell = createMockCell(notebookUri, "sql", {
-          marimo: {
-            sourceProjections: {
-              markdown: null,
-              sql: {
-                dataframeName: "my_results",
-                quotePrefix: "",
-                commentLines: [],
-                showOutput: true,
-                engine: CellMetadataBindings.defaultSqlEngine,
-              },
-            },
+  Effect.gen(function* () {
+    const vscode = yield* TestVsCode.Service;
+    const cell = createMockCell(notebookUri, "sql", {
+      marimo: {
+        sourceProjections: {
+          markdown: null,
+          sql: {
+            dataframeName: "my_results",
+            quotePrefix: "",
+            commentLines: [],
+            showOutput: true,
+            engine: CellMetadataBindings.defaultSqlEngine,
           },
-        });
+        },
+      },
+    });
 
-        const providers =
-          yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const items = yield* providers[0].provideCellStatusBarItems(cell);
+    const providers = yield* vscode.statusBarProviders;
+    const provider = providers[0];
+    assert(provider !== undefined);
+    const items = yield* provider.provideCellStatusBarItems(cell);
 
-        expect(items.length).toBe(1);
-        expect(items[0]?.text).toContain("$(table)");
-        expect(items[0]?.text).toContain("my_results");
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  ),
+    expect(items.length).toBe(1);
+    expect(items[0]?.text).toContain("$(table)");
+    expect(items[0]?.text).toContain("my_results");
+  }),
 );
 
 it.effect("should show 'unnamed' for SQL cells without dataframeName", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const ctx = yield* withTestCtx;
-      yield* Effect.gen(function* () {
-        const cell = createMockCell(notebookUri, "sql", {});
+  Effect.gen(function* () {
+    const vscode = yield* TestVsCode.Service;
+    const cell = createMockCell(notebookUri, "sql", {});
 
-        const providers =
-          yield* ctx.vscode.getRegisteredStatusBarItemProviders();
-        const items = yield* providers[0].provideCellStatusBarItems(cell);
+    const providers = yield* vscode.statusBarProviders;
+    const provider = providers[0];
+    assert(provider !== undefined);
+    const items = yield* provider.provideCellStatusBarItems(cell);
 
-        expect(items.length).toBe(1);
-        expect(items[0]?.text).toContain("$(table)");
-        expect(items[0]?.text).toContain("unnamed");
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  ),
+    expect(items.length).toBe(1);
+    expect(items[0]?.text).toContain("$(table)");
+    expect(items[0]?.text).toContain("unnamed");
+  }),
 );

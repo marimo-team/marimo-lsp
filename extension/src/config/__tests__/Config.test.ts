@@ -1,23 +1,23 @@
 import { assert, expect, it } from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as Config from "../../config/Config.ts";
 
 const configLayer = Layer.empty.pipe(
   Layer.provideMerge(Config.layer),
   Layer.provide(TestVsCode.layer),
 );
+const configIt = EffectTest.make(configLayer);
 
-it.layer(configLayer)("Config", (it) => {
-  it.effect(
-    "should build",
-    Effect.fn(function* () {
-      const api = yield* Config.Service;
-      expect(api).toBeDefined();
-    }),
-  );
-});
+configIt.effect(
+  "should build",
+  Effect.fn(function* () {
+    const api = yield* Config.Service;
+    expect(api).toBeDefined();
+  }),
+);
 
 it.effect(
   "defaults to the WASM language server without the VS Code API",
