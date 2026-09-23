@@ -340,7 +340,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `lsp/__tests__/client.integration.test.ts`
 - [x] `lsp/__tests__/clientCleanup.test.ts` — keeps per-test logger layers local.
 - [x] `lsp/__tests__/connect.test.ts`
-- [ ] `lsp/__tests__/converters.test.ts`
+- [x] `lsp/__tests__/converters.test.ts`
 
 #### Notebook
 
