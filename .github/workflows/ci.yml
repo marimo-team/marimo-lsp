@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  MARIMO_SOURCE_PATH: marimo-lsp/.cache/marimo
   TURBO_TEAM: marimo
 
 jobs:
@@ -38,7 +39,7 @@ jobs:
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
-          path: marimo
+          path: ${{ env.MARIMO_SOURCE_PATH }}
 
       - name: 🔐 Fetch Doppler secrets
         # Skip on PRs from forks: id-token write is downgraded to read, so OIDC fails.
@@ -61,14 +62,14 @@ jobs:
           node-version: 24
           cache: "pnpm"
           cache-dependency-path: |
-            marimo/pnpm-lock.yaml
+            ${{ env.MARIMO_SOURCE_PATH }}/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
 
       - name: Build marimo packages
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: |
-          cd marimo
+          cd "${{ env.MARIMO_SOURCE_PATH }}"
           pnpm install --frozen-lockfile
           pnpm turbo run build --filter="./packages/*"
 
@@ -110,7 +111,7 @@ jobs:
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
-          path: marimo
+          path: ${{ env.MARIMO_SOURCE_PATH }}
 
       - name: 🔐 Fetch Doppler secrets
         # Skip on PRs from forks: id-token write is downgraded to read, so OIDC fails.
@@ -133,14 +134,14 @@ jobs:
           node-version: 24
           cache: "pnpm"
           cache-dependency-path: |
-            marimo/pnpm-lock.yaml
+            ${{ env.MARIMO_SOURCE_PATH }}/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
 
       - name: Build marimo packages
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: |
-          cd marimo
+          cd "${{ env.MARIMO_SOURCE_PATH }}"
           pnpm install --frozen-lockfile
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build

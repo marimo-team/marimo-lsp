@@ -39,6 +39,7 @@ build-backend = "uv_build"
 # compatibility floor we claim to support for user kernels and is bumped
 # manually when we intentionally drop support for an older release.
 minimum-kernel-version = "0.23.3"
+marimo-source = { tag = "0.24.2" }
 
 [tool.ty.src]
 exclude = ["extension/tutorials/**"]

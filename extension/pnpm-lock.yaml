@@ -22,14 +22,14 @@ importers:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.10)
       '@marimo-team/frontend':
-        specifier: link:../../marimo/frontend
-        version: link:../../marimo/frontend
+        specifier: link:../.cache/marimo/frontend
+        version: link:../.cache/marimo/frontend
       '@marimo-team/openapi':
-        specifier: link:../../marimo/packages/openapi
-        version: link:../../marimo/packages/openapi
+        specifier: link:../.cache/marimo/packages/openapi
+        version: link:../.cache/marimo/packages/openapi
       '@marimo-team/smart-cells':
-        specifier: link:../../marimo/packages/smart-cells
-        version: link:../../marimo/packages/smart-cells
+        specifier: link:../.cache/marimo/packages/smart-cells
+        version: link:../.cache/marimo/packages/smart-cells
       '@oxlint/plugins':
         specifier: ^1.77.0
         version: 1.77.0
