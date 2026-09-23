@@ -44,14 +44,14 @@ print(_json.dumps({"port": _sys._marimo_debugpy_port, "tmpdir": _tmpdir}))
 }
 
 /** Resolve the bundled debugpy libs path from the ms-python.debugpy extension. */
-const resolveDebugpyPath = Effect.fn(function* (code: VsCode.Interface) {
+const resolveDebugpyPath = (code: VsCode.Interface) => {
   const ext = code.extensions.getExtension("ms-python.debugpy");
-  if (Option.isNone(ext)) {
-    yield* Effect.logWarning("ms-python.debugpy extension not found");
-    return "";
-  }
-  return NodePath.join(ext.value.extensionPath, "bundled", "libs");
-});
+  return Option.match(ext, {
+    onNone: () => "",
+    onSome: (extension) =>
+      NodePath.join(extension.extensionPath, "bundled", "libs"),
+  });
+};
 
 type DebugpyState = typeof DebugpyState.Type;
 const DebugpyState = Schema.Struct({
@@ -132,7 +132,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
 
-    const debugpyLibsPath = yield* resolveDebugpyPath(code);
+    const debugpyLibsPath = resolveDebugpyPath(code);
 
     // Map from notebookUri -> debug session ID for lifecycle management
     const activeSessions = yield* Ref.make(HashMap.empty<NotebookId, string>());
