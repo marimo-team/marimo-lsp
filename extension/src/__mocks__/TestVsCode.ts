@@ -1623,6 +1623,14 @@ export interface Interface {
   readonly selectQuickPickMany: (
     labels: ReadonlyArray<string>,
   ) => Effect.Effect<void>;
+  readonly selectInformationMessage: (item: string) => Effect.Effect<void>;
+  readonly configurationChange: (
+    event: vscode.ConfigurationChangeEvent,
+  ) => Effect.Effect<void>;
+  readonly awaitExecutions: (
+    predicate: (executions: ReadonlyArray<CommandExecution>) => boolean,
+  ) => Effect.Effect<void>;
+  readonly awaitInformationMessages: (count: number) => Effect.Effect<void>;
   readonly selectNotebookController: (
     controllerId: string,
     notebook: vscode.NotebookDocument,
@@ -1822,6 +1830,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const views = yield* Ref.make(HashSet.empty<string>());
 
     const executions = yield* Ref.make<ReadonlyArray<CommandExecution>>([]);
+    const executionRevision = yield* SubscriptionRef.make(0);
 
     const affinityUpdates = yield* Ref.make<ReadonlyArray<AffinityUpdate>>([]);
     const openedExternalUris = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -1831,8 +1840,12 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const quickPicks = yield* Ref.make<ReadonlyArray<QuickPickRequest>>([]);
     const quickPickResponses = yield* Queue.unbounded<QuickPickResponse>();
     const informationMessages = yield* Ref.make<ReadonlyArray<string>>([]);
+    const informationMessageRevision = yield* SubscriptionRef.make(0);
     const warningMessages = yield* Ref.make<ReadonlyArray<string>>([]);
     const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
+    const informationMessageResponses = yield* Queue.unbounded<string>();
+    const configurationChanges =
+      yield* PubSub.unbounded<vscode.ConfigurationChangeEvent>();
 
     const recordQuickPick = (
       items: ReadonlyArray<QuickPickItem>,
@@ -1912,11 +1925,34 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           options.window?.showInputBox ?? (() => Effect.succeed(Option.none())),
         showInformationMessage:
           options.window?.showInformationMessage ??
-          ((message) =>
+          ((message, options = {}) =>
             Ref.update(informationMessages, (messages) => [
               ...messages,
               message,
-            ]).pipe(Effect.as(Option.none()))),
+            ]).pipe(
+              Effect.andThen(
+                SubscriptionRef.update(
+                  informationMessageRevision,
+                  (revision) => revision + 1,
+                ),
+              ),
+              Effect.andThen(Queue.poll(informationMessageResponses)),
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => Effect.succeed(Option.none()),
+                  onSome: (selected) => {
+                    const item = options.items?.find(
+                      (candidate) => candidate === selected,
+                    );
+                    return item === undefined
+                      ? Effect.die(
+                          `Information-message item not found: ${selected}`,
+                        )
+                      : Effect.succeed(Option.some(item));
+                  },
+                }),
+              ),
+            )),
         showWarningMessage:
           options.window?.showWarningMessage ??
           ((message) =>
@@ -2092,16 +2128,41 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           return Ref.update(executions, (arr) => [
             ...arr,
             { command: "setContext", args: [key, value] },
-          ]);
+          ]).pipe(
+            Effect.andThen(
+              SubscriptionRef.update(
+                executionRevision,
+                (revision) => revision + 1,
+              ),
+            ),
+          );
         },
         execute(command, ...args) {
           return Ref.update(executions, (arr) => [
             ...arr,
             { command: commandId(command), args },
-          ]).pipe(Effect.andThen(decodeCommandResult(command, undefined)));
+          ]).pipe(
+            Effect.andThen(
+              SubscriptionRef.update(
+                executionRevision,
+                (revision) => revision + 1,
+              ),
+            ),
+            Effect.andThen(decodeCommandResult(command, undefined)),
+          );
         },
         executeVSCode(command, ...args) {
-          return Ref.update(executions, (arr) => [...arr, { command, args }]);
+          return Ref.update(executions, (arr) => [
+            ...arr,
+            { command, args },
+          ]).pipe(
+            Effect.andThen(
+              SubscriptionRef.update(
+                executionRevision,
+                (revision) => revision + 1,
+              ),
+            ),
+          );
         },
         bind(command, title, ...args) {
           return {
@@ -2161,7 +2222,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           SubscriptionRef.get(visibleTextEditors),
           (editors) => editors.map((editor) => editor.document),
         ),
-        configurationChanges: Stream.never,
+        configurationChanges: Stream.fromPubSub(configurationChanges),
         getConfiguration() {
           return Effect.succeed({
             get: () => undefined,
@@ -2739,6 +2800,24 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         Queue.offer(
           quickPickResponses,
           QuickPickResponse.Many({ labels: [...labels] }),
+        ),
+      selectInformationMessage: (item) =>
+        Queue.offer(informationMessageResponses, item),
+      configurationChange: (event) =>
+        PubSub.publish(configurationChanges, event).pipe(Effect.asVoid),
+      awaitExecutions: (predicate) =>
+        SubscriptionRef.changes(executionRevision).pipe(
+          Stream.mapEffect(() => Ref.get(executions)),
+          Stream.filter(predicate),
+          Stream.runHead,
+          Effect.asVoid,
+        ),
+      awaitInformationMessages: (count) =>
+        SubscriptionRef.changes(informationMessageRevision).pipe(
+          Stream.mapEffect(() => Ref.get(informationMessages)),
+          Stream.filter((messages) => messages.length >= count),
+          Stream.runHead,
+          Effect.asVoid,
         ),
       selectNotebookController,
       rendererMessaging,

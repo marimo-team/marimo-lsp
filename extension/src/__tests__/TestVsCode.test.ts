@@ -106,14 +106,39 @@ Vitest.describe("TestVsCode", () => {
       const test = yield* TestVsCode.Service;
       const code = yield* VsCode.Service;
 
-      yield* code.window.showInformationMessage("Saved");
+      yield* test.selectInformationMessage("Open");
+      const selected = yield* code.window.showInformationMessage("Saved", {
+        items: ["Dismiss", "Open"],
+      });
       yield* code.window.showWarningMessage("Missing notebook");
       yield* code.window.showErrorMessage("Save failed");
 
+      Vitest.expect(selected).toEqual(Option.some("Open"));
       const snapshot = yield* test.snapshot;
       Vitest.expect(snapshot.informationMessages).toEqual(["Saved"]);
       Vitest.expect(snapshot.warningMessages).toEqual(["Missing notebook"]);
       Vitest.expect(snapshot.errorMessages).toEqual(["Save failed"]);
+    }),
+  );
+
+  it.effect(
+    "publishes configuration changes",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      const received = yield* code.workspace.configurationChanges.pipe(
+        Stream.take(1),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      const event: vscode.ConfigurationChangeEvent = {
+        affectsConfiguration: (section) => section === "marimo.telemetry",
+      };
+
+      yield* Effect.yieldNow;
+      yield* test.configurationChange(event);
+
+      Vitest.expect(yield* Fiber.join(received)).toEqual(Option.some(event));
     }),
   );
 
