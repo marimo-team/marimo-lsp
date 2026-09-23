@@ -143,9 +143,22 @@ narrow adapters.
 ## Testing
 
 - Test observable behavior through the service interface.
-- Use `@effect/vitest` with `it.layer` or `Effect.provide`.
+- Use `it.effect` for tests that use Effect's test services and `it.live` when
+  the behavior intentionally depends on the live clock, filesystem, processes,
+  watchers, or servers.
+- Use `it.layer` when a test group has a stable dependency graph. A layer is
+  shared by every test in that `it.layer` block, including its mutable state and
+  scope. Put stateful layers in a one-test block or provide them inside the test
+  when each test needs a fresh instance.
+- Use `EffectTest.make(layer)` when several tests need the same stateful graph
+  with a fresh layer build and scope for every test. Put fixture observations
+  and named controls on a test service instead of returning the layer, refs,
+  queues, or pub/sub handles to each test.
 - Prefer realistic local or in-memory adapters.
-- Use `Layer.mock` or `Layer.succeed` for test-local stubs.
+- Use `Layer.succeed` when the complete service behavior is intentional. Use
+  `Layer.mock` sparingly when a test exercises only a narrow part of a service
+  and any omitted Effect, Stream, or Channel operation should fail as an
+  unexpected dependency.
 - Export a shared test adapter only when several suites need its behavior or
   inspection controls. Do not require every service to export `testLayer`.
 - Wait for events or deterministic state transitions instead of sleeping.
