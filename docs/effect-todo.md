@@ -358,11 +358,17 @@ recording, or reusable inspection controls are part of the test contract.
 - [ ] `panel/sessions/__tests__/LiveSessions.test.ts`
 - [ ] `panel/variables/__tests__/NotebookVariables.test.ts`
 
+#### Python
+
+- [ ] `python/__tests__/EnvironmentValidator.test.ts`
+- [x] `python/__tests__/Uv.test.ts`
+
 #### Platform
 
 - [x] `platform/__tests__/Api.test.ts`
 - [x] `platform/__tests__/Commands.test.ts` — keeps its captured logger layer
   local to the logging test.
+- [ ] `platform/__tests__/OutputChannel.test.ts`
 - [x] `platform/__tests__/Storage.test.ts`
 
 #### Status and telemetry
