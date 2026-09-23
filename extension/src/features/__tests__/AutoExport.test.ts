@@ -46,11 +46,11 @@ Vitest.describe("AutoExport", () => {
   markdownIt.effect(
     "exports Markdown to an md file",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      yield* fixture.tick;
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      yield* autoExport.tick;
 
-      const snapshot = yield* fixture.snapshot;
+      const snapshot = yield* autoExport.snapshot;
       Vitest.expect(requestKinds(snapshot)).toEqual(["export-markdown"]);
       Vitest.expect(Object.fromEntries(snapshot.writes)).toEqual({
         "file:///test/__marimo__/report.md": "# Report",
@@ -61,11 +61,11 @@ Vitest.describe("AutoExport", () => {
   noRuntimeIt.effect(
     "waits for a live runtime session before creating exports",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      yield* fixture.tick;
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      yield* autoExport.tick;
 
-      Vitest.expect(yield* fixture.snapshot).toEqual({
+      Vitest.expect(yield* autoExport.snapshot).toEqual({
         requests: [],
         directories: [],
         writes: new Map(),
@@ -76,11 +76,11 @@ Vitest.describe("AutoExport", () => {
   it.effect(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      yield* fixture.tick;
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      yield* autoExport.tick;
 
-      const first = yield* fixture.snapshot;
+      const first = yield* autoExport.snapshot;
       Vitest.expect(requestKinds(first)).toEqual([
         "export-html",
         "export-ipynb",
@@ -91,12 +91,12 @@ Vitest.describe("AutoExport", () => {
       });
       Vitest.expect(first.directories).toEqual(["file:///test/__marimo__"]);
 
-      yield* fixture.tick;
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toHaveLength(2);
+      yield* autoExport.tick;
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toHaveLength(2);
 
-      yield* fixture.completeRun;
-      yield* fixture.tick;
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+      yield* autoExport.completeRun;
+      yield* autoExport.tick;
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
         "export-html",
         "export-ipynb",
         "export-html",
@@ -108,12 +108,12 @@ Vitest.describe("AutoExport", () => {
   it.effect(
     "exports a notebook once when it has multiple visible editors",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      yield* fixture.activate;
-      yield* fixture.tick;
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      yield* autoExport.activate;
+      yield* autoExport.tick;
 
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
         "export-html",
         "export-ipynb",
       ]);
@@ -123,18 +123,18 @@ Vitest.describe("AutoExport", () => {
   noOutputsIt.effect(
     "waits for cell output before exporting HTML",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      yield* fixture.tick;
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      yield* autoExport.tick;
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
         "export-ipynb",
       ]);
 
-      yield* fixture.addOutput;
-      yield* fixture.completeRun;
-      yield* fixture.tick;
+      yield* autoExport.addOutput;
+      yield* autoExport.completeRun;
+      yield* autoExport.tick;
 
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
         "export-ipynb",
         "export-html",
         "export-ipynb",
@@ -145,17 +145,17 @@ Vitest.describe("AutoExport", () => {
   blockedHtmlIt.effect(
     "does not credit an in-flight export to a reopened notebook",
     Effect.fn(function* () {
-      const fixture = yield* TestAutoExport.Service;
-      yield* fixture.activate;
-      const firstTick = yield* Effect.forkChild(fixture.tick);
-      yield* fixture.htmlExportStarted;
+      const autoExport = yield* TestAutoExport.Service;
+      yield* autoExport.activate;
+      const firstTick = yield* Effect.forkChild(autoExport.tick);
+      yield* autoExport.htmlExportStarted;
 
-      yield* fixture.reopen;
-      yield* fixture.releaseHtmlExport;
+      yield* autoExport.reopen;
+      yield* autoExport.releaseHtmlExport;
       yield* Fiber.join(firstTick);
-      yield* fixture.tick;
+      yield* autoExport.tick;
 
-      Vitest.expect(requestKinds(yield* fixture.snapshot)).toEqual([
+      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
         "export-html",
         "export-ipynb",
         "export-html",

@@ -26,13 +26,13 @@ Vitest.describe("custom language-server failures", () => {
   it.effect(
     "prompts once and opens the selected recovery surface",
     Effect.fn(function* () {
-      const fixture = yield* TestCustomLspFailure.Service;
+      const recovery = yield* TestCustomLspFailure.Service;
 
-      yield* Effect.all([fixture.notify, fixture.notify], {
+      yield* Effect.all([recovery.notify, recovery.notify], {
         concurrency: "unbounded",
       });
 
-      const snapshot = yield* fixture.snapshot;
+      const snapshot = yield* recovery.snapshot;
       Vitest.expect(snapshot.prompts).toHaveLength(1);
       Vitest.expect(snapshot.prompts[0]).toContain(
         "Custom language servers are for extension development",
@@ -53,10 +53,10 @@ Vitest.describe("custom language-server failures", () => {
     it.effect(
       "opens logs when selected",
       Effect.fn(function* () {
-        const fixture = yield* TestCustomLspFailure.Service;
-        yield* fixture.notify;
+        const recovery = yield* TestCustomLspFailure.Service;
+        yield* recovery.notify;
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* recovery.snapshot;
         Vitest.expect(snapshot.logsOpened).toBe(1);
         Vitest.expect(snapshot.executions).toEqual([]);
       }),
@@ -71,9 +71,9 @@ Vitest.describe("custom language-server failures", () => {
     it.effect(
       "does not prompt for bundled language servers",
       Effect.fn(function* () {
-        const fixture = yield* TestCustomLspFailure.Service;
-        yield* fixture.notify;
-        Vitest.expect((yield* fixture.snapshot).prompts).toEqual([]);
+        const recovery = yield* TestCustomLspFailure.Service;
+        yield* recovery.notify;
+        Vitest.expect((yield* recovery.snapshot).prompts).toEqual([]);
       }),
     );
   });

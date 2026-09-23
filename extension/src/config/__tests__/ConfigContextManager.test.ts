@@ -10,10 +10,10 @@ Vitest.describe("ConfigContextManager", () => {
   it.effect(
     "mirrors the active session configuration into context keys",
     Effect.fn(function* () {
-      const fixture = yield* TestConfigContextManager.Service;
-      yield* fixture.defaultsWritten;
+      const context = yield* TestConfigContextManager.Service;
+      yield* context.defaultsWritten;
 
-      const initial = yield* fixture.writes;
+      const initial = yield* context.writes;
       Vitest.expect(initial).toContainEqual({
         key: "marimo.config.runtime.on_cell_change",
         value: "autorun",
@@ -23,9 +23,9 @@ Vitest.describe("ConfigContextManager", () => {
         value: "off",
       });
 
-      yield* fixture.activateFirst;
-      yield* fixture.firstConfigurationWritten;
-      const updated = yield* fixture.writes;
+      yield* context.activateFirst;
+      yield* context.firstConfigurationWritten;
+      const updated = yield* context.writes;
       Vitest.expect(updated).toContainEqual({
         key: "marimo.config.runtime.on_cell_change",
         value: "lazy",
@@ -47,19 +47,19 @@ Vitest.describe("ConfigContextManager", () => {
     it.effect(
       "keeps context writes ordered when the active session changes",
       Effect.fn(function* () {
-        const fixture = yield* TestConfigContextManager.Service;
-        yield* fixture.defaultsWritten;
-        yield* fixture.activateFirst;
-        yield* fixture.firstWriteStarted;
+        const context = yield* TestConfigContextManager.Service;
+        yield* context.defaultsWritten;
+        yield* context.activateFirst;
+        yield* context.firstWriteStarted;
 
-        yield* fixture.activateSecond;
-        yield* fixture.secondConfigurationLoaded;
+        yield* context.activateSecond;
+        yield* context.secondConfigurationLoaded;
         yield* Effect.yieldNow;
-        yield* fixture.releaseFirstWrite;
-        yield* fixture.secondConfigurationWritten;
+        yield* context.releaseFirstWrite;
+        yield* context.secondConfigurationWritten;
 
         const latest = new Map(
-          (yield* fixture.writes).map(({ key, value }) => [key, value]),
+          (yield* context.writes).map(({ key, value }) => [key, value]),
         );
         Vitest.expect(latest.get("marimo.config.runtime.on_cell_change")).toBe(
           "autorun",

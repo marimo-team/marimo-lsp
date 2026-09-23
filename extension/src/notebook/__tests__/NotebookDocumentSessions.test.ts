@@ -12,12 +12,12 @@ const initiallyClosedIt = EffectTest.make(
 it.effect(
   "ends the old session when a document is replaced at the same URI",
   Effect.fn(function* () {
-    const fixture = yield* TestNotebookDocumentSessions.Service;
-    const firstSession = yield* fixture.current;
+    const sessions = yield* TestNotebookDocumentSessions.Service;
+    const firstSession = yield* sessions.current;
     Vitest.expect(
       Option.exists(
         firstSession,
-        (session) => session.document === fixture.first,
+        (session) => session.document === sessions.first,
       ),
     ).toBe(true);
     if (Option.isNone(firstSession)) return;
@@ -26,24 +26,24 @@ it.effect(
     yield* Effect.addFinalizer(() => firstEnded.open).pipe(
       Scope.provide(firstSession.value.scope),
     );
-    yield* fixture.openReplacement;
+    yield* sessions.openReplacement;
     yield* firstEnded.await;
 
-    const replacementSession = yield* fixture.current;
+    const replacementSession = yield* sessions.current;
     Vitest.expect(
       Option.exists(
         replacementSession,
-        (session) => session.document === fixture.replacement,
+        (session) => session.document === sessions.replacement,
       ),
     ).toBe(true);
     if (Option.isNone(replacementSession)) return;
     Vitest.expect(replacementSession.value).not.toBe(firstSession.value);
 
-    yield* fixture.closeFirst;
+    yield* sessions.closeFirst;
     yield* Effect.yieldNow;
     Vitest.expect(
       Option.exists(
-        yield* fixture.current,
+        yield* sessions.current,
         (session) => session === replacementSession.value,
       ),
     ).toBe(true);
@@ -52,25 +52,25 @@ it.effect(
     yield* Effect.addFinalizer(() => replacementEnded.open).pipe(
       Scope.provide(replacementSession.value.scope),
     );
-    yield* fixture.closeReplacement;
+    yield* sessions.closeReplacement;
     yield* replacementEnded.await;
-    Vitest.expect(Option.isNone(yield* fixture.current)).toBe(true);
+    Vitest.expect(Option.isNone(yield* sessions.current)).toBe(true);
   }),
 );
 
 initiallyClosedIt.effect(
   "ignores a replayed open for a document that already closed",
   Effect.fn(function* () {
-    const fixture = yield* TestNotebookDocumentSessions.Service;
-    yield* fixture.replayClosedFirst;
-    Vitest.expect(Option.isNone(yield* fixture.current)).toBe(true);
+    const sessions = yield* TestNotebookDocumentSessions.Service;
+    yield* sessions.replayClosedFirst;
+    Vitest.expect(Option.isNone(yield* sessions.current)).toBe(true);
 
-    yield* fixture.openReplacement;
+    yield* sessions.openReplacement;
     yield* Effect.yieldNow;
     Vitest.expect(
       Option.exists(
-        yield* fixture.current,
-        (session) => session.document === fixture.replacement,
+        yield* sessions.current,
+        (session) => session.document === sessions.replacement,
       ),
     ).toBe(true);
   }),
@@ -79,8 +79,8 @@ initiallyClosedIt.effect(
 it.effect(
   "a document session owns scoped work and finalizers",
   Effect.fn(function* () {
-    const fixture = yield* TestNotebookDocumentSessions.Service;
-    const session = yield* fixture.current;
+    const sessions = yield* TestNotebookDocumentSessions.Service;
+    const session = yield* sessions.current;
     Vitest.expect(Option.isSome(session)).toBe(true);
     if (Option.isNone(session)) return;
 
@@ -102,7 +102,7 @@ it.effect(
     );
     yield* backgroundStarted.await;
 
-    yield* fixture.closeFirst;
+    yield* sessions.closeFirst;
     yield* backgroundStopped.await;
     yield* finalized.await;
 
@@ -118,24 +118,26 @@ it.effect(
 it.effect(
   "projects the active session across document replacement and close",
   Effect.fn(function* () {
-    const fixture = yield* TestNotebookDocumentSessions.Service;
-    const firstSession = yield* fixture.current;
+    const sessions = yield* TestNotebookDocumentSessions.Service;
+    const firstSession = yield* sessions.current;
     Vitest.expect(Option.isSome(firstSession)).toBe(true);
     if (Option.isNone(firstSession)) return;
 
-    yield* fixture.activateFirst;
-    yield* fixture.awaitActive(firstSession.value.id);
+    yield* sessions.activateFirst;
+    yield* sessions.awaitActive(firstSession.value.id);
 
-    yield* fixture.openReplacement;
+    yield* sessions.openReplacement;
     yield* Effect.yieldNow;
-    const replacementSession = yield* fixture.forDocument(fixture.replacement);
+    const replacementSession = yield* sessions.forDocument(
+      sessions.replacement,
+    );
     Vitest.expect(Option.isSome(replacementSession)).toBe(true);
     if (Option.isNone(replacementSession)) return;
 
-    yield* fixture.activateReplacement;
-    yield* fixture.awaitActive(replacementSession.value.id);
+    yield* sessions.activateReplacement;
+    yield* sessions.awaitActive(replacementSession.value.id);
 
-    yield* fixture.closeReplacement;
-    yield* fixture.awaitActive(null);
+    yield* sessions.closeReplacement;
+    yield* sessions.awaitActive(null);
   }),
 );

@@ -33,22 +33,22 @@ Vitest.describe("LiveSessions", () => {
     it.effect(
       "does not resurrect a closed session when an earlier query returns late",
       Effect.fn(function* () {
-        const fixture = yield* TestLiveSessions.Service;
+        const sessions = yield* TestLiveSessions.Service;
         const live = yield* LiveSessions.Service;
         const refresh = yield* live.refresh.pipe(Effect.forkChild);
-        yield* fixture.requestStarted;
+        yield* sessions.requestStarted;
         const closed = yield* live.changes.pipe(
           Stream.filter((items) => items.length === 0),
           Stream.runHead,
           Effect.forkChild,
         );
-        yield* fixture.publish({
+        yield* sessions.publish({
           ...TestLiveSessions.SNAPSHOT,
           revision: 2,
           sessions: [],
         });
         yield* Fiber.join(closed);
-        yield* fixture.releaseRequest;
+        yield* sessions.releaseRequest;
 
         Vitest.expect(yield* Fiber.join(refresh)).toEqual([]);
         Vitest.expect(yield* live.get).toEqual([]);
@@ -64,12 +64,12 @@ Vitest.describe("LiveSessions", () => {
     it.effect(
       "keeps restarting as a view overlay and shows the latest status when restart finishes",
       Effect.fn(function* () {
-        const fixture = yield* TestLiveSessions.Service;
+        const sessions = yield* TestLiveSessions.Service;
         const live = yield* LiveSessions.Service;
         const restart = yield* live
           .restart(TestLiveSessions.NOTEBOOK_URI)
           .pipe(Effect.forkChild);
-        yield* fixture.requestStarted;
+        yield* sessions.requestStarted;
         yield* live.accept(TestLiveSessions.REPLACEMENT);
 
         Vitest.expect(
@@ -78,7 +78,7 @@ Vitest.describe("LiveSessions", () => {
           sessionId: TestLiveSessions.REPLACEMENT.sessions[0]?.sessionId,
           status: "restarting",
         });
-        yield* fixture.releaseRequest;
+        yield* sessions.releaseRequest;
         yield* Fiber.join(restart);
         Vitest.expect(yield* live.get).toEqual(
           TestLiveSessions.REPLACEMENT.sessions,
@@ -97,12 +97,12 @@ Vitest.describe("LiveSessions", () => {
     it.effect(
       "does not restore a dead session when restart is interrupted",
       Effect.fn(function* () {
-        const fixture = yield* TestLiveSessions.Service;
+        const sessions = yield* TestLiveSessions.Service;
         const live = yield* LiveSessions.Service;
         const restart = yield* live
           .restart(TestLiveSessions.NOTEBOOK_URI)
           .pipe(Effect.forkChild);
-        yield* fixture.requestStarted;
+        yield* sessions.requestStarted;
         yield* live.accept({
           ...TestLiveSessions.SNAPSHOT,
           revision: 2,
@@ -124,7 +124,7 @@ Vitest.describe("LiveSessions", () => {
       "%s applies its response without a follow-up query",
       (method) =>
         Effect.gen(function* () {
-          const fixture = yield* TestLiveSessions.Service;
+          const sessions = yield* TestLiveSessions.Service;
           const live = yield* LiveSessions.Service;
           yield* method === "shutdown"
             ? live.shutdown(TestLiveSessions.NOTEBOOK_URI)
@@ -132,7 +132,7 @@ Vitest.describe("LiveSessions", () => {
 
           Vitest.expect(yield* live.get).toEqual([]);
           Vitest.expect(
-            (yield* fixture.requests).map((request) => request.kind),
+            (yield* sessions.requests).map((request) => request.kind),
           ).toEqual([
             "list-sessions",
             method === "shutdown" ? "close-session" : "shutdown-all-sessions",

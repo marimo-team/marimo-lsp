@@ -95,9 +95,9 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const fixture = yield* TestTopologicalCells.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* fixture.updateVariables(
+      yield* cells.updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -123,9 +123,9 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const fixture = yield* TestTopologicalCells.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* fixture.updateVariables(
+      yield* cells.updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -178,9 +178,9 @@ Vitest.describe("getTopologicalCells", () => {
       });
       const doc = MarimoNotebookDocument.from(raw);
 
-      const fixture = yield* TestTopologicalCells.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* fixture.updateVariables(
+      yield* cells.updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -205,10 +205,10 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-c", code: "z = 3" },
       ]);
 
-      const fixture = yield* TestTopologicalCells.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
       // Each cell defines its own variable, no cross-cell dependencies
-      yield* fixture.updateVariables(
+      yield* cells.updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: [] },
@@ -239,9 +239,9 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" },
       ]);
 
-      const fixture = yield* TestTopologicalCells.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* fixture.updateVariables(
+      yield* cells.updateVariables(
         doc,
         createMockVariablesOp([
           {

@@ -10,8 +10,8 @@ Vitest.describe("NotebookDependencies", () => {
   it.effect(
     "loads through the controller owned by its notebook session",
     Effect.fn(function* () {
-      const fixture = yield* TestNotebookDependencies.Service;
-      const states = yield* fixture.collect({
+      const dependencies = yield* TestNotebookDependencies.Service;
+      const states = yield* dependencies.collect({
         notebookId: TestNotebookDependencies.OTHER_NOTEBOOK_URI,
       });
 
@@ -19,7 +19,7 @@ Vitest.describe("NotebookDependencies", () => {
         _tag: "Loaded",
         tree: TestNotebookDependencies.TREE,
       });
-      Vitest.expect(yield* fixture.requests).toEqual([
+      Vitest.expect(yield* dependencies.requests).toEqual([
         {
           kind: "get-dependency-tree",
           notebookUri: TestNotebookDependencies.OTHER_NOTEBOOK_URI,
@@ -42,22 +42,22 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "shares one in-flight load between changes subscribers",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
+        const dependencies = yield* TestNotebookDependencies.Service;
         const firstSubscribed = yield* Latch.make();
         const secondSubscribed = yield* Latch.make();
         const subscribers = yield* Effect.all(
           [
-            fixture.collect({ onState: firstSubscribed.open }),
-            fixture.collect({ onState: secondSubscribed.open }),
+            dependencies.collect({ onState: firstSubscribed.open }),
+            dependencies.collect({ onState: secondSubscribed.open }),
           ],
           { concurrency: "unbounded" },
         ).pipe(Effect.forkChild);
         yield* firstSubscribed.await;
         yield* secondSubscribed.await;
-        yield* fixture.requestStarted;
+        yield* dependencies.requestStarted;
 
-        Vitest.expect(yield* fixture.requests).toHaveLength(1);
-        yield* fixture.releaseRequest;
+        Vitest.expect(yield* dependencies.requests).toHaveLength(1);
+        yield* dependencies.releaseRequest;
         const results = yield* Fiber.join(subscribers);
         Vitest.expect(results[0]?.at(-1)).toEqual({
           _tag: "Loaded",
@@ -81,8 +81,8 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "falls back to the flat package list for a Python environment",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
-        const states = yield* fixture.collect();
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const states = yield* dependencies.collect();
 
         Vitest.expect(states.at(-1)).toEqual({
           _tag: "Loaded",
@@ -101,7 +101,7 @@ Vitest.describe("NotebookDependencies", () => {
           },
         });
         Vitest.expect(
-          (yield* fixture.requests).map((request) => request.kind),
+          (yield* dependencies.requests).map((request) => request.kind),
         ).toEqual(["get-dependency-tree", "list-packages"]);
       }),
     );
@@ -117,17 +117,17 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "preserves script-mode failures without using the venv fallback",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
+        const dependencies = yield* TestNotebookDependencies.Service;
         const failure = Schema.decodeUnknownEffect(Schema.Number)("invalid");
         const expectedError = String(yield* Effect.flip(failure));
-        const states = yield* fixture.collect();
+        const states = yield* dependencies.collect();
 
         Vitest.expect(states.at(-1)).toEqual({
           _tag: "Failed",
           error: expectedError,
         });
         Vitest.expect(
-          (yield* fixture.requests).map((request) => request.kind),
+          (yield* dependencies.requests).map((request) => request.kind),
         ).toEqual(["get-dependency-tree"]);
       }),
     );
@@ -143,14 +143,14 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "reports a missing controller without calling the server",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
-        const states = yield* fixture.collect();
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const states = yield* dependencies.collect();
 
         Vitest.expect(states.at(-1)).toEqual({
           _tag: "Failed",
           error: "No kernel selected",
         });
-        Vitest.expect(yield* fixture.requests).toEqual([]);
+        Vitest.expect(yield* dependencies.requests).toEqual([]);
       }),
     );
   });
@@ -165,24 +165,24 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "refreshes a successfully cached dependency tree",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
-        const initial = yield* fixture.collect();
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const initial = yield* dependencies.collect();
         Vitest.expect(initial.at(-1)).toEqual({
           _tag: "Loaded",
           tree: { ...TestNotebookDependencies.TREE, name: "first" },
         });
 
-        Vitest.expect(yield* fixture.current()).toEqual({
+        Vitest.expect(yield* dependencies.current()).toEqual({
           _tag: "Loaded",
           tree: { ...TestNotebookDependencies.TREE, name: "first" },
         });
 
-        yield* fixture.refresh();
-        Vitest.expect(yield* fixture.current()).toEqual({
+        yield* dependencies.refresh();
+        Vitest.expect(yield* dependencies.current()).toEqual({
           _tag: "Loaded",
           tree: { ...TestNotebookDependencies.TREE, name: "refreshed" },
         });
-        Vitest.expect(yield* fixture.requests).toHaveLength(2);
+        Vitest.expect(yield* dependencies.requests).toHaveLength(2);
       }),
     );
   });
@@ -197,15 +197,17 @@ Vitest.describe("NotebookDependencies", () => {
     it.effect(
       "does not publish a load invalidated by refresh",
       Effect.fn(function* () {
-        const fixture = yield* TestNotebookDependencies.Service;
-        const staleRefresh = yield* fixture.refresh().pipe(Effect.forkChild);
-        yield* fixture.requestStarted;
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const staleRefresh = yield* dependencies
+          .refresh()
+          .pipe(Effect.forkChild);
+        yield* dependencies.requestStarted;
 
-        yield* fixture.refresh();
-        yield* fixture.releaseRequest;
+        yield* dependencies.refresh();
+        yield* dependencies.releaseRequest;
         yield* Fiber.join(staleRefresh);
 
-        Vitest.expect(yield* fixture.current()).toEqual({
+        Vitest.expect(yield* dependencies.current()).toEqual({
           _tag: "Loaded",
           tree: { ...TestNotebookDependencies.TREE, name: "newer" },
         });

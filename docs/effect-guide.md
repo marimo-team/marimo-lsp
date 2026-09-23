@@ -151,9 +151,12 @@ narrow adapters.
   scope. Put stateful layers in a one-test block or provide them inside the test
   when each test needs a fresh instance.
 - Use `EffectTest.make(layer)` when several tests need the same stateful graph
-  with a fresh layer build and scope for every test. Put fixture observations
-  and named controls on a test service instead of returning the layer, refs,
+  with a fresh layer build and scope for every test. Put observations and named
+  controls on a test service instead of returning the layer, refs,
   queues, or pub/sub handles to each test.
+- Name a yielded test service after its domain, such as `sessions`, `ty`, or
+  `autoExport`. Keep names such as `vscode` and `python` for reusable test
+  doubles, and reserve `fixture` for static test data.
 - When a file uses `EffectTest.make`, import `@effect/vitest` as `Vitest` and
   name the bound runner `it`. Use `Vitest.it` for tests outside the bound layer.
 - When one suite needs several configured layers, put each configuration in a

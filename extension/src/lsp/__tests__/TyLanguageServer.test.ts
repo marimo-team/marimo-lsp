@@ -29,12 +29,12 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "warns about unavailable Python language features at most once per session",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* Effect.all([fixture.notify, fixture.notify], {
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* Effect.all([ty.notify, ty.notify], {
           concurrency: "unbounded",
         });
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.warningMessages).toEqual([
           "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Install the recommended ty extension to enable them. You can still edit and run notebooks.",
         ]);
@@ -52,11 +52,11 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "never prompts again once the user dismisses it",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* fixture.notify;
-        yield* fixture.notifyInNewSession();
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* ty.notify;
+        yield* ty.notifyInNewSession();
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.warningMessages).toHaveLength(1);
         Vitest.expect(snapshot.storage).toEqual({
           "languageServer.ty.installPromptDismissed": true,
@@ -80,12 +80,12 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "replays saved dismissals without writing state during local development",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* fixture.notify;
-        yield* fixture.notify;
-        yield* fixture.notifyInNewSession(2);
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* ty.notify;
+        yield* ty.notify;
+        yield* ty.notifyInNewSession(2);
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.warningMessages).toHaveLength(2);
         Vitest.expect(snapshot.storageWrites).toBe(0);
         Vitest.expect(snapshot.storage).toEqual({
@@ -103,10 +103,10 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "installs the companion extension and reloads when selected",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* fixture.notify;
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* ty.notify;
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.storage).toEqual({});
         Vitest.expect(snapshot.telemetry).toEqual([
           "prompt_shown",
@@ -132,11 +132,11 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "asks an existing ty extension to be updated instead of installed",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* fixture.notify;
-        yield* fixture.notifyInNewSession();
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* ty.notify;
+        yield* ty.notifyInNewSession();
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.warningMessages).toEqual([
           "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Update the ty extension to enable them. You can still edit and run notebooks.",
           "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Update the ty extension to enable them. You can still edit and run notebooks.",
@@ -160,10 +160,10 @@ Vitest.describe("TyLanguageServer", () => {
     it.effect(
       "reports a companion extension installation failure without prompting to reload",
       Effect.fn(function* () {
-        const fixture = yield* TestTyLanguageServer.Service;
-        yield* fixture.notify;
+        const ty = yield* TestTyLanguageServer.Service;
+        yield* ty.notify;
 
-        const snapshot = yield* fixture.snapshot;
+        const snapshot = yield* ty.snapshot;
         Vitest.expect(snapshot.executions).toEqual([
           {
             command: "workbench.extensions.installExtension",
