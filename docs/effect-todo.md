@@ -355,7 +355,7 @@ recording, or reusable inspection controls are part of the test contract.
 #### Panels
 
 - [ ] `panel/datasources/__tests__/NotebookDatasources.test.ts`
-- [ ] `panel/sessions/__tests__/LiveSessions.test.ts`
+- [x] `panel/sessions/__tests__/LiveSessions.test.ts`
 - [ ] `panel/variables/__tests__/NotebookVariables.test.ts`
 
 #### Python
