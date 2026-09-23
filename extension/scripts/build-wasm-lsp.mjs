@@ -35,7 +35,7 @@ const runtimeFiles = [
 //     └── marimo._session.managers.ipc
 //         └── marimo._cli.sandbox
 //             └── import click
-const pyodidePackages = ["click", "micropip", "msgspec", "pyyaml"];
+const pyodidePackages = ["click", "micropip", "msgspec", "narwhals", "pyyaml"];
 
 /** @type {string | undefined} */
 let buildDir;
@@ -110,6 +110,10 @@ if list(site_packages.glob("marimo-*.dist-info")):
     raise RuntimeError("The bundle must not contain the full marimo distribution")
 if not list(site_packages.glob("marimo_base-*.dist-info")):
     raise RuntimeError("The bundle must contain marimo-base")
+
+# Fail the build before Turbo caches it if a required runtime dependency is
+# absent or if pruning made the bundled language-server entry point invalid.
+import marimo_lsp.wasm
 
 shutil.make_archive("/marimo-lsp-site-packages", "zip", site_packages)
 `);
