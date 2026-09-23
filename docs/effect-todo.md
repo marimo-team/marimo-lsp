@@ -247,7 +247,7 @@ recording, or reusable inspection controls are part of the test contract.
   partial mock.
 - [x] Give `commands/__tests__/refreshPackages.test.ts` only the
   `NotebookEditorRegistry.Service.getActiveNotebookUri` operation it exercises.
-- [ ] Keep only the required `notebookType` value in the partial
+- [x] Keep only the required `notebookType` value in the partial
   `NotebookSerializer.Service` used by
   `commands/__tests__/showNotebookMenu.test.ts`.
 - [x] Omit the unused `PythonEnvInvalidation.Service.changes` stream in
@@ -281,7 +281,7 @@ recording, or reusable inspection controls are part of the test contract.
 #### Commands
 
 - [x] `commands/__tests__/CommandDefinitions.test.ts`
-- [ ] `commands/__tests__/configureAutoExport.test.ts`
+- [x] `commands/__tests__/configureAutoExport.test.ts`
 - [x] `commands/__tests__/openAsMarimoNotebook.test.ts`
 - [x] `commands/__tests__/openOutlineView.test.ts`
 - [x] `commands/__tests__/refreshPackages.test.ts`
@@ -289,7 +289,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `commands/__tests__/sessionCommands.test.ts`
 - [x] `commands/__tests__/setCellCodeVisibility.test.ts`
 - [x] `commands/__tests__/setCellDisabled.test.ts`
-- [ ] `commands/__tests__/showNotebookMenu.test.ts`
+- [x] `commands/__tests__/showNotebookMenu.test.ts`
 
 #### Configuration
 
