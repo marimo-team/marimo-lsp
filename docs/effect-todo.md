@@ -307,7 +307,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `features/__tests__/MarimoCodeLensProvider.test.ts`
 - [x] `features/__tests__/MarimoFileDetector.test.ts`
 - [x] `features/__tests__/RegisterLanguageModelTools.test.ts`
-- [ ] `features/__tests__/ReloadOnConfigChange.test.ts`
+- [x] `features/__tests__/ReloadOnConfigChange.test.ts`
 - [x] `features/__tests__/ThemeSync.test.ts`
 
 #### Kernel

@@ -1,95 +1,71 @@
-import { expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Layer,
-  Option,
-  Queue,
-  Ref,
-  Schedule,
-  Stream,
-} from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Latch, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { commandId } from "../../commands.ts";
 import restartKernel from "../../commands/restartKernel.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as ReloadOnConfigChange from "../ReloadOnConfigChange.ts";
 
+const layerWith = (runtime = makeTestNotebookRuntime()) =>
+  Layer.merge(TestVsCode.layer, runtime);
+
+const it = EffectTest.make(layerWith());
+const affectedEditor = TestVsCode.makeNotebookEditor("/project/notebook.py");
+const affectedId = notebookId(affectedEditor.notebook.uri.toString());
+const affectedSession = {
+  executable: "/python",
+  workingDirectory: "/project",
+};
+const affectedIt = EffectTest.make(
+  layerWith(
+    makeTestNotebookRuntime({
+      runtimeSession: affectedSession,
+      runtimeSessions: [{ notebookId: affectedId, session: affectedSession }],
+    }),
+  ),
+);
+
 it.effect(
   "runs the restart command only when selected",
   Effect.fn(function* () {
-    let acceptRestart = true;
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showInformationMessage: (_message, options = {}) =>
-          Effect.succeed(
-            acceptRestart
-              ? Option.fromNullishOr(
-                  options.items?.find((item) => item === "Restart Kernel"),
-                )
-              : Option.none(),
-          ),
-      },
-    });
-    yield* ReloadOnConfigChange.promptForFileRootChange.pipe(
-      Effect.provide(vscode.layer),
-    );
-    expect(yield* Ref.get(vscode.executions)).toContainEqual({
+    const vscode = yield* TestVsCode.Service;
+    yield* vscode.selectInformationMessage("Restart Kernel");
+    yield* ReloadOnConfigChange.promptForFileRootChange;
+    Vitest.expect((yield* vscode.snapshot).executions).toContainEqual({
       command: commandId(restartKernel.command),
       args: [],
     });
 
-    acceptRestart = false;
-    yield* ReloadOnConfigChange.promptForFileRootChange.pipe(
-      Effect.provide(vscode.layer),
-    );
-    expect(yield* Ref.get(vscode.executions)).toHaveLength(1);
+    yield* ReloadOnConfigChange.promptForFileRootChange;
+    Vitest.expect((yield* vscode.snapshot).executions).toHaveLength(1);
   }),
 );
 
 it.effect(
   "reloads after telemetry changes only when selected",
   Effect.fn(function* () {
-    const prompted = yield* Queue.unbounded<void>();
-    let acceptReload = true;
+    const vscode = yield* TestVsCode.Service;
     const configurationChange: vscode.ConfigurationChangeEvent = {
       affectsConfiguration: (section) => section === "marimo.telemetry",
     };
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showInformationMessage: <T extends string>(
-          message: string,
-          options: vscode.MessageOptions & { items?: readonly T[] } = {},
-        ) => {
-          expect(message).toBe(
-            "Changing telemetry requires reloading the window to take effect.",
-          );
-          const selection = acceptReload
-            ? Option.fromNullishOr(
-                options.items?.find((item) => item === "Reload Window"),
-              )
-            : Option.none<T>();
-          acceptReload = false;
-          return Queue.offer(prompted, undefined).pipe(Effect.as(selection));
-        },
-      },
-      workspace: {
-        configurationChanges: Stream.make(
-          configurationChange,
-          configurationChange,
-        ),
-      },
-    });
-    const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
+    yield* ReloadOnConfigChange.watch;
+    yield* Effect.yieldNow;
+    yield* vscode.selectInformationMessage("Reload Window");
 
-    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
-    yield* Queue.take(prompted);
-    yield* Queue.take(prompted);
+    yield* vscode.configurationChange(configurationChange);
+    yield* vscode.configurationChange(configurationChange);
+    yield* vscode.awaitInformationMessages(2);
 
-    expect(yield* Ref.get(vscode.executions)).toEqual([
+    const snapshot = yield* vscode.snapshot;
+    Vitest.expect(snapshot.informationMessages).toEqual([
+      "Changing telemetry requires reloading the window to take effect.",
+      "Changing telemetry requires reloading the window to take effect.",
+    ]);
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command: "workbench.action.reloadWindow",
         args: [],
@@ -98,118 +74,61 @@ it.effect(
   }),
 );
 
-it.live(
+it.effect(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
-    const prompted = yield* Deferred.make<void>();
-    const prompts = yield* Ref.make(0);
-    const vscode = yield* TestVsCode.make({
-      window: {
-        showInformationMessage: (message, options = {}) => {
-          expect(message).toBe(
-            "Changing the language-server runtime requires reloading the window to take effect.",
-          );
-          return Ref.update(prompts, (count) => count + 1).pipe(
-            Effect.andThen(Deferred.succeed(prompted, undefined)),
-            Effect.as(Option.fromNullishOr(options.items?.[0])),
-          );
-        },
-      },
-      workspace: {
-        configurationChanges: Stream.make({
-          affectsConfiguration: (section: string) =>
-            ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
-        }),
-      },
+    const vscode = yield* TestVsCode.Service;
+    yield* ReloadOnConfigChange.watch;
+    yield* Effect.yieldNow;
+    yield* vscode.selectInformationMessage("Reload Window");
+    yield* vscode.configurationChange({
+      affectsConfiguration: (section) =>
+        ["marimo.lsp.server", "marimo.lsp.path"].includes(section),
     });
-    const services = Layer.merge(vscode.layer, makeTestNotebookRuntime());
-
-    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
-    yield* Deferred.await(prompted);
-    const executions = yield* Ref.get(vscode.executions).pipe(
-      Effect.filterOrFail(
-        (current) =>
-          current.some(
-            ({ command }) => command === "workbench.action.reloadWindow",
-          ),
-        () => "reload command not recorded" as const,
+    yield* vscode.awaitExecutions((executions) =>
+      executions.some(
+        ({ command }) => command === "workbench.action.reloadWindow",
       ),
-      Effect.retry(
-        Schedule.recurs(100).pipe(
-          Schedule.addDelay(() => Effect.succeed("10 millis")),
-        ),
-      ),
-      Effect.catch(() => Ref.get(vscode.executions)),
     );
-    expect(executions).toContainEqual({
+
+    const snapshot = yield* vscode.snapshot;
+    Vitest.expect(snapshot.informationMessages).toEqual([
+      "Changing the language-server runtime requires reloading the window to take effect.",
+    ]);
+    Vitest.expect(snapshot.executions).toContainEqual({
       command: "workbench.action.reloadWindow",
       args: [],
     });
-    expect(yield* Ref.get(prompts)).toBe(1);
   }),
 );
 
-it.effect(
+affectedIt.effect(
   "prompts when an affected inactive RuntimeSession becomes active",
   Effect.fn(function* () {
-    const editor = TestVsCode.makeNotebookEditor("/project/notebook.py");
-    const id = notebookId(editor.notebook.uri.toString());
-    const prompts = yield* Ref.make(0);
-    const prompted = yield* Deferred.make<void>();
-    const activeEditor = yield* Ref.make<Option.Option<vscode.NotebookEditor>>(
-      Option.none(),
-    );
-    let resolveResourceChecked: (() => void) | undefined;
-    const resourceChecked = new Promise<void>((resolve) => {
-      resolveResourceChecked = resolve;
-    });
+    const vscode = yield* TestVsCode.Service;
+    const resourceChecked = yield* Latch.make();
     const configurationChange: vscode.ConfigurationChangeEvent = {
       affectsConfiguration: (section, resource) => {
         const affected =
           section === "marimo.notebookFileRoot" &&
           (resource === undefined ||
             ("scheme" in resource &&
-              resource.scheme === editor.notebook.uri.scheme &&
-              resource.path === editor.notebook.uri.path));
-        if (affected && resource !== undefined) {
-          resolveResourceChecked?.();
-        }
+              resource.scheme === affectedEditor.notebook.uri.scheme &&
+              resource.path === affectedEditor.notebook.uri.path));
+        if (affected && resource !== undefined) resourceChecked.openUnsafe();
         return affected;
       },
     };
-    const vscode = yield* TestVsCode.make({
-      window: {
-        getActiveNotebookEditor: Ref.get(activeEditor),
-        activeNotebookEditorChanges: Stream.fromEffect(
-          Effect.promise(() => resourceChecked).pipe(
-            Effect.andThen(Ref.set(activeEditor, Option.some(editor))),
-            Effect.as(Option.some(editor)),
-          ),
-        ),
-        showInformationMessage: <T extends string>() =>
-          Ref.update(prompts, (count) => count + 1).pipe(
-            Effect.andThen(Deferred.succeed(prompted, undefined)),
-            Effect.as(Option.none<T>()),
-          ),
-      },
-      workspace: {
-        configurationChanges: Stream.make(configurationChange),
-      },
-    });
-    const session = {
-      executable: "/python",
-      workingDirectory: "/project",
-    };
-    const services = Layer.merge(
-      vscode.layer,
-      makeTestNotebookRuntime({
-        runtimeSession: session,
-        runtimeSessions: [{ notebookId: id, session }],
-      }),
-    );
-    yield* ReloadOnConfigChange.watch.pipe(Effect.provide(services));
+    yield* ReloadOnConfigChange.watch;
+    yield* Effect.yieldNow;
 
-    yield* Deferred.await(prompted);
-    expect(yield* Ref.get(prompts)).toBe(1);
+    yield* vscode.configurationChange(configurationChange);
+    yield* resourceChecked.await;
+    yield* vscode.setActiveNotebookEditor(Option.some(affectedEditor));
+    yield* vscode.awaitInformationMessages(1);
+
+    Vitest.expect((yield* vscode.snapshot).informationMessages).toEqual([
+      "The notebook file root changed. Restart the marimo kernel to apply it.",
+    ]);
   }),
 );
