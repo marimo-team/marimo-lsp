@@ -1,17 +1,20 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Ref } from "effect";
+import { expect } from "@effect/vitest";
+import { Effect } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import openOutlineView from "../openOutlineView.ts";
 
-it.effect(
+const test = EffectTest.make(TestVsCode.layer);
+
+test.effect(
   "focuses the built-in VS Code Outline view",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
+    const vscode = yield* TestVsCode.Service;
 
-    yield* openOutlineView.invoke().pipe(Effect.provide(vscode.layer));
+    yield* openOutlineView.invoke();
 
-    expect(yield* Ref.get(vscode.executions)).toEqual([
+    expect((yield* vscode.snapshot).executions).toEqual([
       { command: "outline.focus", args: [] },
     ]);
   }),
