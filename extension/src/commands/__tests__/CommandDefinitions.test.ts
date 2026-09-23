@@ -1,7 +1,8 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, Logger, Option, Ref, References } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Logger, Option, References } from "effect";
 
-import { createNotebookCell, TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   commandContributedSurfaces,
   defineCommand,
@@ -12,30 +13,32 @@ import { CommandIds, CommandSurfaces } from "../CommandIds.gen.ts";
 import hideCellCode from "../hideCellCode.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
 
-describe("command definitions", () => {
-  it("defines every generated command exactly once", () => {
-    expect(Object.values(MarimoCommands).map(commandId).toSorted()).toEqual(
-      Object.values(CommandIds).toSorted(),
-    );
+const it = EffectTest.make(TestVsCode.layer);
+
+Vitest.describe("command definitions", () => {
+  Vitest.it("defines every generated command exactly once", () => {
+    Vitest.expect(
+      Object.values(MarimoCommands).map(commandId).toSorted(),
+    ).toEqual(Object.values(CommandIds).toSorted());
   });
 
-  it("matches every generated contributed surface", () => {
+  Vitest.it("matches every generated contributed surface", () => {
     const actual = Object.fromEntries(
       Object.entries(MarimoCommands).map(([name, command]) => [
         name,
         commandContributedSurfaces(command).toSorted(),
       ]),
     );
-    expect(actual).toEqual(CommandSurfaces);
+    Vitest.expect(actual).toEqual(CommandSurfaces);
   });
 
-  it.effect(
+  Vitest.it.effect(
     "ignores VS Code metadata for a no-target command",
     Effect.fn(function* () {
       const args = yield* decodeCommandArguments(MarimoCommands.restartLsp, [
         { injectedBy: "commandPalette" },
       ]);
-      expect(args).toEqual([]);
+      Vitest.expect(args).toEqual([]);
     }),
   );
 
@@ -43,11 +46,10 @@ describe("command definitions", () => {
     "normalizes a cell-status invocation to its exact notebook",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      const cell = createNotebookCell(
+      const cell = TestVsCode.createNotebookCell(
         editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
@@ -55,10 +57,10 @@ describe("command definitions", () => {
 
       const [target] = yield* decodeCommandArguments(MarimoCommands.runStale, [
         cell,
-      ]).pipe(Effect.provide(vscode.layer));
+      ]);
 
-      expect(Option.getOrThrow(target).editor).toBe(editor);
-      expect(Option.getOrThrow(target).document.uri.toString()).toBe(
+      Vitest.expect(Option.getOrThrow(target).editor).toBe(editor);
+      Vitest.expect(Option.getOrThrow(target).document.uri.toString()).toBe(
         editor.notebook.uri.toString(),
       );
     }),
@@ -68,8 +70,7 @@ describe("command definitions", () => {
     "normalizes a cell-title invocation to a marimo cell",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
-      const vscode = yield* TestVsCode.make();
-      const cell = createNotebookCell(
+      const cell = TestVsCode.createNotebookCell(
         editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
@@ -78,9 +79,9 @@ describe("command definitions", () => {
       const [target] = yield* decodeCommandArguments(
         MarimoCommands.hideCellCode,
         [cell],
-      ).pipe(Effect.provide(vscode.layer));
+      );
 
-      expect(Option.getOrThrow(target).index).toBe(0);
+      Vitest.expect(Option.getOrThrow(target).index).toBe(0);
     }),
   );
 
@@ -92,19 +93,18 @@ describe("command definitions", () => {
           cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
         },
       });
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       const [target] = yield* decodeCommandArguments(
         MarimoCommands.hideCellCode,
         [{ from: "cellContainer" }],
-      ).pipe(Effect.provide(vscode.layer));
+      );
 
-      expect(Option.getOrThrow(target).index).toBe(0);
-      yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
-      expect(yield* Ref.get(vscode.executions)).toContainEqual({
+      Vitest.expect(Option.getOrThrow(target).index).toBe(0);
+      yield* hideCellCode.invoke(target);
+      Vitest.expect((yield* vscode.snapshot).executions).toContainEqual({
         command: "notebook.cell.collapseCellInput",
         args: [
           {
@@ -119,16 +119,16 @@ describe("command definitions", () => {
   it.effect(
     "ignores a cell-container invocation without an active cell",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.make();
+      const vscode = yield* TestVsCode.Service;
 
       const [target] = yield* decodeCommandArguments(
         MarimoCommands.hideCellCode,
         [{ from: "cellContainer" }],
-      ).pipe(Effect.provide(vscode.layer));
+      );
 
-      expect(Option.isNone(target)).toBe(true);
-      yield* hideCellCode.invoke(target).pipe(Effect.provide(vscode.layer));
-      expect(yield* Ref.get(vscode.executions)).toEqual([]);
+      Vitest.expect(Option.isNone(target)).toBe(true);
+      yield* hideCellCode.invoke(target);
+      Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
     }),
   );
 
@@ -140,56 +140,56 @@ describe("command definitions", () => {
           cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
         },
       });
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
-      const [target] = yield* decodeCommandArguments(command, []).pipe(
-        Effect.provide(vscode.layer),
-      );
+      const [target] = yield* decodeCommandArguments(command, []);
 
-      expect(Option.getOrThrow(target).index).toBe(0);
+      Vitest.expect(Option.getOrThrow(target).index).toBe(0);
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "preserves a resource argument after joining surfaces",
     Effect.fn(function* () {
       const args = yield* decodeCommandArguments(
         MarimoCommands.openAsMarimoNotebook,
         ["file:///notebook.py"],
       );
-      expect(args).toEqual(["file:///notebook.py"]);
+      Vitest.expect(args).toEqual(["file:///notebook.py"]);
     }),
   );
 
-  it.effect("traces direct normalized invocation with the command ID", () => {
-    const logs: Array<Record<string, unknown>> = [];
-    const logger = Logger.make(({ fiber }) => {
-      const span = fiber.currentSpan;
-      logs.push({
-        ...fiber.getRef(References.CurrentLogAnnotations),
-        ...(span !== undefined && span._tag === "Span"
-          ? { "effect.spanName": span.name }
-          : {}),
+  Vitest.it.effect(
+    "traces direct normalized invocation with the command ID",
+    () => {
+      const logs: Array<Record<string, unknown>> = [];
+      const logger = Logger.make(({ fiber }) => {
+        const span = fiber.currentSpan;
+        logs.push({
+          ...fiber.getRef(References.CurrentLogAnnotations),
+          ...(span !== undefined && span._tag === "Span"
+            ? { "effect.spanName": span.name }
+            : {}),
+        });
       });
-    });
-    const definition = defineCommand(MarimoCommands.restartLsp, () =>
-      Effect.logInfo("invoked"),
-    );
+      const definition = defineCommand(MarimoCommands.restartLsp, () =>
+        Effect.logInfo("invoked"),
+      );
 
-    return definition.invoke().pipe(
-      Effect.provide(Logger.layer([logger])),
-      Effect.tap(() =>
-        Effect.sync(() => {
-          expect(logs).toHaveLength(1);
-          expect(logs[0]).toMatchObject({
-            "command.id": commandId(definition.command),
-            "effect.spanName": "command",
-          });
-        }),
-      ),
-    );
-  });
+      return definition.invoke().pipe(
+        Effect.provide(Logger.layer([logger])),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            Vitest.expect(logs).toHaveLength(1);
+            Vitest.expect(logs[0]).toMatchObject({
+              "command.id": commandId(definition.command),
+              "effect.spanName": "command",
+            });
+          }),
+        ),
+      );
+    },
+  );
 });

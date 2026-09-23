@@ -154,6 +154,8 @@ narrow adapters.
   with a fresh layer build and scope for every test. Put fixture observations
   and named controls on a test service instead of returning the layer, refs,
   queues, or pub/sub handles to each test.
+- When a file uses `EffectTest.make`, import `@effect/vitest` as `Vitest` and
+  name the bound runner `it`. Use `Vitest.it` for tests outside the bound layer.
 - Prefer realistic local or in-memory adapters.
 - Use `Layer.succeed` when the complete service behavior is intentional. Use
   `Layer.mock` sparingly when a test exercises only a narrow part of a service

@@ -280,7 +280,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 #### Commands
 
-- [ ] `commands/__tests__/CommandDefinitions.test.ts`
+- [x] `commands/__tests__/CommandDefinitions.test.ts`
 - [ ] `commands/__tests__/configureAutoExport.test.ts`
 - [x] `commands/__tests__/openAsMarimoNotebook.test.ts`
 - [x] `commands/__tests__/openOutlineView.test.ts`
