@@ -368,7 +368,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `platform/__tests__/Api.test.ts`
 - [x] `platform/__tests__/Commands.test.ts` — keeps its captured logger layer
   local to the logging test.
-- [ ] `platform/__tests__/OutputChannel.test.ts`
+- [x] `platform/__tests__/OutputChannel.test.ts`
 - [x] `platform/__tests__/Storage.test.ts`
 
 #### Status and telemetry
