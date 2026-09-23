@@ -1,29 +1,23 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Layer, Option } from "effect";
 
-import {
-  createTestTextDocument,
-  createTestTextEditor,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as MarimoFileDetector from "../MarimoFileDetector.ts";
 
-const withTestCtx = Effect.fn(function* () {
-  const vscode = yield* TestVsCode.make();
-  const layer = Layer.empty.pipe(
+const layerWith = (vscode: typeof TestVsCode.layer) =>
+  Layer.empty.pipe(
     Layer.provideMerge(MarimoFileDetector.layer),
-    Layer.provide(vscode.layer),
+    Layer.provideMerge(vscode),
   );
-  return { vscode, layer };
-});
+
+const it = EffectTest.make(layerWith(TestVsCode.layer));
 
 it.effect(
   "should be false on initialization without active editor",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx();
-    // build the layer
-    yield* Effect.provide(Effect.void, ctx.layer);
-    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
+    const vscode = yield* TestVsCode.Service;
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", false],
@@ -32,7 +26,7 @@ it.effect(
   }),
 );
 
-it.effect.each([
+Vitest.it.effect.each([
   [
     "basic marimo app",
     `import marimo
@@ -94,18 +88,24 @@ if __name__ == "__main__":
 ] as const)(
   "should be true on initialization with active editor: %s",
   Effect.fn(function* ([_, pythonCode]) {
-    const ctx = yield* withTestCtx();
-
-    const editor = createTestTextEditor(
-      createTestTextDocument("/test/notebook.py", "python", pythonCode),
+    const editor = TestVsCode.createTestTextEditor(
+      TestVsCode.createTestTextDocument(
+        "/test/notebook.py",
+        "python",
+        pythonCode,
+      ),
     );
-    // set the active notebook editor prior to initialization
-    yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
+    const layer = layerWith(
+      TestVsCode.layerWith({
+        initialActiveTextEditor: Option.some(editor),
+      }),
+    );
+    const snapshot = yield* TestVsCode.Service.pipe(
+      Effect.flatMap((vscode) => vscode.snapshot),
+      Effect.provide(layer),
+    );
 
-    // build the layer
-    yield* Effect.provide(Effect.void, ctx.layer);
-
-    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", true],
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 it.effect(
   "should set context to true for valid marimo notebook",
   Effect.fn(function* () {
-    const ctx = yield* withTestCtx();
+    const vscode = yield* TestVsCode.Service;
     const pythonCode = `import marimo
 
 app = marimo.App()
@@ -130,21 +130,19 @@ if __name__ == "__main__":
     app.run()
 `;
 
-    const editor = createTestTextEditor(
-      createTestTextDocument("/test/notebook.py", "python", pythonCode),
+    const editor = TestVsCode.createTestTextEditor(
+      TestVsCode.createTestTextDocument(
+        "/test/notebook.py",
+        "python",
+        pythonCode,
+      ),
     );
+    const before = (yield* vscode.snapshot).executions.length;
 
-    yield* Effect.gen(function* () {
-      // clear initialization
-      yield* Ref.set(ctx.vscode.executions, []);
+    yield* vscode.setActiveTextEditor(Option.some(editor));
+    yield* Effect.yieldNow;
 
-      // Set the active text editor
-      yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
-      // Give the detector a scheduler turn to process the change
-      yield* Effect.yieldNow;
-    }).pipe(Effect.provide(ctx.layer));
-
-    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
+    Vitest.expect((yield* vscode.snapshot).executions.slice(before)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", true],
@@ -228,22 +226,20 @@ my_app = marimo.App()
 ] as const)(
   "should set context to false for non-marimo Python files: %s",
   Effect.fn(function* ([_, pythonCode]) {
-    const ctx = yield* withTestCtx();
-    const editor = createTestTextEditor(
-      createTestTextDocument("/test/notebook.py", "python", pythonCode),
+    const vscode = yield* TestVsCode.Service;
+    const editor = TestVsCode.createTestTextEditor(
+      TestVsCode.createTestTextDocument(
+        "/test/notebook.py",
+        "python",
+        pythonCode,
+      ),
     );
+    const before = (yield* vscode.snapshot).executions.length;
 
-    // Set the active editor and wait for changes to process
-    yield* Effect.gen(function* () {
-      // clear initialization
-      yield* Ref.set(ctx.vscode.executions, []);
+    yield* vscode.setActiveTextEditor(Option.some(editor));
+    yield* Effect.yieldNow;
 
-      // set new notebook
-      yield* ctx.vscode.setActiveTextEditor(Option.some(editor));
-      yield* Effect.yieldNow;
-    }).pipe(Effect.provide(ctx.layer));
-
-    expect(yield* Ref.get(ctx.vscode.executions)).toEqual([
+    Vitest.expect((yield* vscode.snapshot).executions.slice(before)).toEqual([
       {
         command: "setContext",
         args: ["marimo.isPythonFileMarimoNotebook", false],

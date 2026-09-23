@@ -1526,6 +1526,7 @@ export interface NotebookEditorOptions {
 export interface Options {
   readonly initialDocuments?: Array<vscode.NotebookDocument>;
   readonly initialActiveNotebookEditor?: Option.Option<vscode.NotebookEditor>;
+  readonly initialActiveTextEditor?: Option.Option<vscode.TextEditor>;
   readonly visibleNotebookEditors?: Array<vscode.NotebookEditor>;
   readonly version?: string;
   readonly fileSystem?: Map<string, Uint8Array | Error>;
@@ -1757,7 +1758,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
   static make = Effect.fn(function* (options: Options = {}) {
     const activeTextEditor = yield* SubscriptionRef.make(
-      Option.none<vscode.TextEditor>(),
+      options.initialActiveTextEditor ?? Option.none<vscode.TextEditor>(),
     );
     const activeNotebookEditor = yield* SubscriptionRef.make(
       options.initialActiveNotebookEditor ??
