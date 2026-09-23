@@ -329,7 +329,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `lib/__tests__/dap-proxy.test.ts`
 - [x] `lib/__tests__/extractExecuteCodeRequest.test.ts`
 - [x] `lib/__tests__/getCellExecutableCode.test.ts`
-- [ ] `lib/__tests__/getTopologicalCells.test.ts`
+- [x] `lib/__tests__/getTopologicalCells.test.ts`
 - [x] `lib/__tests__/installPackages.test.ts`
 - [x] `lib/__tests__/openExternalUrl.test.ts`
 
