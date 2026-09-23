@@ -1,8 +1,9 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { CellOutputOperationError } from "../CellOutputOperation.ts";
 import {
@@ -86,13 +87,9 @@ const builders = (code: VsCode.Interface) => ({
 
 const withBuilders = <A, E>(
   body: (b: ReturnType<typeof builders>) => Effect.Effect<A, E>,
-) =>
-  Effect.gen(function* () {
-    const vscode = yield* TestVsCode.make({});
-    return yield* Effect.gen(function* () {
-      return yield* body(builders(yield* VsCode.Service));
-    }).pipe(Effect.provide(vscode.layer));
-  });
+) => VsCode.Service.pipe(Effect.flatMap((code) => body(builders(code))));
+
+const it = EffectTest.make(TestVsCode.layer);
 
 describe("CellOutputProjection", () => {
   it.effect(

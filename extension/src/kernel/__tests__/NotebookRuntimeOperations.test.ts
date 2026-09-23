@@ -1,37 +1,14 @@
 import * as NodePath from "node:path";
 
-import { assert, describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Latch,
-  Layer,
-  Option,
-  PubSub,
-  Queue,
-  Ref,
-  Stream,
-  SubscriptionRef,
-} from "effect";
+import { assert, describe, expect, it as test } from "@effect/vitest";
+import { Effect, Fiber, Latch, Option, Ref, Stream } from "effect";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import {
-  createTestNotebookDocument,
-  NotebookRange,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
-import {
-  makeTestMarimoClient,
-  type TestCommand,
-} from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NOTEBOOK_TYPE, SCRATCH_CELL_ID } from "../../constants.ts";
-import * as CellOutputProjections from "../../kernel/CellOutputProjections.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import { SCRATCH_CELL_ID } from "../../constants.ts";
 import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
 import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import { PythonController } from "../../kernel/PythonController.ts";
-import * as VsCodeCellDrive from "../../kernel/VsCodeCellDrive.ts";
 import {
   cellId,
   kernelSessionId,
@@ -40,25 +17,23 @@ import {
 } from "../../lib/__tests__/branded.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
-import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
   type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
-import type { KernelSessionId } from "../../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
-  DocumentAnalysis,
   KernelNotification,
-  MarimoSessionsChanged,
 } from "../../types.ts";
+import * as TestNotebookRuntime from "./TestNotebookRuntime.ts";
 
 const ACTIVE_SESSION_ID = kernelSessionId(
   "00000000-0000-4000-8000-000000000001",
 );
-const REPLACEMENT_SESSION_ID = kernelSessionId(
-  "00000000-0000-4000-8000-000000000002",
+const it = EffectTest.make(TestNotebookRuntime.layer);
+const cancellationIt = EffectTest.make(
+  TestNotebookRuntime.layerWith({ suspendWorkspaceEdits: true }),
 );
 
 const settle = <A, E, R>(
@@ -74,201 +49,6 @@ const settle = <A, E, R>(
     }
     return yield* Effect.fail(failure);
   });
-
-const withTestCtx = Effect.fn(function* (
-  activeSessionId: KernelSessionId = ACTIVE_SESSION_ID,
-  workspace: {
-    readonly applyEdit?: () => Effect.Effect<boolean>;
-  } = {},
-) {
-  // Controllable showInputBox via Queue
-  const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
-  const inputRequested = yield* Latch.make();
-
-  // Capture executeCommand calls
-  const executions = yield* SubscriptionRef.make<ReadonlyArray<TestCommand>>(
-    [],
-  );
-  const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
-
-  // PubSub to push operations into NotebookRuntime
-  const operationsPubSub = yield* PubSub.unbounded<KernelNotification>();
-  const documentAnalysisPubSub = yield* PubSub.unbounded<DocumentAnalysis>();
-
-  const editor = TestVsCode.makeNotebookEditor(
-    NodePath.join(process.cwd(), "notebook_mo.py"),
-    {
-      data: {
-        cells: [
-          {
-            kind: 1, // Code
-            value: "name = input('Enter name: ')",
-            languageId: "python",
-            metadata: MarimoNotebookCell.createMetadata({
-              marimoRuntime: { stableId: "cell-1" },
-            }),
-          },
-        ],
-      },
-    },
-  );
-
-  const notebook = MarimoNotebookDocument.from(editor.notebook);
-  const notebookUri = notebook.id;
-  const serverSessions = new Map<
-    NotebookId,
-    MarimoSessionsChanged["sessions"][number]
-  >([
-    [
-      notebookUri,
-      {
-        sessionId: activeSessionId,
-        notebookUri,
-        filename: "notebook_mo.py",
-        executable: "/usr/bin/python3",
-        workingDirectory: process.cwd(),
-        startedAt: 1,
-        status: "idle",
-        attached: true,
-      },
-    ],
-  ]);
-
-  const vscode = yield* TestVsCode.make({
-    initialDocuments: [editor.notebook],
-    workspace,
-    window: {
-      showInputBox: () =>
-        inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
-      showErrorMessage: (message) =>
-        Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
-          Effect.as(Option.none()),
-        ),
-    },
-  });
-  const projections = yield* CellOutputProjections.Service.pipe(
-    Effect.provide(
-      CellOutputProjections.layer.pipe(Layer.provide(vscode.layer)),
-    ),
-  );
-  const cellDrive = yield* VsCodeCellDrive.Service.pipe(
-    Effect.provide(
-      VsCodeCellDrive.layer.pipe(
-        Layer.provide(vscode.layer),
-        Layer.provide(
-          Layer.succeed(CellOutputProjections.Service, projections),
-        ),
-      ),
-    ),
-  );
-
-  const mockController = yield* Effect.gen(function* () {
-    const code = yield* VsCode.Service;
-    const controller = yield* code.notebooks.createNotebookController(
-      "test-controller",
-      NOTEBOOK_TYPE,
-      "Test Controller",
-    );
-    return new PythonController(
-      controller,
-      "/usr/bin/python3",
-      Stream.never,
-      (document) =>
-        cellDrive.bind({
-          notebook: document,
-          controller: {
-            createNotebookCellExecution: (cell) =>
-              controller.createNotebookCellExecution(cell.rawNotebookCell),
-          },
-        }),
-      () => Effect.void,
-    );
-  }).pipe(Effect.provide(vscode.layer));
-
-  let revision = 0;
-  const layer = Layer.empty.pipe(
-    Layer.provideMerge(NotebookRuntime.defaultLayer),
-    // Merged out (not just provided) so tests can observe the same service
-    // instances NotebookRuntime writes to.
-    Layer.provideMerge(NotebookVariables.defaultLayer),
-    Layer.provideMerge(NotebookDatasources.defaultLayer),
-    Layer.provide(
-      makeTestMarimoClient({
-        send(request) {
-          return Effect.gen(function* () {
-            yield* SubscriptionRef.update(executions, (current) => [
-              ...current,
-              request,
-            ]);
-            if (
-              request.kind === "execute-scratchpad" ||
-              request.kind === "execute"
-            ) {
-              const id = notebookId(request.notebookUri);
-              serverSessions.set(id, {
-                sessionId: activeSessionId,
-                notebookUri: id,
-                filename: NodePath.basename(request.notebookUri),
-                executable: request.executable,
-                workingDirectory: request.workingDirectory,
-                startedAt: 1,
-                status: "idle",
-                attached: true,
-              });
-            }
-            if (request.kind === "restart-session") {
-              const id = notebookId(request.notebookUri);
-              const current = serverSessions.get(id);
-              if (current !== undefined) {
-                serverSessions.set(id, {
-                  ...current,
-                  sessionId: REPLACEMENT_SESSION_ID,
-                });
-              }
-            }
-            return ["list-sessions", "execute", "restart-session"].includes(
-              request.kind,
-            )
-              ? {
-                  generation: 1,
-                  revision: ++revision,
-                  sessions: [...serverSessions.values()],
-                }
-              : null;
-          });
-        },
-        kernelNotifications: Stream.fromPubSub(operationsPubSub),
-        documentAnalysis: Stream.fromPubSub(documentAnalysisPubSub),
-      }),
-    ),
-    Layer.provide(TestTelemetryLive),
-    Layer.provide(TestPythonExtension.layer),
-    Layer.provideMerge(vscode.layer),
-  );
-
-  const selectedLayer = Layer.effectDiscard(
-    NotebookRuntime.Service.pipe(
-      Effect.flatMap((runtime) =>
-        runtime.attachController(notebookUri, mockController),
-      ),
-    ),
-  ).pipe(Layer.provide(layer));
-
-  return {
-    layer: Layer.merge(layer, selectedLayer),
-    vscode,
-    editor,
-    notebook,
-    notebookUri,
-    mockController,
-    executions,
-    errorMessages,
-    inputQueue,
-    inputRequested,
-    operationsPubSub,
-    documentAnalysisPubSub,
-  };
-});
 
 function makeIdleCellOperation(
   notebookUri: NotebookId,
@@ -288,7 +68,7 @@ function makeIdleCellOperation(
 }
 
 describe("NotebookRuntime operation processing", () => {
-  it.effect(
+  test.effect(
     "processes every queued notebook operation in order",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -326,7 +106,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  it.effect(
+  test.effect(
     "processes a state-only cell operation after its terminal output",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -368,7 +148,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  it.effect(
+  test.effect(
     "processes separate notebooks independently",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -406,23 +186,17 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  it.effect(
+  cancellationIt.effect(
     "does not report session cancellation as an operation failure",
     Effect.fn(function* () {
-      const editStarted = yield* Deferred.make<void>();
-      const ctx = yield* withTestCtx(ACTIVE_SESSION_ID, {
-        applyEdit: () =>
-          Deferred.succeed(editStarted, undefined).pipe(
-            Effect.andThen(Effect.never),
-          ),
-      });
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: {
@@ -440,13 +214,13 @@ describe("NotebookRuntime operation processing", () => {
             },
           },
         });
-        yield* Deferred.await(editStarted);
+        yield* ctx.workspaceEditStarted;
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         yield* Effect.yieldNow;
 
-        expect(yield* Ref.get(ctx.errorMessages)).toEqual([]);
-      }).pipe(Effect.provide(ctx.layer));
+        expect(yield* ctx.errors).toEqual([]);
+      });
     }),
   );
 });
@@ -455,7 +229,7 @@ describe("NotebookRuntime cell identity", () => {
   it.effect(
     "notifies marimo when a cell is deleted",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
@@ -474,13 +248,13 @@ describe("NotebookRuntime cell identity", () => {
           cellChanges: [],
           contentChanges: [
             {
-              range: new NotebookRange(0, 1),
+              range: new TestVsCode.NotebookRange(0, 1),
               removedCells: [cell],
               addedCells: [],
             },
           ],
         });
-        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
+        const executions = yield* ctx.executionChanges.pipe(
           Stream.filter((commands) =>
             commands.some((command) => command.kind === "delete-cell"),
           ),
@@ -494,14 +268,14 @@ describe("NotebookRuntime cell identity", () => {
           kernelSessionId: ACTIVE_SESSION_ID,
           cellId: "cell-1",
         });
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "does not delete a cell that moved within the notebook",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
@@ -518,12 +292,12 @@ describe("NotebookRuntime cell identity", () => {
           cellChanges: [],
           contentChanges: [
             {
-              range: new NotebookRange(0, 1),
+              range: new TestVsCode.NotebookRange(0, 1),
               removedCells: [cell],
               addedCells: [],
             },
             {
-              range: new NotebookRange(1, 1),
+              range: new TestVsCode.NotebookRange(1, 1),
               removedCells: [],
               addedCells: [cell],
             },
@@ -534,7 +308,7 @@ describe("NotebookRuntime cell identity", () => {
         // cannot tell us when the move has been processed. Follow it with an
         // observable deletion on the same sequential change stream. Once the
         // marker deletion is recorded, the preceding move event has completed.
-        const markerCell = createTestNotebookDocument(
+        const markerCell = TestVsCode.createTestNotebookDocument(
           NodePath.join(process.cwd(), "cell-move-marker_mo.py"),
           {
             data: {
@@ -557,14 +331,14 @@ describe("NotebookRuntime cell identity", () => {
           cellChanges: [],
           contentChanges: [
             {
-              range: new NotebookRange(1, 1),
+              range: new TestVsCode.NotebookRange(1, 1),
               removedCells: [markerCell],
               addedCells: [],
             },
           ],
         });
         const commands = yield* settle(
-          SubscriptionRef.get(ctx.executions),
+          ctx.executions,
           (calls) =>
             calls.some(
               (command) =>
@@ -580,7 +354,7 @@ describe("NotebookRuntime cell identity", () => {
               command.kind === "delete-cell" && command.cellId === "cell-1",
           ),
         ).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });
@@ -589,7 +363,7 @@ describe("NotebookRuntime stdin", () => {
   it.effect(
     "prompts for input on stdin cell-op and sends response",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const cell = ctx.notebook.cellAt(0);
@@ -600,8 +374,7 @@ describe("NotebookRuntime stdin", () => {
         yield* Effect.yieldNow;
 
         // Push a cell-op with stdin console output
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
             status: "running",
             console: [
@@ -617,10 +390,10 @@ describe("NotebookRuntime stdin", () => {
         yield* Effect.yieldNow;
 
         // Provide the input (unblocks showInputBox)
-        yield* Queue.offer(ctx.inputQueue, Option.some("foo"));
+        yield* ctx.provideInput(Option.some("foo"));
 
         // Assert executeCommand was called with send-stdin
-        const cmds = yield* SubscriptionRef.get(ctx.executions).pipe(
+        const cmds = yield* ctx.executions.pipe(
           Effect.filterOrFail(
             (calls) => calls.some((call) => call.kind === "send-stdin"),
             () => "stdin response not sent" as const,
@@ -634,14 +407,14 @@ describe("NotebookRuntime stdin", () => {
           kernelSessionId: ACTIVE_SESSION_ID,
           text: "foo",
         });
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "does not send command when user cancels input",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const cell = ctx.notebook.cellAt(0);
@@ -650,8 +423,7 @@ describe("NotebookRuntime stdin", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
             status: "running",
             console: [
@@ -667,8 +439,8 @@ describe("NotebookRuntime stdin", () => {
         yield* Effect.yieldNow;
 
         // User cancels the input box
-        yield* Queue.offer(ctx.inputQueue, Option.none());
-        const cmds = yield* SubscriptionRef.changes(ctx.executions).pipe(
+        yield* ctx.provideInput(Option.none());
+        const cmds = yield* ctx.executionChanges.pipe(
           Stream.filter((calls) =>
             calls.some((call) => call.kind === "interrupt"),
           ),
@@ -687,22 +459,21 @@ describe("NotebookRuntime stdin", () => {
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
         });
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "cancels an in-flight prompt when its notebook session closes",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
             status: "running",
             console: [
@@ -715,26 +486,26 @@ describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* ctx.inputRequested.await;
+        yield* ctx.inputRequested;
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         yield* Effect.yieldNow;
-        yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
+        yield* ctx.provideInput(Option.some("stale response"));
         yield* Effect.yieldNow;
 
         expect(
-          (yield* SubscriptionRef.get(ctx.executions)).some(
+          (yield* ctx.executions).some(
             (command) => command.kind === "send-stdin",
           ),
         ).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "does not send an old prompt response to a replacement kernel",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -742,8 +513,7 @@ describe("NotebookRuntime stdin", () => {
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
             status: "running",
             console: [
@@ -756,19 +526,19 @@ describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* ctx.inputRequested.await;
+        yield* ctx.inputRequested;
 
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         yield* notebook.restart;
-        yield* Queue.offer(ctx.inputQueue, Option.some("stale response"));
+        yield* ctx.provideInput(Option.some("stale response"));
         yield* Effect.yieldNow;
 
         expect(
-          (yield* SubscriptionRef.get(ctx.executions)).some(
+          (yield* ctx.executions).some(
             (command) => command.kind === "send-stdin",
           ),
         ).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });
@@ -777,7 +547,7 @@ describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "runs one scratchpad at a time within a notebook",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -794,7 +564,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         // Wait until the first command is recorded. Do not count scheduler
         // drains. The scratchpad setup can need more than one drain.
-        yield* SubscriptionRef.changes(ctx.executions).pipe(
+        yield* ctx.executionChanges.pipe(
           Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
           Stream.runHead,
         );
@@ -803,16 +573,14 @@ describe("NotebookRuntime scratch stream", () => {
         // exactly one command went out.
         yield* Effect.yieldNow;
 
-        const first_ = scratchpadCalls(
-          yield* SubscriptionRef.get(ctx.executions),
-        );
+        const first_ = scratchpadCalls(yield* ctx.executions);
         expect(first_).toHaveLength(1);
         const firstCommand = first_[0];
         assert(
           firstCommand !== undefined && typeof firstCommand.runId === "string",
         );
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: {
@@ -824,7 +592,7 @@ describe("NotebookRuntime scratch stream", () => {
         // Await the second command the same way: the released scratchpad may
         // need several drains to acquire the lock and send its command.
         const commands = scratchpadCalls(
-          yield* SubscriptionRef.changes(ctx.executions).pipe(
+          yield* ctx.executionChanges.pipe(
             Stream.filter((calls) => scratchpadCalls(calls).length >= 2),
             Stream.runHead,
             Effect.map(Option.getOrThrow),
@@ -837,7 +605,7 @@ describe("NotebookRuntime scratch stream", () => {
             typeof secondCommand.runId === "string",
         );
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: {
@@ -848,14 +616,14 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* Fiber.join(first);
         yield* Fiber.join(second);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "allows scratchpad execution in separate notebooks",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
       const otherEditor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "other_notebook_mo.py"),
       );
@@ -863,13 +631,12 @@ describe("NotebookRuntime scratch stream", () => {
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
-        yield* ctx.vscode.addNotebookDocument(otherEditor.notebook);
         // No drain needed before the open: the document-session service acquires its
         // lifecycle subscription before its layer finishes building, so an
         // open published this early is delivered rather than dropped.
         yield* ctx.vscode.openNotebook(otherEditor.notebook);
         yield* Effect.yieldNow;
-        yield* runtime.attachController(otherNotebook.id, ctx.mockController);
+        yield* ctx.attachController(otherNotebook.id);
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
 
@@ -884,7 +651,7 @@ describe("NotebookRuntime scratch stream", () => {
             .pipe(Stream.runDrain),
         );
 
-        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
+        const executions = yield* ctx.executionChanges.pipe(
           Stream.filter(
             (calls) =>
               calls.filter((call) => call.kind === "execute-scratchpad")
@@ -918,7 +685,7 @@ describe("NotebookRuntime scratch stream", () => {
         );
 
         for (const command of commands) {
-          yield* PubSub.publish(ctx.operationsPubSub, {
+          yield* ctx.publishOperation({
             notebookUri: command.notebookUri,
             sessionId: ACTIVE_SESSION_ID,
             notification: {
@@ -930,14 +697,14 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* Fiber.join(first);
         yield* Fiber.join(second);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -953,7 +720,7 @@ describe("NotebookRuntime scratch stream", () => {
 
         // Wait for executeScratchpad to enqueue its private command with its generated
         // runId instead of relying on a scheduler tick.
-        const executions = yield* SubscriptionRef.changes(ctx.executions).pipe(
+        const executions = yield* ctx.executionChanges.pipe(
           Stream.filter((calls) =>
             calls.some((call) => call.kind === "execute-scratchpad"),
           ),
@@ -974,8 +741,7 @@ describe("NotebookRuntime scratch stream", () => {
         // The scratch cell's op carries the run's output. marimo leaves its
         // run_id null (only the completed-run echoes ours), so we key on the
         // SCRATCH_CELL_ID, not the run_id.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
             status: "running",
             console: [
@@ -990,8 +756,7 @@ describe("NotebookRuntime scratch stream", () => {
         );
 
         // Console from a cascade cell (one code mode ran) also streams.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, realCellId, {
             status: "running",
             console: [
@@ -1006,15 +771,14 @@ describe("NotebookRuntime scratch stream", () => {
         );
 
         // A status-only cascade op (no console) is not streamed.
-        yield* PubSub.publish(
-          ctx.operationsPubSub,
+        yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, realCellId, {
             status: "idle",
           }),
         );
 
         // Our completed-run ends the stream (inclusive; filtered back out).
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: {
@@ -1028,14 +792,14 @@ describe("NotebookRuntime scratch stream", () => {
         expect(ops).toHaveLength(2);
         expect(cellIds).toContain(SCRATCH_CELL_ID);
         expect(cellIds).toContain(realCellId);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "interrupts the kernel when the stream is abandoned before completed-run",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -1051,7 +815,7 @@ describe("NotebookRuntime scratch stream", () => {
         // Wait until executeScratchpad sends the command and arms the
         // interrupt-on-abandon finalizer instead of relying on a scheduler
         // tick.
-        yield* SubscriptionRef.changes(ctx.executions).pipe(
+        yield* ctx.executionChanges.pipe(
           Stream.filter((calls) =>
             calls.some((call) => call.kind === "execute-scratchpad"),
           ),
@@ -1062,7 +826,7 @@ describe("NotebookRuntime scratch stream", () => {
         // cancelled tool invocation interrupting the fiber).
         yield* Fiber.interrupt(streamFiber);
 
-        const executions = yield* SubscriptionRef.get(ctx.executions);
+        const executions = yield* ctx.executions;
 
         const executeCmd = executions.find(
           (c) => c.kind === "execute-scratchpad",
@@ -1079,14 +843,14 @@ describe("NotebookRuntime scratch stream", () => {
           runId,
           notebookUri: ctx.notebookUri,
         });
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "does not interrupt the kernel after a normal completed-run",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -1102,7 +866,7 @@ describe("NotebookRuntime scratch stream", () => {
         // Wait until the command is recorded. Do not count scheduler
         // drains. The scratchpad setup can need more than one drain, which
         // makes a single scheduler yield flaky.
-        const calls = yield* SubscriptionRef.changes(ctx.executions).pipe(
+        const calls = yield* ctx.executionChanges.pipe(
           Stream.filter((current) =>
             current.some((call) => call.kind === "execute-scratchpad"),
           ),
@@ -1114,7 +878,7 @@ describe("NotebookRuntime scratch stream", () => {
         const { runId } = executeCmd;
 
         // Our completed-run ends the stream normally.
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: { op: "completed-run", run_id: runId },
@@ -1122,11 +886,11 @@ describe("NotebookRuntime scratch stream", () => {
 
         yield* Fiber.join(streamFiber);
 
-        const interruptCmd = (yield* SubscriptionRef.get(ctx.executions)).find(
+        const interruptCmd = (yield* ctx.executions).find(
           (c) => c.kind === "interrupt",
         );
         expect(interruptCmd).toBeUndefined();
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });
@@ -1139,14 +903,14 @@ describe("NotebookRuntime state eviction", () => {
       const staleSessionId = kernelSessionId(
         "00000000-0000-4000-8000-000000000002",
       );
-      const ctx = yield* withTestCtx(activeSessionId);
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: staleSessionId,
           notification: { op: "variables", variables: [] },
@@ -1156,7 +920,7 @@ describe("NotebookRuntime state eviction", () => {
           Option.isNone(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
 
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: activeSessionId,
           notification: { op: "variables", variables: [] },
@@ -1165,14 +929,14 @@ describe("NotebookRuntime state eviction", () => {
           Effect.filterOrFail(Option.isSome, () => "variables not settled"),
           Effect.eventually,
         );
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
   it.effect(
     "evicts variables and datasource state when a notebook closes",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
@@ -1187,7 +951,7 @@ describe("NotebookRuntime state eviction", () => {
         // can be published before the pipeline subscribes.
         yield* Effect.yieldNow;
 
-        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
+        yield* ctx.publishAnalysis({
           notebookUri: ctx.notebookUri,
           analysis: {
             op: "variables",
@@ -1200,7 +964,7 @@ describe("NotebookRuntime state eviction", () => {
             ],
           },
         });
-        yield* PubSub.publish(ctx.operationsPubSub, {
+        yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
           notification: { op: "datasets", tables: [] },
@@ -1239,7 +1003,7 @@ describe("NotebookRuntime state eviction", () => {
 
         // Notifications already queued, or delivered late by the old kernel
         // session, must not recreate state after eviction.
-        yield* PubSub.publish(ctx.documentAnalysisPubSub, {
+        yield* ctx.publishAnalysis({
           notebookUri: ctx.notebookUri,
           analysis: {
             op: "variables",
@@ -1258,13 +1022,13 @@ describe("NotebookRuntime state eviction", () => {
         ).toBe(false);
 
         // Reopening creates a distinct document session at the same URI.
-        const replacement = createTestNotebookDocument(
+        const replacement = TestVsCode.createTestNotebookDocument(
           ctx.editor.notebook.uri,
           { notebookType: ctx.editor.notebook.notebookType },
         );
         yield* ctx.vscode.openNotebook(replacement);
         yield* Effect.gen(function* () {
-          yield* PubSub.publish(ctx.documentAnalysisPubSub, {
+          yield* ctx.publishAnalysis({
             notebookUri: ctx.notebookUri,
             analysis: { op: "variables", variables: [] },
           });
@@ -1286,7 +1050,7 @@ describe("NotebookRuntime state eviction", () => {
         // Opening a marker document on the same sequential lifecycle stream
         // gives the stale close an observable ordering barrier. Once the
         // marker has a session, the preceding close has been handled.
-        const lifecycleMarker = createTestNotebookDocument(
+        const lifecycleMarker = TestVsCode.createTestNotebookDocument(
           NodePath.join(process.cwd(), "lifecycle-marker_mo.py"),
         );
         yield* ctx.vscode.openNotebook(lifecycleMarker);
@@ -1298,7 +1062,7 @@ describe("NotebookRuntime state eviction", () => {
         expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   Context,
@@ -14,11 +14,8 @@ import {
 import type * as vscode from "vscode";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import {
-  createNotebookCell,
-  NotebookRange,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellExecutionsModule from "../../kernel/CellExecutions.ts";
 import { CellCommand } from "../../kernel/CellRunReducer.ts";
@@ -38,24 +35,20 @@ import {
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
 
-const TestNotebookRuntime = makeTestNotebookRuntime();
+const TestNotebookRuntimeLayer = makeTestNotebookRuntime();
 const CellExecutions = CellExecutionsModule.Service;
 type Drive = CellExecutionsModule.Drive;
 type NotebookExecutions = CellExecutionsModule.NotebookExecutions;
 
-const withTestCtx = Effect.fn(function* (
-  options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
-) {
-  const vscode = yield* TestVsCode.make(options);
-  const layer = Layer.empty.pipe(
+const it = EffectTest.make(
+  Layer.empty.pipe(
     Layer.merge(CellExecutionsModule.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
-    Layer.provide(TestNotebookRuntime),
+    Layer.provide(TestNotebookRuntimeLayer),
     Layer.provide(TestTelemetryLive),
-    Layer.provideMerge(vscode.layer),
-  );
-  return { vscode, layer };
-});
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
 const CELL_ID = cellId("test-cell-id");
 
@@ -83,8 +76,6 @@ describe("buildCellOutputs", () => {
     "handles stdout output",
 
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -99,7 +90,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -108,8 +99,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles stderr output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -125,7 +114,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -134,8 +123,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles multiple console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -163,7 +150,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -172,8 +159,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles marimo error output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -192,7 +177,7 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -201,7 +186,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles HTML output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -215,7 +199,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -224,8 +208,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles JSON output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -238,7 +220,7 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -247,7 +229,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles mixed output and console streams",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -275,7 +256,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -284,8 +265,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles stdin output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -301,7 +280,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -310,13 +289,11 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles empty state",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = createCellRuntimeState();
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Should still have the marimo UI output
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
@@ -326,8 +303,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles multiple errors in marimo error output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -351,7 +326,7 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -360,8 +335,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles multiple stderr errors",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -389,7 +362,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -398,8 +371,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles stdout + stderr + output together",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -433,7 +404,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -442,8 +413,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles application/vnd.marimo+traceback output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -456,7 +425,7 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -465,8 +434,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out empty text/plain stdout output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -482,7 +449,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -491,8 +458,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out empty text/plain stderr output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -508,7 +473,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -517,8 +482,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "suppresses redundant exception marimo-error when a traceback is also present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -545,7 +508,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -554,8 +517,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "keeps strict-exception marimo-error even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -583,7 +544,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -592,8 +553,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "keeps exception marimo-error with raising_cell even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -621,7 +580,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -630,8 +589,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "keeps marimo-error rule violations even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -658,7 +615,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -669,8 +626,6 @@ describe("buildCellOutputs", () => {
     // both stderr console outputs; they must not collapse into one output.
     "keeps the traceback in its own output when a stderr log precedes it",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -703,7 +658,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       const normalized = normalizeOutputsForSnapshot(outputs);
 
@@ -733,8 +688,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out empty traceback output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -747,7 +700,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -756,8 +709,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out null output data",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -770,7 +721,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -779,8 +730,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out undefined output data",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -793,7 +742,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -802,7 +751,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles mix of empty and non-empty console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -836,7 +784,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -845,8 +793,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles null output object",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: null,
@@ -855,7 +801,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -864,7 +810,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles empty marimo error data array",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -878,7 +823,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -887,7 +832,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "preserves whitespace-only output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -903,7 +847,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -912,7 +856,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles numeric zero output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -926,7 +869,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -935,7 +878,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles boolean false output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -949,7 +891,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -958,7 +900,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "handles media channel in console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -974,7 +915,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
@@ -983,7 +924,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "ignores output/marimo-error/pdb channels in console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1017,7 +957,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Should only have stdout output, the other channels should be ignored
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
@@ -1027,7 +967,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "separates console outputs from main output correctly",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1049,7 +988,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Both outputs should be present but in separate channels
       expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
@@ -1059,7 +998,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "offers native stdout and rich media as alternate MIME representations",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1081,7 +1019,7 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       expect(outputs).toHaveLength(1);
       const output = outputs.at(0);
@@ -1155,7 +1093,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1216,7 +1155,7 @@ describe("NotebookExecutions", () => {
           "second:StartRun:run-2",
           "second:RenderOutputs:run-2",
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1237,7 +1176,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1376,7 +1316,7 @@ describe("NotebookExecutions", () => {
             console: ["firstrun-2-startmiddlelatest"],
           },
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1397,7 +1337,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1461,7 +1402,7 @@ describe("NotebookExecutions", () => {
         yield* runClosed.await;
 
         expect(rendered).toEqual([undefined, "42"]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1482,7 +1423,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1553,7 +1495,7 @@ describe("NotebookExecutions", () => {
           "CloseRun:run-1",
           "OpenRun:restored-run",
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1571,7 +1513,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1593,7 +1536,7 @@ describe("NotebookExecutions", () => {
         yield* Effect.yieldNow;
         cellData.value = "x = 2";
         expect(editor.notebook.cellAt(0).document.getText()).toBe("x = 2");
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1615,7 +1558,7 @@ describe("NotebookExecutions", () => {
         });
 
         expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1623,7 +1566,7 @@ describe("NotebookExecutions", () => {
     "tracks sources for cells added after the notebook opens",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      const addedCell = createNotebookCell(
+      const addedCell = TestVsCode.createNotebookCell(
         editor.notebook,
         {
           kind: 1,
@@ -1636,7 +1579,8 @@ describe("NotebookExecutions", () => {
         0,
       );
       const id = Option.getOrThrow(MarimoNotebookCell.from(addedCell).id);
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1648,13 +1592,13 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
 
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [],
           contentChanges: [
             {
-              range: new NotebookRange(0, 0),
+              range: new TestVsCode.NotebookRange(0, 0),
               removedCells: [],
               addedCells: [addedCell],
             },
@@ -1670,7 +1614,7 @@ describe("NotebookExecutions", () => {
         });
 
         expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1688,7 +1632,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1707,7 +1652,7 @@ describe("NotebookExecutions", () => {
         });
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1725,7 +1670,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1734,7 +1680,7 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
         const notifyChange = () =>
-          ctx.vscode.notebookChange({
+          vscode.notebookChange({
             notebook: editor.notebook,
             metadata: undefined,
             cellChanges: [
@@ -1772,7 +1718,7 @@ describe("NotebookExecutions", () => {
         cellData.value = "x = 1";
         yield* notifyChange();
         expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1800,7 +1746,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1818,7 +1765,7 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
         sources[0] = "x = 100";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1836,7 +1783,7 @@ describe("NotebookExecutions", () => {
 
         expect(reads[0]).toBe(1);
         expect(reads.slice(1).every((count) => count === 0)).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1857,7 +1804,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1877,7 +1825,7 @@ describe("NotebookExecutions", () => {
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-2");
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1898,7 +1846,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1932,7 +1881,7 @@ describe("NotebookExecutions", () => {
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
         expect(commands).toEqual([]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1950,7 +1899,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1983,7 +1933,7 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
         cellData.value = "x = 2";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1999,7 +1949,7 @@ describe("NotebookExecutions", () => {
         });
 
         expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2020,7 +1970,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2053,7 +2004,7 @@ describe("NotebookExecutions", () => {
             at: Option.none(),
           }),
         );
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2074,7 +2025,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2087,7 +2039,7 @@ describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2108,7 +2060,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2122,7 +2075,7 @@ describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2143,7 +2096,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2189,7 +2143,7 @@ describe("NotebookExecutions", () => {
         yield* release.open;
         yield* Fiber.join(first);
         yield* Fiber.join(second);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2207,7 +2161,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2241,7 +2196,7 @@ describe("NotebookExecutions", () => {
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
 
         cellData.value = "x = 2";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -2256,7 +2211,7 @@ describe("NotebookExecutions", () => {
           contentChanges: [],
         });
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2277,7 +2232,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2291,7 +2247,7 @@ describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2312,7 +2268,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2337,7 +2294,7 @@ describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
         expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2358,7 +2315,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2385,7 +2343,7 @@ describe("NotebookExecutions", () => {
         expect(values).toHaveLength(2);
         expect(HashSet.size(values[0])).toBe(0);
         expect(HashSet.has(values[1], id)).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2406,7 +2364,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2441,7 +2400,7 @@ describe("NotebookExecutions", () => {
         expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
         expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
         expect(error.reason).toBe("superseded-run");
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2462,7 +2421,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2523,7 +2483,7 @@ describe("NotebookExecutions", () => {
         expect(
           finalRenders[0]?.consoleOutputs.map((output) => output.data),
         ).toContain("late line");
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2552,7 +2512,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2593,7 +2554,7 @@ describe("NotebookExecutions", () => {
         expect(
           HashSet.has(yield* notebook.staleCells.current, descendantId),
         ).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2614,7 +2575,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2669,7 +2631,7 @@ describe("NotebookExecutions", () => {
         expect(error.expectedRunId).toEqual(Option.none());
         expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
         expect(opened).toBe(1);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2690,7 +2652,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2709,7 +2672,7 @@ describe("NotebookExecutions", () => {
             ],
           },
         });
-        yield* ctx.vscode.openNotebook(replacement.notebook);
+        yield* vscode.openNotebook(replacement.notebook);
         yield* Effect.yieldNow;
         const second = yield* openNotebook(executions, replacement.notebook);
         const id = Option.getOrThrow(
@@ -2721,7 +2684,7 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.flip);
         expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
-        yield* ctx.vscode.closeNotebook(editor.notebook);
+        yield* vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;
 
         yield* second.notebook.apply({
@@ -2734,7 +2697,7 @@ describe("NotebookExecutions", () => {
         expect(executions.find(replacement.notebook)).toEqual(
           Option.some(second.notebook),
         );
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });

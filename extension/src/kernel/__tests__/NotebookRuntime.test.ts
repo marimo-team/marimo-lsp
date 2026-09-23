@@ -17,9 +17,9 @@ import {
   Stream,
 } from "effect";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import {
   makeTestMarimoClient,
   type TestCommand,
@@ -37,11 +37,11 @@ import * as NotebookRuntime from "../NotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
 
-const makeTestLayer = Effect.fn(function* (
+const makeTestLayer = (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
-  vscodeOptions: Parameters<typeof TestVsCode.make>[0] = {},
-) {
-  const vscode = yield* TestVsCode.make(vscodeOptions);
+  vscodeOptions: TestVsCode.Options = {},
+) => {
+  const vscodeLayer = TestVsCode.layerWith(vscodeOptions);
   const serverSessions = new Map<
     ReturnType<typeof notebookId>,
     {
@@ -112,7 +112,6 @@ const makeTestLayer = Effect.fn(function* (
       }),
   });
   return {
-    vscode,
     serverSessions,
     snapshot,
     layer: Layer.empty.pipe(
@@ -120,16 +119,16 @@ const makeTestLayer = Effect.fn(function* (
       Layer.provide(client),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestPythonExtension.layer),
-      Layer.provideMerge(vscode.layer),
+      Layer.provideMerge(vscodeLayer),
     ),
   };
-});
+};
 
 it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
           Effect.as(request.kind === "list-sessions" ? { sessions: [] } : null),
@@ -138,6 +137,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -185,7 +185,7 @@ it.effect(
       yield* Deferred.make<
         Extract<TestCommand, { readonly kind: "update-ui-element" }>
       >();
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         request.kind === "update-ui-element"
           ? Deferred.succeed(updateSent, request).pipe(Effect.as(null))
@@ -194,6 +194,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -241,7 +242,7 @@ it.effect(
     const logger = Logger.make(({ logLevel, message }) => {
       if (logLevel === "Error") errors.push(message);
     });
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         request.kind === "update-ui-element"
           ? Deferred.succeed(updateStarted, undefined).pipe(
@@ -255,6 +256,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -280,7 +282,7 @@ it.effect(
   "keeps captured kernel identity authoritative over request fields",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
           Effect.as(null),
@@ -289,6 +291,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -367,7 +370,7 @@ it.effect.each([false, true])(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      const { layer } = yield* makeTestLayer(
+      const { layer } = makeTestLayer(
         {
           send: (request) =>
             Effect.gen(function* () {
@@ -442,7 +445,7 @@ it.effect.each(["close", "move"] as const)(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      const { layer } = yield* makeTestLayer(
+      const { layer } = makeTestLayer(
         {
           send: (request) =>
             Effect.sync(() => {
@@ -490,7 +493,7 @@ it.effect(
       NodePath.join(process.cwd(), "notebook.py"),
     );
     const id = notebookId(first.notebook.uri.toString());
-    const { layer, vscode } = yield* makeTestLayer(
+    const { layer } = makeTestLayer(
       {
         send: (request) =>
           request.kind === "execute" && request.executable === "/old-python"
@@ -507,6 +510,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const pending = yield* firstDocument
         .execute({ cells: [] }, "/old-python")
@@ -537,7 +541,7 @@ it.effect(
   }),
 );
 
-it.effect("tracks RuntimeSession until a successful kernel close", () =>
+it.live("tracks RuntimeSession until a successful kernel close", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       NodeFs.mkdtempDisposableSync(
@@ -556,7 +560,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
         );
         const id = notebookId(editor.notebook.uri.toString());
         const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-        const { layer, vscode } = yield* makeTestLayer(
+        const { layer } = makeTestLayer(
           {
             send: (request) =>
               Ref.update(requests, (current) => [...current, request]).pipe(
@@ -590,6 +594,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
 
         yield* Effect.gen(function* () {
           const runtime = yield* NotebookRuntime.Service;
+          const vscode = yield* TestVsCode.Service;
           yield* Effect.yieldNow;
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.execute({ cells: [] }, "/python-one");
@@ -649,7 +654,7 @@ it.effect(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
-    const { layer } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       // Stream.suspend evaluates once per subscription, so the counter still
       // measures how many times the runtime subscribed to `operations`.
       kernelNotifications: Stream.suspend(() => {
@@ -675,7 +680,7 @@ it.effect(
 it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
-    const { layer } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
@@ -698,7 +703,7 @@ it.effect(
 it.effect(
   "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
@@ -709,13 +714,14 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(
         notebookId(editor.notebook.uri.toString()),
         controller,
       );
 
-      const contexts = (yield* Ref.get(vscode.executions)).filter(
+      const contexts = (yield* vscode.snapshot).executions.filter(
         (execution) =>
           execution.command === "setContext" &&
           execution.args[0] === "marimo.notebook.hasKernel",
@@ -745,7 +751,7 @@ it.effect(
         stale_inputs: true,
       },
     };
-    const { layer, vscode } = yield* makeTestLayer(
+    const { layer } = makeTestLayer(
       {
         send: (request) =>
           Ref.update(requests, (current) => [...current, request]).pipe(
@@ -767,6 +773,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       const id = notebookId(editor.notebook.uri.toString());
@@ -784,8 +791,8 @@ it.effect(
   }),
 );
 
-const hasKernelContexts = (vscode: TestVsCode) =>
-  Effect.map(Ref.get(vscode.executions), (executions) =>
+const hasKernelContexts = (vscode: TestVsCode.Interface) =>
+  Effect.map(vscode.snapshot, ({ executions }) =>
     executions
       .filter(
         (execution) =>
@@ -811,11 +818,12 @@ const eventually = <A>(
 it.effect(
   "reports no kernel for an active notebook with no controller",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
@@ -834,12 +842,13 @@ it.effect(
     const changes = yield* PubSub.unbounded<ListSessionsResponse>();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       sessionChanges: Stream.fromPubSub(changes),
     });
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
@@ -871,7 +880,7 @@ it.effect(
 it.effect(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
     const controller: NotebookRuntime.NotebookController = {
@@ -883,6 +892,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
@@ -921,7 +931,7 @@ it.effect(
     );
     const firstId = notebookId(first.notebook.uri.toString());
     const secondId = notebookId(second.notebook.uri.toString());
-    const { layer, vscode, serverSessions, snapshot } = yield* makeTestLayer(
+    const { layer, serverSessions, snapshot } = makeTestLayer(
       {
         sessionChanges: Stream.fromPubSub(changes),
         send: (request) =>
@@ -936,6 +946,7 @@ it.effect(
     );
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const secondDocument = yield* runtime.forDocument(second.notebook);
       yield* firstDocument.execute({ cells: [] }, "/python");

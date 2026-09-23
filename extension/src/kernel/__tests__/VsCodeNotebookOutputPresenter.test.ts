@@ -1,8 +1,9 @@
-import { expect, it } from "@effect/vitest";
+import { expect } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -12,6 +13,17 @@ import {
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import * as CellOutputProjections from "../CellOutputProjections.ts";
 import * as VsCodeNotebookOutputPresenter from "../VsCodeNotebookOutputPresenter.ts";
+
+const projectionsLayer = CellOutputProjections.layer.pipe(
+  Layer.provide(TestVsCode.layer),
+);
+const presenterLayer = VsCodeNotebookOutputPresenter.layer.pipe(
+  Layer.provide(TestVsCode.layer),
+  Layer.provide(projectionsLayer),
+);
+const it = EffectTest.make(
+  Layer.mergeAll(TestVsCode.layer, projectionsLayer, presenterLayer),
+);
 
 const savedReplay: CellOutputReplay = {
   kind: "saved",
@@ -49,14 +61,7 @@ it.effect(
   "presents saved output without completing a run",
   Effect.fn(function* () {
     const notebookEditor = editor();
-    const code = yield* TestVsCode.make({
-      initialDocuments: [notebookEditor.notebook],
-    });
-    const projections = yield* CellOutputProjections.Service.pipe(
-      Effect.provide(
-        CellOutputProjections.layer.pipe(Layer.provide(code.layer)),
-      ),
-    );
+    const presenter = yield* VsCodeNotebookOutputPresenter.Service;
     const events: string[] = [];
     const rendered: vscode.NotebookCellOutput[][] = [];
     const execution: vscode.NotebookCellExecution = {
@@ -77,17 +82,6 @@ it.effect(
       replaceOutputItems: async () => {},
       appendOutputItems: async () => {},
     };
-    const presenter = yield* VsCodeNotebookOutputPresenter.Service.pipe(
-      Effect.provide(
-        VsCodeNotebookOutputPresenter.layer.pipe(
-          Layer.provide(code.layer),
-          Layer.provide(
-            Layer.succeed(CellOutputProjections.Service, projections),
-          ),
-        ),
-      ),
-    );
-
     yield* presenter.present(
       MarimoNotebookDocument.from(notebookEditor.notebook),
       { createNotebookCellExecution: () => execution },
@@ -120,24 +114,8 @@ it.effect(
       },
     ];
     const notebookEditor = editor(displayed);
-    const code = yield* TestVsCode.make({
-      initialDocuments: [notebookEditor.notebook],
-    });
-    const projections = yield* CellOutputProjections.Service.pipe(
-      Effect.provide(
-        CellOutputProjections.layer.pipe(Layer.provide(code.layer)),
-      ),
-    );
-    const presenter = yield* VsCodeNotebookOutputPresenter.Service.pipe(
-      Effect.provide(
-        VsCodeNotebookOutputPresenter.layer.pipe(
-          Layer.provide(code.layer),
-          Layer.provide(
-            Layer.succeed(CellOutputProjections.Service, projections),
-          ),
-        ),
-      ),
-    );
+    const projections = yield* CellOutputProjections.Service;
+    const presenter = yield* VsCodeNotebookOutputPresenter.Service;
     let executions = 0;
 
     yield* presenter.present(
@@ -153,7 +131,7 @@ it.effect(
 
     expect(executions).toBe(0);
 
-    const api = yield* VsCode.Service.pipe(Effect.provide(code.layer));
+    const api = yield* VsCode.Service;
     const events: string[] = [];
     const execution: vscode.NotebookCellExecution = {
       cell: notebookEditor.notebook.cellAt(0),
