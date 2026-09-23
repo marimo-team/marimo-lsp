@@ -344,7 +344,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 #### Notebook
 
-- [ ] `notebook/__tests__/CellMetadata.test.ts`
+- [x] `notebook/__tests__/CellMetadata.test.ts`
 - [x] `notebook/__tests__/CellMetadataUIBinding.test.ts`
 - [ ] `notebook/__tests__/NotebookDependencies.test.ts`
 - [ ] `notebook/__tests__/NotebookDocumentSessions.test.ts`
