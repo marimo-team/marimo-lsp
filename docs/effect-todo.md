@@ -302,7 +302,7 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `features/__tests__/AutoExport.test.ts`
 - [x] `features/__tests__/CellInputVisibilitySync.test.ts`
 - [x] `features/__tests__/CellMetadataBindings.test.ts`
-- [ ] `features/__tests__/CellStatusBarProvider.test.ts`
+- [x] `features/__tests__/CellStatusBarProvider.test.ts`
 - [x] `features/__tests__/Logger.test.ts` — keeps per-test logger layers local.
 - [x] `features/__tests__/MarimoCodeLensProvider.test.ts`
 - [x] `features/__tests__/MarimoFileDetector.test.ts`
