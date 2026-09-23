@@ -156,6 +156,10 @@ narrow adapters.
   queues, or pub/sub handles to each test.
 - When a file uses `EffectTest.make`, import `@effect/vitest` as `Vitest` and
   name the bound runner `it`. Use `Vitest.it` for tests outside the bound layer.
+- When one suite needs several configured layers, put each configuration in a
+  nested `Vitest.describe` and name its locally scoped runner `it`. The nested
+  suite describes where the configuration applies; each test still receives a
+  fresh layer build from `EffectTest.make`.
 - Prefer realistic local or in-memory adapters.
 - Use `Layer.succeed` when the complete service behavior is intentional. Use
   `Layer.mock` sparingly when a test exercises only a narrow part of a service
