@@ -1,43 +1,45 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../__mocks__/TestVsCode.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import { makeActiveNotebookEditorChanges } from "../platform/Window.ts";
 import { makeNotebookLifecycle } from "../platform/Workspace.ts";
+import * as EffectTest from "./__utils__/EffectTest.ts";
+
+const it = EffectTest.make(TestVsCode.layer);
+const initialEditors = [
+  TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
+  TestVsCode.makeNotebookEditor("/test/bar_mo.py"),
+];
+const initializedIt = EffectTest.make(
+  TestVsCode.layerWith({
+    initialDocuments: initialEditors.map((editor) => editor.notebook),
+  }),
+);
 
 // Tests for our VsCode test harness
 describe("TestVsCode", () => {
   it.effect(
     "defaults to None active editor",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.make();
-
-      const editor = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        const editor = yield* code.window.getActiveNotebookEditor;
-        return editor;
-      }).pipe(Effect.provide(vscode.layer));
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      const editor = yield* code.window.getActiveNotebookEditor;
 
       assert.strictEqual(editor._tag, "None");
+      expect((yield* test.snapshot).activeNotebookUri).toEqual(Option.none());
     }),
   );
 
-  it.effect(
+  initializedIt.effect(
     "supports initializing with notebook documents",
     Effect.fn(function* () {
-      const editor1 = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
-      const editor2 = TestVsCode.makeNotebookEditor("/test/bar_mo.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor1.notebook, editor2.notebook],
-      });
-
-      const documents = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        const documents = yield* code.workspace.getNotebookDocuments;
-        return documents.map((doc) => doc.uri.toString()).toSorted();
-      }).pipe(Effect.provide(vscode.layer));
+      const code = yield* VsCode.Service;
+      const documents = (yield* code.workspace.getNotebookDocuments)
+        .map((doc) => doc.uri.toString())
+        .toSorted();
 
       expect(documents).toMatchInlineSnapshot(`
         [
@@ -98,38 +100,35 @@ describe("TestVsCode", () => {
     "keeps notebook lifecycle events and the document snapshot consistent",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
-      const vscode = yield* TestVsCode.make();
+      const vscode = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
 
-      yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
+      // Open before subscribing: the document must still appear in the
+      // lifecycle snapshot instead of being lost between independent stores.
+      yield* vscode.openNotebook(editor.notebook);
+      const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+      const opened = yield* Stream.runHead(lifecycle);
+      expect(Option.map(opened, (event) => event.type)).toEqual(
+        Option.some("opened"),
+      );
+      expect(yield* code.workspace.getNotebookDocuments).toContain(
+        editor.notebook,
+      );
 
-        // Open before subscribing: the document must still appear in the
-        // lifecycle snapshot instead of being lost between independent stores.
-        yield* vscode.openNotebook(editor.notebook);
-        const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
-        const opened = yield* Stream.runHead(lifecycle);
-        expect(Option.map(opened, (event) => event.type)).toEqual(
-          Option.some("opened"),
-        );
-        expect(yield* code.workspace.getNotebookDocuments).toContain(
-          editor.notebook,
-        );
-
-        const closeLifecycle = yield* code.workspace.subscribeNotebookLifecycle;
-        const closedFiber = yield* closeLifecycle.pipe(
-          Stream.filter((event) => event.type === "closed"),
-          Stream.runHead,
-          Effect.forkChild,
-        );
-        yield* vscode.closeNotebook(editor.notebook);
-        const closed = yield* Fiber.join(closedFiber);
-        expect(Option.map(closed, (event) => event.document)).toEqual(
-          Option.some(editor.notebook),
-        );
-        expect(yield* code.workspace.getNotebookDocuments).not.toContain(
-          editor.notebook,
-        );
-      }).pipe(Effect.provide(vscode.layer));
+      const closeLifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+      const closedFiber = yield* closeLifecycle.pipe(
+        Stream.filter((event) => event.type === "closed"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* vscode.closeNotebook(editor.notebook);
+      const closed = yield* Fiber.join(closedFiber);
+      expect(Option.map(closed, (event) => event.document)).toEqual(
+        Option.some(editor.notebook),
+      );
+      expect(yield* code.workspace.getNotebookDocuments).not.toContain(
+        editor.notebook,
+      );
     }),
   );
 
@@ -180,16 +179,12 @@ describe("TestVsCode", () => {
     "supports setting notebook editor",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
 
+      yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-
-      const activeEditor = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        return yield* code.window.getActiveNotebookEditor;
-      }).pipe(Effect.provide(vscode.layer));
+      const activeEditor = yield* code.window.getActiveNotebookEditor;
 
       assert(activeEditor._tag === "Some");
       expect(editor).toBe(activeEditor.value);
@@ -204,39 +199,40 @@ describe("TestVsCode", () => {
         TestVsCode.makeNotebookEditor("/test/foo_mo2.py"),
         TestVsCode.makeNotebookEditor("/test/foo_mo3.py"),
       ];
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: editors.map((e) => e.notebook),
-      });
+      const vscode = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
 
-      const result = yield* Effect.gen(function* () {
-        const code = yield* VsCode.Service;
+      yield* Effect.forEach(editors, (editor) =>
+        vscode.openNotebook(editor.notebook),
+      );
 
-        // `SubscriptionRef.changes` sends the current value at
-        // subscription. Expect the first None and the five updates below.
-        const fiber = yield* code.window.activeNotebookEditorChanges.pipe(
-          Stream.take(6),
-          Stream.runCollect,
-          Effect.forkChild,
-        );
+      // `SubscriptionRef.changes` sends the current value at
+      // subscription. Expect the first None and the five updates below.
+      const fiber = yield* code.window.activeNotebookEditorChanges.pipe(
+        Stream.take(6),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
 
-        yield* Effect.yieldNow;
-        yield* vscode.setActiveNotebookEditor(Option.some(editors[0]));
+      yield* Effect.yieldNow;
+      yield* vscode.setActiveNotebookEditor(Option.some(editors[0]));
 
-        yield* Effect.yieldNow;
-        yield* vscode.setActiveNotebookEditor(Option.some(editors[1]));
+      yield* Effect.yieldNow;
+      yield* vscode.setActiveNotebookEditor(Option.some(editors[1]));
 
-        yield* Effect.yieldNow;
-        yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
+      yield* Effect.yieldNow;
+      yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-        yield* Effect.yieldNow;
-        yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
+      yield* Effect.yieldNow;
+      yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-        yield* Effect.yieldNow;
-        yield* vscode.setActiveNotebookEditor(Option.none());
+      yield* Effect.yieldNow;
+      yield* vscode.setActiveNotebookEditor(Option.none());
 
-        const collected = yield* Fiber.join(fiber);
-        return collected.map(Option.map((n) => n.notebook.uri.toString()));
-      }).pipe(Effect.provide(vscode.layer));
+      const collected = yield* Fiber.join(fiber);
+      const result = collected.map(
+        Option.map((notebookEditor) => notebookEditor.notebook.uri.toString()),
+      );
 
       expect(result.map(Option.getOrNull)).toMatchInlineSnapshot(`
         [

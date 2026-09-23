@@ -2,6 +2,7 @@ import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
 
 import {
+  Context,
   Data,
   Deferred,
   Effect,
@@ -1081,9 +1082,6 @@ class NotebookCell implements vscode.NotebookCell {
   }
 }
 
-// Module-private so the mock's public surface stays identical to VS Code's.
-const closedNotebooks = new WeakSet<vscode.NotebookDocument>();
-
 class NotebookDocument implements vscode.NotebookDocument {
   readonly uri: Uri;
   readonly notebookType: string;
@@ -1094,9 +1092,10 @@ class NotebookDocument implements vscode.NotebookDocument {
   readonly cellCount: number;
 
   #cells: vscode.NotebookCell[];
+  #isClosed = false;
 
   get isClosed(): boolean {
-    return closedNotebooks.has(this);
+    return this.#isClosed;
   }
 
   constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
@@ -1130,6 +1129,16 @@ class NotebookDocument implements vscode.NotebookDocument {
 
   save() {
     return Promise.resolve(true);
+  }
+
+  close() {
+    this.#isClosed = true;
+  }
+}
+
+function closeNotebookDocument(document: vscode.NotebookDocument) {
+  if (document instanceof NotebookDocument) {
+    document.close();
   }
 }
 
@@ -1509,29 +1518,111 @@ export function createTestNotebookEditor(
   return new NotebookEditor(notebook);
 }
 
+export interface NotebookEditorOptions {
+  readonly data?: NotebookData;
+  readonly notebookType?: string;
+}
+
+export interface Options {
+  readonly initialDocuments?: Array<vscode.NotebookDocument>;
+  readonly initialActiveNotebookEditor?: Option.Option<vscode.NotebookEditor>;
+  readonly visibleNotebookEditors?: Array<vscode.NotebookEditor>;
+  readonly version?: string;
+  readonly fileSystem?: Map<string, Uint8Array | Error>;
+  readonly window?: Partial<Window.Interface>;
+  readonly commands?: Partial<Commands.Interface>;
+  readonly workspace?: Partial<Workspace.Interface>;
+  readonly env?: Partial<Env.Interface>;
+  readonly installedExtensions?: ReadonlyArray<string>;
+}
+
+export interface CommandExecution {
+  readonly command: string;
+  readonly args: ReadonlyArray<unknown>;
+}
+
+export interface AffinityUpdate {
+  readonly controllerId: string;
+  readonly notebookUri: string;
+  readonly affinity: vscode.NotebookControllerAffinity;
+}
+
+export interface RegisteredSerializer {
+  readonly notebookType: string;
+  readonly serializer: vscode.NotebookSerializer;
+  readonly options: vscode.NotebookDocumentContentOptions | undefined;
+}
+
+export interface RegisteredStatusBarProvider {
+  readonly notebookType: string;
+  readonly provideCellStatusBarItems: (
+    cell: vscode.NotebookCell,
+  ) => Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
+}
+
+export interface Snapshot {
+  readonly views: ReadonlyArray<string>;
+  readonly commands: ReadonlyArray<string>;
+  readonly serializers: ReadonlyArray<string>;
+  readonly controllers: ReadonlyArray<string>;
+  readonly executions: ReadonlyArray<CommandExecution>;
+  readonly affinityUpdates: ReadonlyArray<AffinityUpdate>;
+  readonly openedExternalUris: ReadonlyArray<string>;
+  readonly workspaceEdits: ReadonlyArray<vscode.WorkspaceEdit>;
+  readonly openNotebookUris: ReadonlyArray<string>;
+  readonly activeNotebookUri: Option.Option<string>;
+  readonly visibleNotebookUris: ReadonlyArray<string>;
+}
+
+export interface Interface {
+  readonly snapshot: Effect.Effect<Snapshot>;
+  readonly controllers: Effect.Effect<ReadonlyArray<vscode.NotebookController>>;
+  readonly serializers: Effect.Effect<ReadonlyArray<RegisteredSerializer>>;
+  readonly statusBarProviders: Effect.Effect<
+    ReadonlyArray<RegisteredStatusBarProvider>
+  >;
+  readonly openNotebook: (
+    document: vscode.NotebookDocument,
+  ) => Effect.Effect<void>;
+  readonly closeNotebook: (
+    document: vscode.NotebookDocument,
+  ) => Effect.Effect<void>;
+  readonly notebookChange: (
+    event: vscode.NotebookDocumentChangeEvent,
+  ) => Effect.Effect<boolean>;
+  readonly setActiveNotebookEditor: (
+    editor: Option.Option<vscode.NotebookEditor>,
+  ) => Effect.Effect<void>;
+  readonly setActiveTextEditor: (
+    editor: Option.Option<vscode.TextEditor>,
+  ) => Effect.Effect<void>;
+  readonly selectNotebookController: (
+    controllerId: string,
+    notebook: vscode.NotebookDocument,
+    selected: boolean,
+  ) => Effect.Effect<void>;
+  readonly rendererMessaging: {
+    readonly ready: Effect.Effect<void>;
+    readonly send: (
+      editor: vscode.NotebookEditor,
+      message: RendererCommand,
+    ) => Effect.Effect<void>;
+    readonly receive: Effect.Effect<RendererReceiveMessage>;
+  };
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/test/VsCode",
+) {}
+
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
-  readonly layer: Layer.Layer<VsCode.Service>;
+  readonly layer: Layer.Layer<VsCode.Service | Service>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
   readonly commands: Ref.Ref<HashSet.HashSet<string>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
-  readonly executions: Ref.Ref<
-    ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
-  >;
-  readonly serializers: Ref.Ref<
-    HashSet.HashSet<{
-      notebookType: string;
-      serializer: vscode.NotebookSerializer;
-      options: vscode.NotebookDocumentContentOptions | undefined;
-    }>
-  >;
-  readonly statusBarProviders: Ref.Ref<
-    Array<{
-      notebookType: string;
-      provideCellStatusBarItems(
-        cell: vscode.NotebookCell,
-      ): Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
-    }>
-  >;
+  readonly executions: Ref.Ref<ReadonlyArray<CommandExecution>>;
+  readonly serializers: Ref.Ref<HashSet.HashSet<RegisteredSerializer>>;
+  readonly statusBarProviders: Ref.Ref<Array<RegisteredStatusBarProvider>>;
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly documentClosedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
@@ -1561,20 +1652,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly removeNotebookDocument: (
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
-  readonly affinityUpdates: Ref.Ref<
-    ReadonlyArray<{
-      controllerId: string;
-      notebookUri: string;
-      affinity: vscode.NotebookControllerAffinity;
-    }>
-  >;
+  readonly affinityUpdates: Ref.Ref<ReadonlyArray<AffinityUpdate>>;
 }> {
   static makeNotebookEditor(
     uri: string | Uri,
-    options: {
-      data?: NotebookData;
-      notebookType?: string;
-    } = {},
+    options: NotebookEditorOptions = {},
   ) {
     return createTestNotebookEditor(createTestNotebookDocument(uri, options));
   }
@@ -1634,9 +1716,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   }
 
   closeNotebook(doc: vscode.NotebookDocument) {
-    // VS Code marks a document closed before firing onDidCloseNotebookDocument.
-    closedNotebooks.add(doc);
-    return this.removeNotebookDocument(doc).pipe(
+    return Effect.sync(() => closeNotebookDocument(doc)).pipe(
+      // VS Code marks a document closed before firing onDidCloseNotebookDocument.
+      Effect.andThen(this.removeNotebookDocument(doc)),
       Effect.andThen(PubSub.publish(this.documentClosedPubSub, doc)),
       Effect.andThen(
         PubSub.publish(this.documentLifecyclePubSub, {
@@ -1647,20 +1729,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     );
   }
 
-  static make = Effect.fn(function* (
-    options: {
-      initialDocuments?: Array<vscode.NotebookDocument>;
-      initialActiveNotebookEditor?: Option.Option<vscode.NotebookEditor>;
-      visibleNotebookEditors?: Array<vscode.NotebookEditor>;
-      version?: string;
-      fileSystem?: Map<string, Uint8Array | Error>;
-      window?: Partial<Window.Interface>;
-      commands?: Partial<Commands.Interface>;
-      workspace?: Partial<Workspace.Interface>;
-      env?: Partial<Env.Interface>;
-      installedExtensions?: ReadonlyArray<string>;
-    } = {},
-  ) {
+  static make = Effect.fn(function* (options: Options = {}) {
     const activeTextEditor = yield* SubscriptionRef.make(
       Option.none<vscode.TextEditor>(),
     );
@@ -1725,17 +1794,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     >([]);
     const views = yield* Ref.make(HashSet.empty<string>());
 
-    const executions = yield* Ref.make<
-      ReadonlyArray<{ command: string; args: ReadonlyArray<unknown> }>
-    >([]);
+    const executions = yield* Ref.make<ReadonlyArray<CommandExecution>>([]);
 
-    const affinityUpdates = yield* Ref.make<
-      ReadonlyArray<{
-        controllerId: string;
-        notebookUri: string;
-        affinity: vscode.NotebookControllerAffinity;
-      }>
-    >([]);
+    const affinityUpdates = yield* Ref.make<ReadonlyArray<AffinityUpdate>>([]);
+    const openedExternalUris = yield* Ref.make<ReadonlyArray<string>>([]);
+    const workspaceEdits = yield* Ref.make<ReadonlyArray<vscode.WorkspaceEdit>>(
+      [],
+    );
 
     const context = yield* Effect.context();
 
@@ -2037,8 +2102,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         createFileSystemWatcher() {
           return Stream.never;
         },
-        applyEdit() {
-          return Effect.succeed(true);
+        applyEdit(edit) {
+          return Ref.update(workspaceEdits, (current) => [
+            ...current,
+            edit,
+          ]).pipe(Effect.as(true));
         },
         openNotebookDocument(uri: vscode.Uri) {
           return Effect.succeed(new NotebookDocument("marimo-notebook", uri));
@@ -2098,8 +2166,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             dispose() {},
           }));
         },
-        openExternal() {
-          return Effect.succeed(true);
+        openExternal(uri) {
+          return Ref.update(openedExternalUris, (current) => [
+            ...current,
+            uri.toString(true),
+          ]).pipe(Effect.as(true));
         },
         ...options.env,
       },
@@ -2397,8 +2468,157 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       },
     });
 
+    const setActiveNotebookEditor: Interface["setActiveNotebookEditor"] = (
+      editor,
+    ) =>
+      Effect.gen(function* () {
+        yield* SubscriptionRef.set(activeNotebookEditor, editor);
+        // Also update visible editors - when an editor becomes active, it's visible
+        if (Option.isSome(editor)) {
+          const current = yield* SubscriptionRef.get(visibleNotebookEditors);
+          yield* SubscriptionRef.set(visibleNotebookEditors, [
+            ...current,
+            editor.value,
+          ]);
+        }
+      });
+
+    const selectNotebookController: Interface["selectNotebookController"] = (
+      controllerId,
+      notebook,
+      selected,
+    ) =>
+      Effect.sync(() => {
+        const emitter = controllerSelectionEmitters.get(controllerId);
+        if (emitter === undefined) {
+          throw new Error(
+            `Notebook controller is not registered: ${controllerId}`,
+          );
+        }
+        emitter.fire({ notebook, selected });
+      });
+
+    const rendererMessaging: Interface["rendererMessaging"] = {
+      ready: Deferred.await(rendererMessagingReady),
+      send: (editor, message) =>
+        Effect.sync(() => rendererMessages.fire({ editor, message })),
+      receive: Queue.take(rendererReplies),
+    };
+
+    const setActiveTextEditor: Interface["setActiveTextEditor"] = (editor) =>
+      Effect.gen(function* () {
+        yield* SubscriptionRef.set(activeTextEditor, editor);
+        // Also update visible editors - when an editor becomes active, it's visible
+        if (Option.isSome(editor)) {
+          const current = yield* SubscriptionRef.get(visibleTextEditors);
+          yield* SubscriptionRef.set(visibleTextEditors, [
+            ...current,
+            editor.value,
+          ]);
+        }
+      });
+
+    const addNotebookDocument = (doc: vscode.NotebookDocument) =>
+      Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc));
+    const removeNotebookDocument = (doc: vscode.NotebookDocument) =>
+      Ref.update(notebookDocuments, (docs) => HashSet.remove(docs, doc));
+    const notebookChange: Interface["notebookChange"] = (event) =>
+      PubSub.publish(documentChanges, event);
+    const openNotebook: Interface["openNotebook"] = (doc) =>
+      addNotebookDocument(doc).pipe(
+        Effect.andThen(PubSub.publish(documentOpened, doc)),
+        Effect.andThen(
+          PubSub.publish(documentLifecycle, {
+            type: "opened" as const,
+            document: doc,
+          }),
+        ),
+        Effect.asVoid,
+      );
+    const closeNotebook: Interface["closeNotebook"] = (doc) =>
+      Effect.sync(() => closeNotebookDocument(doc)).pipe(
+        Effect.andThen(removeNotebookDocument(doc)),
+        Effect.andThen(PubSub.publish(documentClosed, doc)),
+        Effect.andThen(
+          PubSub.publish(documentLifecycle, {
+            type: "closed" as const,
+            document: doc,
+          }),
+        ),
+        Effect.asVoid,
+      );
+
+    const snapshot = Effect.gen(function* () {
+      const currentViews = yield* Ref.get(views);
+      const currentCommands = yield* Ref.get(commands);
+      const currentSerializers = yield* Ref.get(serializers);
+      const currentControllers = yield* Ref.get(controllers);
+      const currentExecutions = yield* Ref.get(executions);
+      const currentAffinityUpdates = yield* Ref.get(affinityUpdates);
+      const currentOpenedExternalUris = yield* Ref.get(openedExternalUris);
+      const currentWorkspaceEdits = yield* Ref.get(workspaceEdits);
+      const currentDocuments = yield* Ref.get(notebookDocuments);
+      const currentActiveEditor =
+        yield* SubscriptionRef.get(activeNotebookEditor);
+      const currentVisibleEditors = yield* SubscriptionRef.get(
+        visibleNotebookEditors,
+      );
+
+      return {
+        views: Array.from(currentViews).toSorted(),
+        commands: Array.from(currentCommands).toSorted(),
+        serializers: Array.from(
+          currentSerializers,
+          (entry) => entry.notebookType,
+        ).toSorted(),
+        controllers: Array.from(
+          currentControllers,
+          (entry) => entry.id,
+        ).toSorted(),
+        executions: currentExecutions.map((entry) => ({
+          command: entry.command,
+          args: [...entry.args],
+        })),
+        affinityUpdates: currentAffinityUpdates.map((entry) => ({ ...entry })),
+        openedExternalUris: [...currentOpenedExternalUris],
+        workspaceEdits: [...currentWorkspaceEdits],
+        openNotebookUris: Array.from(currentDocuments, (document) =>
+          document.uri.toString(),
+        ).toSorted(),
+        activeNotebookUri: Option.map(currentActiveEditor, (editor) =>
+          editor.notebook.uri.toString(),
+        ),
+        visibleNotebookUris: currentVisibleEditors
+          .map((editor) => editor.notebook.uri.toString())
+          .toSorted(),
+      } satisfies Snapshot;
+    });
+
+    const testService = Service.of({
+      snapshot,
+      controllers: Effect.map(Ref.get(controllers), (items) =>
+        Array.from(items),
+      ),
+      serializers: Effect.map(Ref.get(serializers), (items) =>
+        Array.from(items),
+      ),
+      statusBarProviders: Effect.map(
+        Ref.get(statusBarProviders),
+        (providers) => [...providers],
+      ),
+      openNotebook,
+      closeNotebook,
+      notebookChange,
+      setActiveNotebookEditor,
+      setActiveTextEditor,
+      selectNotebookController,
+      rendererMessaging,
+    });
+
+    const testLayer = Layer.merge(layer, Layer.succeed(Service, testService));
+
     return new TestVsCode({
-      layer,
+      layer: testLayer,
       views,
       commands,
       executions,
@@ -2410,56 +2630,30 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       documentClosedPubSub: documentClosed,
       documentLifecyclePubSub: documentLifecycle,
       affinityUpdates,
-      setActiveNotebookEditor: (editor) =>
-        Effect.gen(function* () {
-          yield* SubscriptionRef.set(activeNotebookEditor, editor);
-          // Also update visible editors - when an editor becomes active, it's visible
-          if (Option.isSome(editor)) {
-            const current = yield* SubscriptionRef.get(visibleNotebookEditors);
-            yield* SubscriptionRef.set(visibleNotebookEditors, [
-              ...current,
-              editor.value,
-            ]);
-          }
-        }),
-      selectNotebookController: (controllerId, notebook, selected) =>
-        Effect.sync(() => {
-          const emitter = controllerSelectionEmitters.get(controllerId);
-          if (emitter === undefined) {
-            throw new Error(
-              `Notebook controller is not registered: ${controllerId}`,
-            );
-          }
-          emitter.fire({ notebook, selected });
-        }),
-      rendererMessaging: {
-        ready: Deferred.await(rendererMessagingReady),
-        send: (editor, message) =>
-          Effect.sync(() => rendererMessages.fire({ editor, message })),
-        receive: Queue.take(rendererReplies),
-      },
-      setActiveTextEditor: (editor) =>
-        Effect.gen(function* () {
-          yield* SubscriptionRef.set(activeTextEditor, editor);
-          // Also update visible editors - when an editor becomes active, it's visible
-          if (Option.isSome(editor)) {
-            const current = yield* SubscriptionRef.get(visibleTextEditors);
-            yield* SubscriptionRef.set(visibleTextEditors, [
-              ...current,
-              editor.value,
-            ]);
-          }
-        }),
-      addNotebookDocument: (doc) =>
-        Ref.update(notebookDocuments, (docs) => HashSet.add(docs, doc)),
-      removeNotebookDocument: (doc) =>
-        Ref.update(notebookDocuments, (docs) => HashSet.remove(docs, doc)),
+      setActiveNotebookEditor,
+      selectNotebookController,
+      rendererMessaging,
+      setActiveTextEditor,
+      addNotebookDocument,
+      removeNotebookDocument,
     });
   });
 
   static layer = TestVsCode.make().pipe(
     Effect.map((test) => test.layer),
-    Effect.scoped,
     Layer.unwrap,
   );
 }
+
+export const makeNotebookEditor = (
+  uri: string | Uri,
+  options: NotebookEditorOptions = {},
+) => TestVsCode.makeNotebookEditor(uri, options);
+
+/** @deprecated Prefer `layer` or `layerWith` and yield `Service` in tests. */
+export const make = TestVsCode.make;
+
+export const layerWith = (options: Options) =>
+  Layer.unwrap(make(options).pipe(Effect.map((test) => test.layer)));
+
+export const layer = layerWith({});
