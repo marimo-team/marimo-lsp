@@ -9,14 +9,12 @@
  * between upstream ty releases.
  */
 
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import { Effect, Layer, Option, Stream } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
-import {
-  createTestNotebookDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import * as VsCode from "../../platform/VsCode.ts";
@@ -32,14 +30,14 @@ const variablesLayer = NotebookVariables.layer.pipe(
     }),
   ),
 );
+const it = EffectTest.make(Layer.merge(variablesLayer, TestVsCode.layer));
 
 describe("makeNotebookLspClient against uv run ty server", () => {
-  it.effect(
+  it.live(
     "initialize → openNotebook → hover → textChange → close",
     () =>
       Effect.gen(function* () {
-        const test = yield* TestVsCode.make();
-        const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
+        const code = yield* VsCode.Service;
         const outputChannel = yield* code.window.createOutputChannel("ty");
 
         const client = yield* makeNotebookLspClient({
@@ -86,7 +84,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
         // --- 2. Build a notebook with one Python cell ---------------------
         // `x` is declared at the start of the line so hover at (0,0) lands
         // on a symbol ty can describe.
-        const notebook = createTestNotebookDocument("/nb.py", {
+        const notebook = TestVsCode.createTestNotebookDocument("/nb.py", {
           data: {
             cells: [
               {
@@ -150,7 +148,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
 
         // Scope closes → shutdown request + exit notification + process kill
         // are asserted implicitly by the test completing without hanging.
-      }).pipe(Effect.provide(variablesLayer)),
+      }),
     { timeout: 30_000 },
   );
 });

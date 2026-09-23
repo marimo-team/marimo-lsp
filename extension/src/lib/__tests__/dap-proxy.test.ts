@@ -1,6 +1,6 @@
 import * as NodeNet from "node:net";
 
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import {
   Cause,
   Deferred,
@@ -11,7 +11,8 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { createSourceMapping, makeDapProxy } from "../dap-proxy.ts";
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ const withTestCtx = Effect.fn(function* (
       "127.0.0.1",
       yield* Deferred.await(port),
       mapping,
-    ).pipe(Effect.provide(TestVsCode.layer)),
+    ),
     conn: yield* Deferred.await(connection),
   };
 });
@@ -99,6 +100,7 @@ const withTestCtx = Effect.fn(function* (
 
 const CELL_URI = "vscode-notebook-cell://auth/cell-abc123";
 const TEMP_FILE = "/tmp/marimo_12345/__marimo__cell_abc123_.py";
+const it = EffectTest.make(TestVsCode.layer);
 
 /** Take the first chunk from the connection's message stream and parse DAP messages from it. */
 function takeFirstMessage(conn: Connection) {
@@ -114,7 +116,7 @@ function takeFirstMessage(conn: Connection) {
 }
 
 describe("makeDapProxy", () => {
-  it.effect(
+  it.live(
     "rewrites source.path in setBreakpoints (cell URI -> temp file)",
     Effect.fn(function* () {
       const { conn, proxy } = yield* withTestCtx(
@@ -151,7 +153,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.effect(
+  it.live(
     "signals ready and forwards configurationDone message",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(createSourceMapping({}));
@@ -173,7 +175,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.effect(
+  it.live(
     "rewrites source.path in responses from debugpy (temp file -> cell URI)",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(
@@ -213,7 +215,7 @@ describe("makeDapProxy", () => {
     }),
   );
 
-  it.effect(
+  it.live(
     "forwards unrecognized messages unchanged",
     Effect.fn(function* () {
       const { proxy, conn } = yield* withTestCtx(

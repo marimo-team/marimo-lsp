@@ -2,34 +2,55 @@ import * as NodeEvents from "node:events";
 import * as NodeStream from "node:stream";
 
 import { expect, it } from "@effect/vitest";
+import { Effect } from "effect";
 import { vi } from "vite-plus/test";
 
 import { Processes } from "../Processes.ts";
 
-it("reports a selected-Python spawn failure", async () => {
-  const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const exited = Promise.withResolvers<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-    stderr: string | undefined;
-  }>();
-  const processes = new Processes({
-    stdout: () => {},
-    exited: (_processId, code, signal, processStderr) =>
-      exited.resolve({ code, signal, stderr: processStderr }),
-  });
+it.live(
+  "reports a selected-Python spawn failure",
+  Effect.fn(function* () {
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        vi.spyOn(process.stderr, "write").mockReturnValue(true),
+      ),
+      (stderr) => Effect.sync(() => stderr.mockRestore()),
+    );
 
-  processes.spawn("kernel", "/definitely-not-a-marimo-python", process.cwd());
+    const result = yield* Effect.callback<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+      stderr: string | undefined;
+      processes: Processes;
+    }>((resume) => {
+      const processes = new Processes({
+        stdout: () => {},
+        exited: (_processId, code, signal, processStderr) =>
+          resume(
+            Effect.succeed({
+              code,
+              signal,
+              stderr: processStderr,
+              processes,
+            }),
+          ),
+      });
 
-  const result = await exited.promise;
-  expect(result.code).not.toBe(0);
-  expect(result.signal).toBeNull();
-  expect(result.stderr).toContain("definitely-not-a-marimo-python");
-  expect(() => processes.write("kernel", new Uint8Array())).toThrow(
-    "No process with id kernel",
-  );
-  stderr.mockRestore();
-});
+      processes.spawn(
+        "kernel",
+        "/definitely-not-a-marimo-python",
+        process.cwd(),
+      );
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.signal).toBeNull();
+    expect(result.stderr).toContain("definitely-not-a-marimo-python");
+    expect(() => result.processes.write("kernel", new Uint8Array())).toThrow(
+      "No process with id kernel",
+    );
+  }),
+);
 
 it("drains stdout before reporting process exit", () => {
   const child = Object.assign(new NodeEvents.EventEmitter(), {
