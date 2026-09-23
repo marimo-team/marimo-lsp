@@ -33,10 +33,7 @@ import type {
   CellOutputReplay,
   ListSessionsResponse,
 } from "../../schemas/Models.gen.ts";
-import {
-  type NotebookController,
-  NotebookRuntime,
-} from "../NotebookRuntime.ts";
+import * as NotebookRuntime from "../NotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
 
@@ -119,7 +116,7 @@ const makeTestLayer = Effect.fn(function* (
     serverSessions,
     snapshot,
     layer: Layer.empty.pipe(
-      Layer.provideMerge(NotebookRuntime.layer),
+      Layer.provideMerge(NotebookRuntime.defaultLayer),
       Layer.provide(client),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestPythonExtension.layer),
@@ -140,7 +137,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -196,7 +193,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
+      const runtime = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -257,7 +254,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
+      const runtime = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -291,7 +288,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
+      const runtime = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -389,7 +386,7 @@ it.effect.each([false, true])(
       );
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         const document = yield* runtime.forDocument(editor.notebook);
         if (replacement) {
           yield* document.execute({ cells: [] }, "/old-python");
@@ -456,7 +453,7 @@ it.effect.each(["close", "move"] as const)(
         { initialDocuments: [editor.notebook] },
       );
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime;
+        const runtime = yield* NotebookRuntime.Service;
         const document = yield* runtime.forDocument(editor.notebook);
         yield* document.execute({ cells: [] }, "/python");
         const notebook = yield* runtime.forNotebook(id);
@@ -509,7 +506,7 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
+      const runtime = yield* NotebookRuntime.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const pending = yield* firstDocument
         .execute({ cells: [] }, "/old-python")
@@ -592,7 +589,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
         );
 
         yield* Effect.gen(function* () {
-          const runtime = yield* NotebookRuntime;
+          const runtime = yield* NotebookRuntime.Service;
           yield* Effect.yieldNow;
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.execute({ cells: [] }, "/python-one");
@@ -662,7 +659,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       yield* notebooks.forNotebook(notebook);
       yield* notebooks.forNotebook(notebookId("notebook-b"));
 
@@ -679,7 +676,7 @@ it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
     const { layer } = yield* makeTestLayer();
-    const controller: NotebookController = {
+    const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
       presentOutputs: () => Effect.void,
@@ -687,7 +684,7 @@ it.effect(
     };
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const handle = yield* notebooks.forNotebook(notebook);
 
       expect(Option.isNone(yield* handle.getController)).toBe(true);
@@ -703,7 +700,7 @@ it.effect(
   Effect.fn(function* () {
     const { layer, vscode } = yield* makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
-    const controller: NotebookController = {
+    const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
       presentOutputs: () => Effect.void,
@@ -711,7 +708,7 @@ it.effect(
     };
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(
         notebookId(editor.notebook.uri.toString()),
@@ -761,7 +758,7 @@ it.effect(
       },
       { initialDocuments: [editor.notebook] },
     );
-    const controller: NotebookController = {
+    const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
       presentOutputs: (_notebook, cells) => Deferred.succeed(presented, cells),
@@ -769,7 +766,7 @@ it.effect(
     };
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       const id = notebookId(editor.notebook.uri.toString());
@@ -818,7 +815,7 @@ it.effect(
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
@@ -842,7 +839,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
@@ -877,7 +874,7 @@ it.effect(
     const { layer, vscode } = yield* makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
-    const controller: NotebookController = {
+    const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
       presentOutputs: () => Effect.void,
@@ -885,7 +882,7 @@ it.effect(
     };
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
@@ -938,7 +935,7 @@ it.effect(
       { initialDocuments: [first.notebook, second.notebook] },
     );
     yield* Effect.gen(function* () {
-      const runtime = yield* NotebookRuntime;
+      const runtime = yield* NotebookRuntime.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const secondDocument = yield* runtime.forDocument(second.notebook);
       yield* firstDocument.execute({ cells: [] }, "/python");

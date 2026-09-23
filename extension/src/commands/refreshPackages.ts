@@ -1,16 +1,16 @@
 import { Effect, Option, Scope } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookDependencies } from "../notebook/NotebookDependencies.ts";
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
+import * as NotebookDependencies from "../notebook/NotebookDependencies.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.refreshPackages")(function* () {
-  const editorRegistry = yield* NotebookEditorRegistry;
-  const documentSessions = yield* NotebookDocumentSessions;
-  const sessionResources = yield* NotebookSessionResources;
+  const editorRegistry = yield* NotebookEditorRegistry.Service;
+  const documentSessions = yield* NotebookDocumentSessions.Service;
+  const sessionResources = yield* NotebookSessionResources.Service;
   const activeNotebookUri = yield* editorRegistry.getActiveNotebookUri;
   if (Option.isNone(activeNotebookUri)) {
     yield* Effect.logWarning("No active notebook to refresh packages");
@@ -29,13 +29,13 @@ const handler = Effect.fn("command.refreshPackages")(function* () {
   yield* sessionResources
     .runScoped(
       session.value,
-      NotebookDependencies.pipe(
+      NotebookDependencies.Service.pipe(
         Effect.flatMap((dependencies) => dependencies.refresh),
       ),
     )
     .pipe(
       Scope.provide(session.value.scope),
-      Effect.catchTag("NotebookDocumentSessionEndedError", () => Effect.void),
+      Effect.catchTag("NotebookDocumentSessions.EndedError", () => Effect.void),
     );
 });
 

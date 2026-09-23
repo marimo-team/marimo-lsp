@@ -1,8 +1,8 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 import type * as vscode from "vscode";
 
 import type { MarimoView } from "../constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 /**
  * Manages VS Code tree view items with automatic disposal.
@@ -10,7 +10,7 @@ import { VsCode } from "../platform/VsCode.ts";
  * @example Basic usage
  * ```ts
  * const program = Effect.gen(function* () {
- *   const treeView = yield* TreeView;
+ *   const treeView = yield* TreeView.Service;
  *
  *   // Create a tree data provider
  *   const provider = yield* treeView.createTreeDataProvider({
@@ -26,17 +26,34 @@ import { VsCode } from "../platform/VsCode.ts";
  * });
  * ```
  */
-export class TreeView extends Context.Service<TreeView>()("TreeView", {
-  make: Effect.gen(function* () {
-    const code = yield* VsCode;
+export interface Provider<T> {
+  readonly refresh: (element?: T) => Effect.Effect<void>;
+  readonly reveal: (
+    element: T,
+    options?: { select?: boolean; focus?: boolean; expand?: boolean },
+  ) => Effect.Effect<void>;
+}
 
-    return {
-      /**
-       * Creates a tree data provider with automatic cleanup on scope disposal.
-       *
-       * @param options - Configuration for the tree view
-       */
-      createTreeDataProvider: Effect.fn(function* <T>(options: {
+export interface Interface {
+  readonly createTreeDataProvider: <T>(options: {
+    viewId: MarimoView;
+    getChildren: (element?: T) => Effect.Effect<T[]>;
+    getTreeItem: (element: T) => Effect.Effect<TreeItem>;
+    showCollapseAll?: boolean;
+  }) => Effect.Effect<Provider<T>, never, Scope.Scope>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/TreeView",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
+
+    const createTreeDataProvider = Effect.fn("TreeView.createTreeDataProvider")(
+      function* <T>(options: {
         viewId: MarimoView;
         getChildren: (element?: T) => Effect.Effect<T[]>;
         getTreeItem: (element: T) => Effect.Effect<TreeItem>;
@@ -45,7 +62,6 @@ export class TreeView extends Context.Service<TreeView>()("TreeView", {
         const context = yield* Effect.context();
         const runPromise = Effect.runPromiseWith(context);
         const runSync = Effect.runSyncWith(context);
-        // Create event emitter for refresh events
         const eventEmitter = yield* Effect.acquireRelease(
           Effect.sync(() => new code.EventEmitter<T | undefined | null>()),
           (emitter) => Effect.sync(() => emitter.dispose()),
@@ -54,44 +70,34 @@ export class TreeView extends Context.Service<TreeView>()("TreeView", {
         const treeView = yield* code.window.createTreeView(options.viewId, {
           treeDataProvider: {
             onDidChangeTreeData: eventEmitter.event,
-
-            getTreeItem: (element: T): vscode.TreeItem => {
-              // This is synchronous in VS Code API, but we need to run effect
-              // For now, we'll use a simple synchronous version
-              // In practice, you'd cache or compute items ahead of time
-              const item = runSync(options.getTreeItem(element));
-              return toVSCodeTreeItem(code, item);
-            },
-
-            getChildren: (element?: T): vscode.ProviderResult<T[]> => {
-              return runPromise(options.getChildren(element));
-            },
+            getTreeItem: (element: T): vscode.TreeItem =>
+              toVSCodeTreeItem(code, runSync(options.getTreeItem(element))),
+            getChildren: (element?: T): vscode.ProviderResult<T[]> =>
+              runPromise(options.getChildren(element)),
           },
           showCollapseAll: options.showCollapseAll ?? true,
         });
 
-        return {
-          /**
-           * Refreshes the entire tree view.
-           */
-          refresh(element?: T) {
-            return Effect.sync(() => eventEmitter.fire(element ?? null));
-          },
+        const refresh = Effect.fn("TreeView.Provider.refresh")(function* (
+          element?: T,
+        ) {
+          yield* Effect.sync(() => eventEmitter.fire(element ?? null));
+        });
 
-          /** Reveals an element in the tree view. */
-          reveal(
-            element: T,
-            opts?: { select?: boolean; focus?: boolean; expand?: boolean },
-          ) {
-            return Effect.promise(() => treeView.reveal(element, opts));
-          },
-        };
-      }),
-    };
+        const reveal = Effect.fn("TreeView.Provider.reveal")(function* (
+          element: T,
+          opts?: { select?: boolean; focus?: boolean; expand?: boolean },
+        ) {
+          yield* Effect.promise(() => treeView.reveal(element, opts));
+        });
+
+        return { refresh, reveal };
+      },
+    );
+
+    return Service.of({ createTreeDataProvider });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+);
 
 /**
  * Configuration for a tree item.
@@ -118,7 +124,7 @@ export interface TreeItem {
 /**
  * The service value's type, extracted with `Context.Service.Shape`.
  */
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type VsCodeService = VsCode.Interface;
 
 /**
  * Converts our TreeItem to VS Code's TreeItem.

@@ -1,24 +1,26 @@
 import { Data, Effect, Option } from "effect";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { type MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../schemas/Models.gen.ts";
 
-export type MarimoCellMetadataTransform = (
+export type Transform = (
   current: Api.MarimoCellMetadata,
 ) => Api.MarimoCellMetadata;
 
-export class CellMetadataEditRejected extends Data.TaggedError(
-  "CellMetadataEditRejected",
+export class EditRejected extends Data.TaggedError(
+  "CellMetadata.EditRejected",
 )<{
   readonly cell: number;
 }> {}
 
-export class CellMetadataTargetNotFound extends Data.TaggedError(
-  "CellMetadataTargetNotFound",
+export class TargetNotFound extends Data.TaggedError(
+  "CellMetadata.TargetNotFound",
 )<{
   readonly cell: number;
 }> {}
+
+export type Error = EditRejected | TargetNotFound;
 
 function resolveCurrentCell(cell: MarimoNotebookCell) {
   const cells = cell.notebook.getCells();
@@ -42,7 +44,7 @@ function resolveCurrentCell(cell: MarimoNotebookCell) {
     return { cell: matches[0].candidate, index: matches[0].index } as const;
   }
 
-  return new CellMetadataTargetNotFound({ cell: cell.index });
+  return new TargetNotFound({ cell: cell.index });
 }
 
 /**
@@ -52,12 +54,13 @@ function resolveCurrentCell(cell: MarimoNotebookCell) {
  * Cell replacement is intentional: the notebook LSP client currently treats
  * structural changes as its signal to resynchronize cell metadata.
  */
-export const updateMarimoCellMetadata = Effect.fn(
-  "notebook.updateMarimoCellMetadata",
-)(function* (cell: MarimoNotebookCell, transform: MarimoCellMetadataTransform) {
-  const code = yield* VsCode;
+export const update = Effect.fn("CellMetadata.update")(function* (
+  cell: MarimoNotebookCell,
+  transform: Transform,
+) {
+  const code = yield* VsCode.Service;
   const resolved = resolveCurrentCell(cell);
-  if (resolved instanceof CellMetadataTargetNotFound) {
+  if (resolved instanceof TargetNotFound) {
     return yield* resolved;
   }
   const currentCell = resolved.cell;
@@ -100,7 +103,7 @@ export const updateMarimoCellMetadata = Effect.fn(
 
   const applied = yield* code.workspace.applyEdit(edit);
   if (!applied) {
-    return yield* new CellMetadataEditRejected({ cell: resolved.index });
+    return yield* new EditRejected({ cell: resolved.index });
   }
   return resolved.index;
 });

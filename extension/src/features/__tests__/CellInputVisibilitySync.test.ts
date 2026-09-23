@@ -8,11 +8,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import {
-  type CellRange,
-  hiddenInputCellRanges,
-  CellInputVisibilitySyncLive,
-} from "../CellInputVisibilitySync.ts";
+import * as CellInputVisibilitySync from "../CellInputVisibilitySync.ts";
 
 const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
   MarimoNotebookCell.from(
@@ -31,7 +27,7 @@ const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
     ),
   );
 
-describe("hiddenInputCellRanges", () => {
+describe("hiddenInputRanges", () => {
   it("returns one end-exclusive range per hide_code cell, by index", () => {
     const cells = [
       cell(0, false),
@@ -39,22 +35,26 @@ describe("hiddenInputCellRanges", () => {
       cell(2, false),
       cell(3, true),
     ];
-    expect(hiddenInputCellRanges(cells)).toEqual([
+    expect(CellInputVisibilitySync.hiddenInputRanges(cells)).toEqual([
       { start: 1, end: 2 },
       { start: 3, end: 4 },
     ]);
   });
 
   it("returns no ranges when no cell hides its code", () => {
-    expect(hiddenInputCellRanges([cell(0, false)])).toEqual([]);
+    expect(CellInputVisibilitySync.hiddenInputRanges([cell(0, false)])).toEqual(
+      [],
+    );
   });
 
   it("does not hide native markup cells with persisted hide_code", () => {
-    expect(hiddenInputCellRanges([cell(0, true, 1)])).toEqual([]);
+    expect(
+      CellInputVisibilitySync.hiddenInputRanges([cell(0, true, 1)]),
+    ).toEqual([]);
   });
 });
 
-const isCellRange = (x: unknown): x is CellRange =>
+const isCellRange = (x: unknown): x is CellInputVisibilitySync.Range =>
   typeof x === "object" &&
   x !== null &&
   "start" in x &&
@@ -62,7 +62,9 @@ const isCellRange = (x: unknown): x is CellRange =>
   "end" in x &&
   typeof x.end === "number";
 
-const collapseRanges = (arg: unknown): readonly CellRange[] | undefined =>
+const collapseRanges = (
+  arg: unknown,
+): readonly CellInputVisibilitySync.Range[] | undefined =>
   typeof arg === "object" &&
   arg !== null &&
   "ranges" in arg &&
@@ -135,7 +137,7 @@ const withTestCtx = Effect.fn(function* (hideCode: ReadonlyArray<boolean>) {
   const vscode = yield* TestVsCode.make({
     initialDocuments: [editor.notebook],
   });
-  const layer = CellInputVisibilitySyncLive.pipe(Layer.provide(vscode.layer));
+  const layer = CellInputVisibilitySync.layer.pipe(Layer.provide(vscode.layer));
   return { vscode, editor, layer };
 });
 
@@ -172,7 +174,7 @@ describe("CellInputVisibilitySync", () => {
       const vscode = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
-      const layer = CellInputVisibilitySyncLive.pipe(
+      const layer = CellInputVisibilitySync.layer.pipe(
         Layer.provide(vscode.layer),
       );
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
@@ -200,7 +202,7 @@ describe("CellInputVisibilitySync", () => {
       const vscode = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
-      const layer = CellInputVisibilitySyncLive.pipe(
+      const layer = CellInputVisibilitySync.layer.pipe(
         Layer.provide(vscode.layer),
       );
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
@@ -330,7 +332,7 @@ describe("CellInputVisibilitySync", () => {
       const vscode = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
-      const layer = CellInputVisibilitySyncLive.pipe(
+      const layer = CellInputVisibilitySync.layer.pipe(
         Layer.provide(vscode.layer),
       );
 
@@ -365,7 +367,7 @@ describe("CellInputVisibilitySync", () => {
             ),
         },
       });
-      const layer = CellInputVisibilitySyncLive.pipe(
+      const layer = CellInputVisibilitySync.layer.pipe(
         Layer.provide(vscode.layer),
       );
 

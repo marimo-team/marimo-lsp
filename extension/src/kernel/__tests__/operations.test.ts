@@ -6,12 +6,12 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer, Option, Ref, Stream } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { Config } from "../../config/Config.ts";
-import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
-import { Uv, UvBin } from "../../python/Uv.ts";
+import * as Config from "../../config/Config.ts";
+import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
+import * as Uv from "../../python/Uv.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import type { NotificationOf } from "../../types.ts";
-import type { NotebookController } from "../NotebookRuntime.ts";
+import type * as NotebookRuntime from "../NotebookRuntime.ts";
 import { handleMissingPackageAlert } from "../operations.ts";
 
 const alert: NotificationOf<"missing-package-alert"> = {
@@ -22,7 +22,7 @@ const alert: NotificationOf<"missing-package-alert"> = {
 
 // A sandbox-style controller (no `executable`), so the alert goes down the
 // script-install path and reaches the prompt without touching the filesystem.
-const controller: NotebookController = {
+const controller: NotebookRuntime.NotebookController = {
   id: "test-controller",
   drive: () => () => Effect.void,
   presentOutputs: () => Effect.void,
@@ -70,16 +70,16 @@ const withTestCtx = Effect.fn(function* (options: {
   const layer = Layer.mergeAll(
     vscode.layer,
     Config.layer.pipe(Layer.provide(vscode.layer)),
-    Layer.succeed(PythonEnvInvalidation, {
+    Layer.succeed(PythonEnvInvalidation.Service, {
       invalidate: () =>
         Ref.update(invalidations, (count) => count + 1).pipe(Effect.as(true)),
       changes: Stream.empty,
     }),
     // Cancellation happens before invoking uv; any Uv method call is a defect.
     // Layer.mock still requires the non-method properties.
-    Layer.mock(Uv, {
+    Layer.mock(Uv.Service, {
       bin: Effect.succeed(
-        UvBin.Bundled({
+        Uv.UvBin.Bundled({
           executable: "uv",
           version: Option.none(),
         }),

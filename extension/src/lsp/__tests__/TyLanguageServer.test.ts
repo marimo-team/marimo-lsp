@@ -6,12 +6,10 @@ import type * as vscode from "vscode";
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode, Uri } from "../../__mocks__/TestVsCode.ts";
-import { ExtensionContext, Storage } from "../../platform/Storage.ts";
-import { Telemetry } from "../../telemetry/Telemetry.ts";
-import {
-  makeTyMissingNotifier,
-  TyBinaryNotFound,
-} from "../TyLanguageServer.ts";
+import * as ExtensionContext from "../../platform/ExtensionContext.ts";
+import * as Storage from "../../platform/Storage.ts";
+import * as Telemetry from "../../telemetry/Telemetry.ts";
+import * as TyLanguageServer from "../TyLanguageServer.ts";
 
 const selectedItem = <T extends string>(
   options: vscode.MessageOptions & { items?: readonly T[] },
@@ -25,7 +23,7 @@ const selectedItem = <T extends string>(
 const freshStorage = (globalState = new Memento()) =>
   Storage.layer.pipe(
     Layer.provide(
-      Layer.succeed(ExtensionContext, {
+      Layer.succeed(ExtensionContext.Service, {
         globalState,
         workspaceState: new Memento(),
         extensionUri: Uri.parse("file:///test/extension/path", true),
@@ -37,7 +35,7 @@ const freshStorage = (globalState = new Memento()) =>
 afterEach(() => vi.unstubAllEnvs());
 
 const recordTelemetry = Effect.gen(function* () {
-  const base = yield* Telemetry.pipe(Effect.provide(TestTelemetryLive));
+  const base = yield* Telemetry.Service.pipe(Effect.provide(TestTelemetryLive));
   const events: string[] = [];
   const record = (event: string) =>
     Effect.sync(() => {
@@ -45,7 +43,7 @@ const recordTelemetry = Effect.gen(function* () {
     });
   return {
     events,
-    layer: Layer.succeed(Telemetry, {
+    layer: Layer.succeed(Telemetry.Service, {
       ...base,
       tySetup: record,
     }),
@@ -53,7 +51,9 @@ const recordTelemetry = Effect.gen(function* () {
 });
 
 it("points at the ty extension and the path setting when no binary is found", () => {
-  const error = new TyBinaryNotFound({ serverVersion: "0.0.63" });
+  const error = new TyLanguageServer.BinaryNotFoundError({
+    serverVersion: "0.0.63",
+  });
 
   expect(error.format()).toBe(
     [
@@ -76,7 +76,7 @@ it.effect(
           ),
       },
     });
-    const notify = yield* makeTyMissingNotifier().pipe(
+    const notify = yield* TyLanguageServer.makeMissingNotifier().pipe(
       Effect.provide([vscode.layer, freshStorage()]),
     );
 
@@ -112,8 +112,12 @@ it.effect(
 
     // A fresh notifier stands in for a fresh session; the dismissal has to
     // outlive both of them.
-    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
-    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    yield* Effect.flatten(TyLanguageServer.makeMissingNotifier()).pipe(
+      Effect.provide(layers),
+    );
+    yield* Effect.flatten(TyLanguageServer.makeMissingNotifier()).pipe(
+      Effect.provide(layers),
+    );
 
     expect(yield* Ref.get(prompts)).toBe(1);
     expect(telemetry.events).toEqual([
@@ -148,7 +152,7 @@ it.effect(
     const layers = Layer.mergeAll(vscode.layer, freshStorage(globalState));
 
     for (let session = 0; session < 2; session++) {
-      const notify = yield* makeTyMissingNotifier().pipe(
+      const notify = yield* TyLanguageServer.makeMissingNotifier().pipe(
         Effect.provide(layers),
       );
       yield* notify;
@@ -180,7 +184,7 @@ it.effect(
         ) => Effect.succeed(selectedItem(options, "Reload Window")),
       },
     });
-    const notify = yield* makeTyMissingNotifier().pipe(
+    const notify = yield* TyLanguageServer.makeMissingNotifier().pipe(
       Effect.provide([
         vscode.layer,
         freshStorage(globalState),
@@ -228,7 +232,9 @@ it.effect(
     const storage = freshStorage();
     const layers = Layer.mergeAll(vscode.layer, storage);
 
-    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    yield* Effect.flatten(TyLanguageServer.makeMissingNotifier()).pipe(
+      Effect.provide(layers),
+    );
 
     expect(yield* Ref.get(prompts)).toEqual([
       "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Update the ty extension to enable them. You can still edit and run notebooks.",
@@ -239,7 +245,9 @@ it.effect(
 
     // Opening the extension page isn't a dismissal — a user who ignores the
     // update should be reminded in a later session.
-    yield* Effect.flatten(makeTyMissingNotifier()).pipe(Effect.provide(layers));
+    yield* Effect.flatten(TyLanguageServer.makeMissingNotifier()).pipe(
+      Effect.provide(layers),
+    );
     expect(yield* Ref.get(prompts)).toHaveLength(2);
   }),
 );
@@ -273,7 +281,7 @@ it.effect(
           ),
       },
     });
-    const notify = yield* makeTyMissingNotifier().pipe(
+    const notify = yield* TyLanguageServer.makeMissingNotifier().pipe(
       Effect.provide([vscode.layer, freshStorage(), telemetry.layer]),
     );
 

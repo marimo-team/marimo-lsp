@@ -1,10 +1,7 @@
 import { Cause, Redacted } from "effect";
 
 import { safeErrorClassName } from "../lib/errorClassification.ts";
-import {
-  MarimoClientStartError,
-  MarimoCommandError,
-} from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import { NotebookSourceError } from "../notebook/NotebookSourceError.ts";
 
 export type NotebookDeserializeErrorKind =
@@ -35,7 +32,7 @@ export function classifyNotebookDeserializeError(
     };
   }
 
-  if (error instanceof MarimoClientStartError) {
+  if (error instanceof MarimoClient.StartError) {
     return {
       report: true,
       domain: "notebook.deserialize",
@@ -56,7 +53,7 @@ export function classifyNotebookDeserializeError(
     };
   }
 
-  if (error instanceof MarimoCommandError) {
+  if (error instanceof MarimoClient.CommandError) {
     const method = commandMethod(error);
     const code = rpcCode(error.cause);
     const exceptionClass = safeErrorClassName(error.cause);
@@ -85,7 +82,7 @@ export function classifyNotebookDeserializeError(
   };
 }
 
-function commandMethod(error: MarimoCommandError): string | undefined {
+function commandMethod(error: MarimoClient.CommandError): string | undefined {
   return Redacted.value(error.command).kind;
 }
 

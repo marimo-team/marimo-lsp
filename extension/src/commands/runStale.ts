@@ -1,16 +1,16 @@
 import { Effect, flow, HashSet, Option } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
+import * as CellExecutions from "../kernel/CellExecutions.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { NotebookTarget } from "./Invocation.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const handler = Effect.fn("command.runStale")(
   function* (target: Option.Option<NotebookTarget>) {
-    const code = yield* VsCode;
-    const executions = yield* CellExecutions;
+    const code = yield* VsCode.Service;
+    const executions = yield* CellExecutions.Service;
 
     if (Option.isNone(target)) {
       yield* showErrorAndPromptLogs(

@@ -2,28 +2,28 @@ import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
 import openAsMarimoNotebook from "../commands/openAsMarimoNotebook.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 /**
  * Regex to match top-level marimo.App( declaration.
  * Matches: optional whitespace, 'app', optional type annotation, '=', whitespace, 'marimo.App()'
  * Must be at start of line (^) to exclude indented declarations inside functions/classes.
  */
-export const MARIMO_APP_REGEX = /^app\s*(?::\s*[^=]+)?\s*=\s*marimo\.App\(/m;
+export const appPattern = /^app\s*(?::\s*[^=]+)?\s*=\s*marimo\.App\(/m;
 
 /**
  * Checks if text contains a top-level marimo.App() declaration.
  */
-export function isMarimoAppText(text: string): boolean {
-  return MARIMO_APP_REGEX.test(text);
+export function isAppText(text: string): boolean {
+  return appPattern.test(text);
 }
 
 /**
  * Finds the line number of the marimo app declaration in the given text.
  * Returns undefined if no declaration is found.
  */
-export function findMarimoAppLine(text: string): number | undefined {
-  const match = MARIMO_APP_REGEX.exec(text);
+export function findAppLine(text: string): number | undefined {
+  const match = appPattern.exec(text);
   if (!match || match.index === undefined) {
     return undefined;
   }
@@ -36,9 +36,9 @@ export function findMarimoAppLine(text: string): number | undefined {
  * Provides a CodeLens above marimo app declarations that allows users to
  * open the Python file as a marimo notebook in VS Code.
  */
-export const MarimoCodeLensProviderLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     // Helper to check if a text document is a marimo file
     const isMarimoFile = (document: vscode.TextDocument): boolean => {
@@ -47,7 +47,7 @@ export const MarimoCodeLensProviderLive = Layer.effectDiscard(
         return false;
       }
 
-      return isMarimoAppText(document.getText());
+      return isAppText(document.getText());
     };
 
     const provider: vscode.CodeLensProvider = {
@@ -60,7 +60,7 @@ export const MarimoCodeLensProviderLive = Layer.effectDiscard(
           return [];
         }
 
-        const lineNumber = findMarimoAppLine(document.getText());
+        const lineNumber = findAppLine(document.getText());
         if (lineNumber === undefined) {
           return [];
         }
@@ -83,5 +83,5 @@ export const MarimoCodeLensProviderLive = Layer.effectDiscard(
     } satisfies vscode.DocumentSelector;
 
     yield* code.languages.registerCodeLensProvider(selector, provider);
-  }),
+  }).pipe(Effect.withSpan("MarimoCodeLensProvider.layer")),
 );

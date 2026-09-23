@@ -1,265 +1,257 @@
 import * as NodeProcess from "node:process";
 
 import { Context, Effect, Layer, Option } from "effect";
+import type * as vscode from "vscode";
 
-import { Config, MarimoLspServer } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
-import {
-  RuffLanguageServer,
-  RuffLanguageServerStatus,
-} from "../lsp/RuffLanguageServer.ts";
-import {
-  TyLanguageServer,
-  TyLanguageServerStatus,
-} from "../lsp/TyLanguageServer.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import { PythonExtension } from "../python/PythonExtension.ts";
-import { Uv, UvBin } from "../python/Uv.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
+import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as PythonExtension from "../python/PythonExtension.ts";
+import * as Uv from "../python/Uv.ts";
 
 /**
  * Provides health check and diagnostic information for the marimo extension.
  */
-export class HealthService extends Context.Service<HealthService>()(
-  "HealthService",
-  {
-    make: Effect.gen(function* () {
-      const uv = yield* Uv;
-      const code = yield* VsCode;
-      const config = yield* Config;
-      const marimo = yield* MarimoClient;
-      const notebooks = yield* NotebookRuntime;
-      const pyExt = yield* PythonExtension;
-      const tyLsp = yield* TyLanguageServer;
-      const ruffLsp = yield* RuffLanguageServer;
+export interface Interface {
+  readonly showDiagnostics: Effect.Effect<vscode.TextDocument>;
+}
 
-      const formatDiagnostics = () =>
-        Effect.gen(function* () {
-          const [uvDisabled, extVersion] = yield* Effect.all([
-            Effect.map(config.uv.enabled, (enabled) => !enabled),
-            getExtensionVersion().pipe(Effect.provideService(VsCode, code)),
-          ]);
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/HealthService",
+) {}
 
-          const lines: string[] = [];
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const uv = yield* Uv.Service;
+    const code = yield* VsCode.Service;
+    const config = yield* Config.Service;
+    const marimo = yield* MarimoClient.Service;
+    const notebooks = yield* NotebookRuntime.Service;
+    const pyExt = yield* PythonExtension.Service;
+    const tyLsp = yield* TyLanguageServer.Service;
+    const ruffLsp = yield* RuffLanguageServer.Service;
 
-          // Header
-          lines.push("marimo VS Code Extension Diagnostics");
-          lines.push("=====================================");
-          lines.push("");
+    const formatDiagnostics = Effect.fnUntraced(function* () {
+      const [uvDisabled, extVersion] = yield* Effect.all([
+        Effect.map(config.uv.enabled, (enabled) => !enabled),
+        getExtensionVersion().pipe(Effect.provideService(VsCode.Service, code)),
+      ]);
 
-          // LSP Status
-          lines.push("Language Server (LSP):");
-          const uvBin = MarimoLspServer.$is("Python")(marimo.server)
-            ? Option.some(yield* uv.bin)
-            : Option.none();
+      const lines: string[] = [];
+
+      // Header
+      lines.push("marimo VS Code Extension Diagnostics");
+      lines.push("=====================================");
+      lines.push("");
+
+      // LSP Status
+      lines.push("Language Server (LSP):");
+      const uvBin = Config.MarimoLspServer.$is("Python")(marimo.server)
+        ? Option.some(yield* uv.bin)
+        : Option.none();
+      lines.push(
+        ...formatMarimoLspDiagnostics({
+          server: marimo.server,
+          uvBin,
+        }),
+      );
+
+      lines.push("");
+
+      // Python Extension Environment
+      lines.push("Python Extension:");
+      const pyEnvPath = yield* pyExt
+        .getActiveEnvironmentPath()
+        .pipe(Effect.option);
+      if (Option.isNone(pyEnvPath)) {
+        lines.push("\tNot available (Python extension not found)");
+      } else {
+        const resolved = yield* pyExt
+          .resolveEnvironment(pyEnvPath.value)
+          .pipe(Effect.option);
+        const env = Option.flatten(resolved);
+        if (Option.isNone(env)) {
+          lines.push(`\tInterpreter: ${pyEnvPath.value.path}`);
+          lines.push("\tVersion: Unknown");
+        } else {
+          const e = env.value;
           lines.push(
-            ...formatMarimoLspDiagnostics({
-              server: marimo.server,
-              uvBin,
-            }),
+            `\tInterpreter: ${e.executable.uri?.fsPath ?? e.path ?? "Unknown"}`,
           );
+          lines.push(`\tVersion: ${e.version?.sysVersion ?? "Unknown"}`);
+          if (e.environment) {
+            lines.push(
+              `\tEnvironment: ${e.environment.type} (${e.environment.name})`,
+            );
+          }
+        }
+      }
 
-          lines.push("");
+      lines.push("");
 
-          // Python Extension Environment
-          lines.push("Python Extension:");
-          const pyEnvPath = yield* pyExt
-            .getActiveEnvironmentPath()
-            .pipe(Effect.option);
-          if (Option.isNone(pyEnvPath)) {
-            lines.push("\tNot available (Python extension not found)");
-          } else {
-            const resolved = yield* pyExt
-              .resolveEnvironment(pyEnvPath.value)
-              .pipe(Effect.option);
-            const env = Option.flatten(resolved);
-            if (Option.isNone(env)) {
-              lines.push(`\tInterpreter: ${pyEnvPath.value.path}`);
-              lines.push("\tVersion: Unknown");
-            } else {
-              const e = env.value;
-              lines.push(
-                `\tInterpreter: ${e.executable.uri?.fsPath ?? e.path ?? "Unknown"}`,
-              );
-              lines.push(`\tVersion: ${e.version?.sysVersion ?? "Unknown"}`);
-              if (e.environment) {
-                lines.push(
-                  `\tEnvironment: ${e.environment.type} (${e.environment.name})`,
-                );
-              }
+      // Python Language Server (ty) - only show if managed language features enabled
+      const managedLanguageFeaturesEnabled =
+        yield* config.getManagedLanguageFeaturesEnabled;
+
+      if (managedLanguageFeaturesEnabled) {
+        lines.push("Python Language Server (ty):");
+
+        TyLanguageServer.Status.$match(yield* tyLsp.getHealthStatus, {
+          Disabled: ({ reason }) => {
+            lines.push("\tStatus: disabled");
+            lines.push(`\tReason: ${reason}`);
+          },
+          Starting: () => {
+            lines.push("\tStatus: starting...");
+          },
+          Running: ({ serverVersion, binarySource, pythonEnvironment }) => {
+            lines.push("\tStatus: running ✓");
+            lines.push(`\tVersion: ${serverVersion}`);
+            lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
+            if (Option.isSome(pythonEnvironment)) {
+              const pyPath = pythonEnvironment.value.path;
+              const pyVersion = pythonEnvironment.value.version
+                ? ` (${pythonEnvironment.value.version})`
+                : "";
+              lines.push(`\tPython: ${pyPath}${pyVersion}`);
             }
-          }
-
-          lines.push("");
-
-          // Python Language Server (ty) - only show if managed language features enabled
-          const managedLanguageFeaturesEnabled =
-            yield* config.getManagedLanguageFeaturesEnabled;
-
-          if (managedLanguageFeaturesEnabled) {
-            lines.push("Python Language Server (ty):");
-
-            TyLanguageServerStatus.$match(yield* tyLsp.getHealthStatus, {
-              Disabled: ({ reason }) => {
-                lines.push("\tStatus: disabled");
-                lines.push(`\tReason: ${reason}`);
-              },
-              Starting: () => {
-                lines.push("\tStatus: starting...");
-              },
-              Running: ({ serverVersion, binarySource, pythonEnvironment }) => {
-                lines.push("\tStatus: running ✓");
-                lines.push(`\tVersion: ${serverVersion}`);
-                lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
-                if (Option.isSome(pythonEnvironment)) {
-                  const pyPath = pythonEnvironment.value.path;
-                  const pyVersion = pythonEnvironment.value.version
-                    ? ` (${pythonEnvironment.value.version})`
-                    : "";
-                  lines.push(`\tPython: ${pyPath}${pyVersion}`);
-                }
-              },
-              NotFound: ({ message }) => {
-                lines.push("\tStatus: not found");
-                for (const line of message.split("\n")) {
-                  lines.push(`\t${line}`);
-                }
-              },
-              Failed: ({ message }) => {
-                lines.push("\tStatus: failed ✗");
-                lines.push(`\tError: ${message}`);
-              },
-            });
-
-            lines.push("");
-
-            // Ruff Language Server
-            lines.push("Ruff Language Server:");
-            RuffLanguageServerStatus.$match(yield* ruffLsp.getHealthStatus, {
-              Disabled: ({ reason }) => {
-                lines.push("\tStatus: disabled");
-                lines.push(`\tReason: ${reason}`);
-              },
-              Starting: () => {
-                lines.push("\tStatus: starting...");
-              },
-              Running: ({ serverVersion, binarySource }) => {
-                lines.push("\tStatus: running ✓");
-                lines.push(`\tVersion: ${serverVersion}`);
-                lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
-              },
-              NotFound: ({ message }) => {
-                lines.push("\tStatus: not found");
-                for (const line of message.split("\n")) {
-                  lines.push(`\t${line}`);
-                }
-              },
-              Failed: ({ message }) => {
-                lines.push("\tStatus: failed ✗");
-                lines.push(`\tError: ${message}`);
-              },
-            });
-
-            lines.push("");
-          }
-
-          // Extension Configuration
-          lines.push("Extension Configuration:");
-          lines.push(
-            `\tVersion: ${Option.getOrElse(extVersion, () => "unknown")} `,
-          );
-          lines.push(`\tUV integration disabled: ${uvDisabled} `);
-          const activeEditor = yield* code.window.getActiveNotebookEditor;
-          const configuredRoot = yield* config.notebookFileRoot(
-            Option.isSome(activeEditor)
-              ? activeEditor.value.notebook.uri
-              : undefined,
-          );
-          const runtimeSession = yield* notebooks.activeRuntimeSession;
-          lines.push(
-            ...formatNotebookFileRootDiagnostics(
-              configuredRoot,
-              Option.map(
-                runtimeSession,
-                ({ workingDirectory }) => workingDirectory,
-              ),
-            ),
-          );
-
-          lines.push("");
-
-          // System Information
-          lines.push("System Information:");
-          lines.push(`\tHost: ${code.env.appHost} `);
-          lines.push(`\tIDE: ${code.env.appName} `);
-          lines.push(`\tIDE version: ${code.version} `);
-          lines.push(`\tPlatform: ${NodeProcess.platform} `);
-          lines.push(`\tArchitecture: ${NodeProcess.arch} `);
-          lines.push(`\tNode version: ${NodeProcess.version} `);
-          lines.push("");
-
-          if (Option.isSome(uvBin) && UvBin.$is("Default")(uvBin.value)) {
-            // If using default UV (i.e., "uv"), show PATH for debugging
-
-            // PATH (formatted for readability)
-            lines.push("PATH:");
-            const pathValue = NodeProcess.env.PATH;
-            if (pathValue) {
-              const separator = NodeProcess.platform === "win32" ? ";" : ":";
-              for (const entry of pathValue.split(separator)) {
-                lines.push(`\t${entry} `);
-              }
-            } else {
-              lines.push("\t(not set)");
+          },
+          NotFound: ({ message }) => {
+            lines.push("\tStatus: not found");
+            for (const line of message.split("\n")) {
+              lines.push(`\t${line}`);
             }
-            lines.push("");
-          }
-
-          // Troubleshooting
-          lines.push("Common Issues:");
-          lines.push("\t1. If notebooks won't open:");
-          lines.push("\t\t- Check Python interpreter is selected");
-          lines.push("\t\t- Ensure marimo is installed");
-          lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
-          lines.push("\t2. If features are missing:");
-          lines.push(
-            `\t\t - Ensure marimo version is >= ${MINIMUM_MARIMO_KERNEL_VERSION.toString()}`,
-          );
-          lines.push("\t\t- Try reloading the window");
-
-          return lines.join("\n");
+          },
+          Failed: ({ message }) => {
+            lines.push("\tStatus: failed ✗");
+            lines.push(`\tError: ${message}`);
+          },
         });
 
-      return {
-        /**
-         * Shows a text document with comprehensive diagnostics about the extension
-         * and environment setup.
-         */
-        showDiagnostics: Effect.fn(function* () {
-          yield* Effect.logInfo("Showing diagnostics");
+        lines.push("");
 
-          const diagnosticText = yield* formatDiagnostics();
+        // Ruff Language Server
+        lines.push("Ruff Language Server:");
+        RuffLanguageServer.Status.$match(yield* ruffLsp.getHealthStatus, {
+          Disabled: ({ reason }) => {
+            lines.push("\tStatus: disabled");
+            lines.push(`\tReason: ${reason}`);
+          },
+          Starting: () => {
+            lines.push("\tStatus: starting...");
+          },
+          Running: ({ serverVersion, binarySource }) => {
+            lines.push("\tStatus: running ✓");
+            lines.push(`\tVersion: ${serverVersion}`);
+            lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
+          },
+          NotFound: ({ message }) => {
+            lines.push("\tStatus: not found");
+            for (const line of message.split("\n")) {
+              lines.push(`\t${line}`);
+            }
+          },
+          Failed: ({ message }) => {
+            lines.push("\tStatus: failed ✗");
+            lines.push(`\tError: ${message}`);
+          },
+        });
 
-          const doc = yield* code.workspace.openUntitledTextDocument({
-            content: diagnosticText,
-            language: "plaintext",
-          });
+        lines.push("");
+      }
 
-          yield* code.window.showTextDocument(doc);
+      // Extension Configuration
+      lines.push("Extension Configuration:");
+      lines.push(
+        `\tVersion: ${Option.getOrElse(extVersion, () => "unknown")} `,
+      );
+      lines.push(`\tUV integration disabled: ${uvDisabled} `);
+      const activeEditor = yield* code.window.getActiveNotebookEditor;
+      const configuredRoot = yield* config.notebookFileRoot(
+        Option.isSome(activeEditor)
+          ? activeEditor.value.notebook.uri
+          : undefined,
+      );
+      const runtimeSession = yield* notebooks.activeRuntimeSession;
+      lines.push(
+        ...formatNotebookFileRootDiagnostics(
+          configuredRoot,
+          Option.map(
+            runtimeSession,
+            ({ workingDirectory }) => workingDirectory,
+          ),
+        ),
+      );
 
-          return doc;
-        }),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(Uv.layer),
-  );
-}
+      lines.push("");
+
+      // System Information
+      lines.push("System Information:");
+      lines.push(`\tHost: ${code.env.appHost} `);
+      lines.push(`\tIDE: ${code.env.appName} `);
+      lines.push(`\tIDE version: ${code.version} `);
+      lines.push(`\tPlatform: ${NodeProcess.platform} `);
+      lines.push(`\tArchitecture: ${NodeProcess.arch} `);
+      lines.push(`\tNode version: ${NodeProcess.version} `);
+      lines.push("");
+
+      if (Option.isSome(uvBin) && Uv.UvBin.$is("Default")(uvBin.value)) {
+        // If using default UV (i.e., "uv"), show PATH for debugging
+
+        // PATH (formatted for readability)
+        lines.push("PATH:");
+        const pathValue = NodeProcess.env.PATH;
+        if (pathValue) {
+          const separator = NodeProcess.platform === "win32" ? ";" : ":";
+          for (const entry of pathValue.split(separator)) {
+            lines.push(`\t${entry} `);
+          }
+        } else {
+          lines.push("\t(not set)");
+        }
+        lines.push("");
+      }
+
+      // Troubleshooting
+      lines.push("Common Issues:");
+      lines.push("\t1. If notebooks won't open:");
+      lines.push("\t\t- Check Python interpreter is selected");
+      lines.push("\t\t- Ensure marimo is installed");
+      lines.push("\t\t- Check 'marimo-lsp' output channel for errors");
+      lines.push("\t2. If features are missing:");
+      lines.push(
+        `\t\t - Ensure marimo version is >= ${MINIMUM_MARIMO_KERNEL_VERSION.toString()}`,
+      );
+      lines.push("\t\t- Try reloading the window");
+
+      return lines.join("\n");
+    });
+
+    const showDiagnostics = Effect.gen(function* () {
+      yield* Effect.logInfo("Showing diagnostics");
+
+      const diagnosticText = yield* formatDiagnostics();
+
+      const doc = yield* code.workspace.openUntitledTextDocument({
+        content: diagnosticText,
+        language: "plaintext",
+      });
+
+      yield* code.window.showTextDocument(doc);
+
+      return doc;
+    }).pipe(Effect.withSpan("HealthService.showDiagnostics"));
+
+    return Service.of({ showDiagnostics });
+  }),
+).pipe(Layer.provide(Uv.layer));
 
 function formatBinarySource(source: BinarySource): string {
   return BinarySource.$match(source, {
@@ -273,10 +265,10 @@ export function formatMarimoLspDiagnostics({
   server,
   uvBin,
 }: {
-  server: MarimoLspServer;
-  uvBin: Option.Option<UvBin>;
+  server: Config.MarimoLspServer;
+  uvBin: Option.Option<Uv.UvBin>;
 }): readonly string[] {
-  return MarimoLspServer.$match(server, {
+  return Config.MarimoLspServer.$match(server, {
     Wasm: () => ["\tMode: WASM (bundled Pyodide)"],
     Custom: ({ command: [executable, ...args] }) => [
       "\tMode: Native (configured)",
@@ -287,7 +279,7 @@ export function formatMarimoLspDiagnostics({
         onNone: () => ["\tMode: Native (uv)", "\tUV: Not found ✗"],
         onSome: (bin) => {
           const lines = ["\tMode: Native (uv)"];
-          UvBin.$match(bin, {
+          Uv.UvBin.$match(bin, {
             Bundled: ({ executable }) =>
               lines.push(`\tUV Bin: Bundled (${executable})`),
             Default: ({ executable }) =>

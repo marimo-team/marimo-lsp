@@ -9,24 +9,21 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { CellMetadataUIBindingService } from "../../notebook/CellMetadataUIBindingService.ts";
-import { NotebookDatasources } from "../../panel/datasources/NotebookDatasources.ts";
-import { Constants } from "../../platform/Constants.ts";
+import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
+import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
+import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
-import {
-  CellMetadataBindingsLive,
-  DEFAULT_SQL_ENGINE,
-} from "../CellMetadataBindings.ts";
+import * as CellMetadataBindings from "../CellMetadataBindings.ts";
 
 const withTestCtx = Effect.gen(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(CellMetadataBindingsLive),
-    Layer.provide(CellMetadataUIBindingService.layer),
-    Layer.provide(NotebookDatasources.layer),
+    Layer.provideMerge(CellMetadataBindings.layer),
+    Layer.provide(CellMetadataUIBinding.layer),
+    Layer.provide(NotebookDatasources.defaultLayer),
     Layer.provide(makeTestMarimoClient()),
-    Layer.provide(Constants.layer),
+    Layer.provide(Constants.defaultLayer),
     Layer.provide(vscode.layer),
   );
   return { vscode, layer };
@@ -101,7 +98,7 @@ it.effect("should display dataframeName from SQL metadata", () =>
                 quotePrefix: "",
                 commentLines: [],
                 showOutput: true,
-                engine: DEFAULT_SQL_ENGINE,
+                engine: CellMetadataBindings.defaultSqlEngine,
               },
             },
           },

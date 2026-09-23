@@ -12,7 +12,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   type MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -26,7 +26,7 @@ import {
  * This matches VS Code's `ICellRange`, the shape `notebook.cell.collapseCellInput`
  * accepts to pick which cells to act on.
  */
-export interface CellRange {
+export interface Range {
   readonly start: number;
   readonly end: number;
 }
@@ -45,7 +45,7 @@ const isMarkupCell = (cell: MarimoNotebookCell) =>
 const isInputHidden = (cell: MarimoNotebookCell) =>
   cell.kind === NotebookCellKind.Code && cell.isCodeHidden;
 
-const cellRange = (cell: MarimoNotebookCell): CellRange => ({
+const cellRange = (cell: MarimoNotebookCell): Range => ({
   start: cell.index,
   end: cell.index + 1,
 });
@@ -58,9 +58,9 @@ const cellRange = (cell: MarimoNotebookCell): CellRange => ({
  * It is a plain function rather than part of the layer below so the selection
  * logic can be tested without standing up a notebook editor.
  */
-export function hiddenInputCellRanges(
+export function hiddenInputRanges(
   cells: readonly MarimoNotebookCell[],
-): CellRange[] {
+): Range[] {
   return cells.filter(isInputHidden).map(cellRange);
 }
 
@@ -79,19 +79,18 @@ function snapshotHiddenCode(
 }
 
 interface VisibilityChanges {
-  readonly collapse: CellRange[];
-  readonly expand: CellRange[];
+  readonly collapse: Range[];
+  readonly expand: Range[];
 }
 
-type CellInputVisibilitySyncEvent = Data.TaggedEnum<{
+type Event = Data.TaggedEnum<{
   Synchronize: {
     readonly notebook: MarimoNotebookDocument;
     readonly initialize: boolean;
   };
   Close: { readonly notebookId: NotebookId };
 }>;
-const CellInputVisibilitySyncEvent =
-  Data.taggedEnum<CellInputVisibilitySyncEvent>();
+const Event = Data.taggedEnum<Event>();
 
 function visibilityChanges(
   previous: Option.Option<HiddenCodeSnapshot>,
@@ -100,13 +99,13 @@ function visibilityChanges(
 ): VisibilityChanges {
   if (Option.isNone(previous)) {
     return {
-      collapse: hiddenInputCellRanges(cells),
+      collapse: hiddenInputRanges(cells),
       expand: cells.filter(isMarkupCell).map(cellRange),
     };
   }
 
-  const collapse: CellRange[] = [];
-  const expand: CellRange[] = [];
+  const collapse: Range[] = [];
+  const expand: Range[] = [];
   for (const cell of cells) {
     // `hide_code` is still persisted for marimo markdown cells, but a native
     // VS Code markup cell must keep its editable input expanded. Reapply this
@@ -148,9 +147,9 @@ function visibilityChanges(
  * cell ID and apply only `hide_code` transitions. Refocusing and unrelated
  * edits therefore do not override a user's temporary manual expansion.
  */
-export const CellInputVisibilitySyncLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
+    const code = yield* VsCode.Service;
 
     const snapshots = yield* Ref.make(
       HashMap.empty<NotebookId, HiddenCodeSnapshot>(),
@@ -175,7 +174,7 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
           command:
             | "notebook.cell.collapseCellInput"
             | "notebook.cell.expandCellInput",
-          ranges: readonly CellRange[],
+          ranges: readonly Range[],
         ) =>
           ranges.length === 0
             ? Effect.void
@@ -221,8 +220,8 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
         ),
       ),
       Stream.map(
-        (notebook): CellInputVisibilitySyncEvent =>
-          CellInputVisibilitySyncEvent.Synchronize({
+        (notebook): Event =>
+          Event.Synchronize({
             notebook,
             initialize: true,
           }),
@@ -236,8 +235,8 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
         ),
       ),
       Stream.map(
-        (notebook): CellInputVisibilitySyncEvent =>
-          CellInputVisibilitySyncEvent.Synchronize({
+        (notebook): Event =>
+          Event.Synchronize({
             notebook,
             initialize: false,
           }),
@@ -250,17 +249,14 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
           MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
-      Stream.map(
-        (notebook): CellInputVisibilitySyncEvent =>
-          CellInputVisibilitySyncEvent.Close({ notebookId: notebook.id }),
-      ),
+      Stream.map((notebook): Event => Event.Close({ notebookId: notebook.id })),
     );
 
     // Each source has its own fiber that writes to one queue. A
     // `Stream.mergeAll` attaches its inner subscriptions too late and loses
     // the events in that time. One fork for each source subscribes as soon
     // as the fiber runs.
-    const events = yield* Queue.unbounded<CellInputVisibilitySyncEvent>();
+    const events = yield* Queue.unbounded<Event>();
     for (const source of [activations, changes, closures]) {
       yield* Effect.forkScoped(
         source.pipe(Stream.runForEach((event) => Queue.offer(events, event))),
@@ -271,7 +267,7 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
     yield* Effect.forkScoped(
       Stream.fromQueue(events).pipe(
         Stream.runForEach((event) =>
-          CellInputVisibilitySyncEvent.$match(event, {
+          Event.$match(event, {
             Close: ({ notebookId }) =>
               Ref.update(snapshots, HashMap.remove(notebookId)),
             Synchronize: ({ notebook, initialize }) =>
@@ -280,5 +276,5 @@ export const CellInputVisibilitySyncLive = Layer.effectDiscard(
         ),
       ),
     );
-  }),
+  }).pipe(Effect.withSpan("CellInputVisibilitySync.layer")),
 );

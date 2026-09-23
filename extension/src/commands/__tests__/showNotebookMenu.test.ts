@@ -5,12 +5,12 @@ import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSerializer } from "../../notebook/NotebookSerializer.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
-import { Constants } from "../../platform/Constants.ts";
-import { GitHubClient } from "../../platform/GitHubClient.ts";
-import { OutputChannel } from "../../platform/OutputChannel.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
+import * as Constants from "../../platform/Constants.ts";
+import * as GitHubClient from "../../platform/GitHubClient.ts";
+import * as OutputChannel from "../../platform/OutputChannel.ts";
 import {
   MarimoNotebookDocument,
   MarimoNotebookCell,
@@ -19,8 +19,8 @@ import type { NotebookTarget } from "../Invocation.ts";
 import showNotebookMenu, { NOTEBOOK_MENU_ITEMS } from "../showNotebookMenu.ts";
 
 const constantsLayer = Layer.succeed(
-  Constants,
-  Constants.of({
+  Constants.Service,
+  Constants.Service.of({
     LanguageId: {
       Python: "mo-python",
       Sql: "sql",
@@ -44,8 +44,8 @@ const runtimeLayer = makeTestNotebookRuntime({
 });
 
 const serializerLayer = Layer.succeed(
-  NotebookSerializer,
-  NotebookSerializer.of({
+  NotebookSerializer.Service,
+  NotebookSerializer.Service.of({
     notebookType: NOTEBOOK_TYPE,
     serializeEffect: () => Effect.die("not implemented"),
     deserializeEffect: () => Effect.die("not implemented"),
@@ -53,8 +53,8 @@ const serializerLayer = Layer.succeed(
 );
 
 const githubLayer = Layer.succeed(
-  GitHubClient,
-  GitHubClient.of({
+  GitHubClient.Service,
+  GitHubClient.Service.of({
     Gists: {
       create: () => Effect.die("not implemented"),
       update: () => Effect.die("not implemented"),
@@ -288,7 +288,7 @@ describe("showNotebookMenu", () => {
         });
 
         yield* Effect.gen(function* () {
-          const sessions = yield* NotebookDocumentSessions;
+          const sessions = yield* NotebookDocumentSessions.Service;
           const session = Option.getOrThrow(
             sessions.forDocument(editor.notebook),
           );

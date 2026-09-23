@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { Context, Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import {
@@ -12,17 +12,17 @@ import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoCli
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import { CellExecutions } from "../../kernel/CellExecutions.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
+import * as CellExecutions from "../../kernel/CellExecutions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
-import { CellStatusBarProviderLive } from "../CellStatusBarProvider.ts";
+import * as CellStatusBarProvider from "../CellStatusBarProvider.ts";
 
 const withTestCtx = Effect.fn(function* () {
   const vscode = yield* TestVsCode.make();
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(CellStatusBarProviderLive),
-    Layer.provideMerge(CellExecutions.layer),
+    Layer.provideMerge(CellStatusBarProvider.layer),
+    Layer.provideMerge(CellExecutions.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provideMerge(vscode.layer),
     Layer.provide(TestTelemetryLive),
@@ -50,13 +50,13 @@ function createMockCell(
 }
 
 const openExecutions = Effect.fn(function* (
-  executions: Context.Service.Shape<typeof CellExecutions>,
+  executions: CellExecutions.Interface,
   vscode: TestVsCode,
   cell: ReturnType<typeof createMockCell>,
 ) {
   yield* vscode.openNotebook(cell.notebook);
   yield* Effect.yieldNow;
-  const sessions = yield* NotebookDocumentSessions;
+  const sessions = yield* NotebookDocumentSessions.Service;
   const session = sessions.forDocument(cell.notebook);
   if (Option.isNone(session)) {
     return yield* Effect.die("Expected an open notebook document session");
@@ -69,7 +69,7 @@ const openExecutions = Effect.fn(function* (
 });
 
 const markStale = Effect.fn(function* (
-  executions: Context.Service.Shape<typeof CellExecutions>,
+  executions: CellExecutions.Interface,
   vscode: TestVsCode,
   cell: ReturnType<typeof createMockCell>,
 ) {
@@ -116,7 +116,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellExecutions.Service;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
@@ -150,7 +150,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellExecutions.Service;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
@@ -243,7 +243,7 @@ it.effect(
   Effect.fn(function* () {
     const ctx = yield* withTestCtx();
     yield* Effect.gen(function* () {
-      const executions = yield* CellExecutions;
+      const executions = yield* CellExecutions.Service;
       const cell = createMockCell(notebookUri, {
         marimo: { name: "my_cell" },
         marimoRuntime: { stableId: "cell-2" },

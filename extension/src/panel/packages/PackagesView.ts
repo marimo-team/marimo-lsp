@@ -1,22 +1,16 @@
 import { Effect, Layer, Option, Ref, Scope, Stream } from "effect";
 
 import refreshPackagesCommand from "../../commands/refreshPackages.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
-import {
-  NotebookDependencies,
-  type NotebookDependencyState,
-} from "../../notebook/NotebookDependencies.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
+import * as NotebookDependencies from "../../notebook/NotebookDependencies.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import { TreeView } from "../TreeView.ts";
+import * as TreeView from "../TreeView.ts";
 
-interface PackageTreeItem {
+interface Item {
   type: "package";
   notebookUri: NotebookId;
   name: string;
@@ -26,8 +20,8 @@ interface PackageTreeItem {
 }
 
 interface ActiveDependencies {
-  readonly session: NotebookDocumentSession;
-  readonly state: NotebookDependencyState;
+  readonly session: NotebookDocumentSessions.Session;
+  readonly state: NotebookDependencies.State;
 }
 
 /**
@@ -37,40 +31,41 @@ interface ActiveDependencies {
  *
  * Subscribes to package dependency tree changes and updates the view in real-time.
  */
-export const PackagesViewLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const treeView = yield* TreeView;
-    const documentSessions = yield* NotebookDocumentSessions;
-    const sessionResources = yield* NotebookSessionResources;
-    const notebooks = yield* NotebookRuntime;
-    const code = yield* VsCode;
+    const treeView = yield* TreeView.Service;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
+    const sessionResources = yield* NotebookSessionResources.Service;
+    const notebooks = yield* NotebookRuntime.Service;
+    const code = yield* VsCode.Service;
 
     // Track the current package tree items for the active notebook
-    const packageItems = yield* Ref.make<readonly PackageTreeItem[]>([]);
+    const packageItems = yield* Ref.make<readonly Item[]>([]);
 
     // Create the tree data provider
     const provider = yield* treeView.createTreeDataProvider({
       viewId: "marimo-explorer-packages",
-      getChildren: (element?: PackageTreeItem) =>
-        Effect.gen(function* () {
-          if (!element) {
-            // Root level: return top-level packages
-            const items = yield* Ref.get(packageItems);
-            return [...items];
-          }
+      getChildren: Effect.fn("PackagesView.getChildren")(function* (
+        element?: Item,
+      ) {
+        if (!element) {
+          // Root level: return top-level packages
+          const items = yield* Ref.get(packageItems);
+          return [...items];
+        }
 
-          // Return dependencies of this package
-          const notebookUri = element.notebookUri;
-          return element.dependencies.map((dep) => ({
-            type: "package" as const,
-            notebookUri,
-            name: dep.name,
-            version: dep.version,
-            tags: dep.tags,
-            dependencies: dep.dependencies,
-          }));
-        }),
-      getTreeItem: (element: PackageTreeItem) =>
+        // Return dependencies of this package
+        const notebookUri = element.notebookUri;
+        return element.dependencies.map((dep) => ({
+          type: "package" as const,
+          notebookUri,
+          name: dep.name,
+          version: dep.version,
+          tags: dep.tags,
+          dependencies: dep.dependencies,
+        }));
+      }),
+      getTreeItem: (element: Item) =>
         Effect.succeed({
           label: element.name,
           description: element.version ?? undefined,
@@ -94,29 +89,29 @@ export const PackagesViewLive = Layer.effectDiscard(
         }),
     });
 
-    const renderDependencies = Effect.fn(function* (
-      active: Option.Option<ActiveDependencies>,
-    ) {
-      const items = Option.match(active, {
-        onNone: () => [],
-        onSome: ({ session, state }) => {
-          if (state._tag !== "Loaded" || state.tree === null) return [];
-          // The root is an implementation detail (`<root>`, a project
-          // name, or `installed-packages`); its children are the user's
-          // direct dependencies.
-          return state.tree.dependencies.map((dependency) => ({
-            type: "package" as const,
-            notebookUri: session.notebookId,
-            name: dependency.name,
-            version: dependency.version,
-            tags: dependency.tags,
-            dependencies: dependency.dependencies,
-          }));
-        },
-      });
-      yield* Ref.set(packageItems, items);
-      yield* provider.refresh();
-    });
+    const renderDependencies = Effect.fn("PackagesView.renderDependencies")(
+      function* (active: Option.Option<ActiveDependencies>) {
+        const items = Option.match(active, {
+          onNone: () => [],
+          onSome: ({ session, state }) => {
+            if (state._tag !== "Loaded" || state.tree === null) return [];
+            // The root is an implementation detail (`<root>`, a project
+            // name, or `installed-packages`); its children are the user's
+            // direct dependencies.
+            return state.tree.dependencies.map((dependency) => ({
+              type: "package" as const,
+              notebookUri: session.notebookId,
+              name: dependency.name,
+              version: dependency.version,
+              tags: dependency.tags,
+              dependencies: dependency.dependencies,
+            }));
+          },
+        });
+        yield* Ref.set(packageItems, items);
+        yield* provider.refresh();
+      },
+    );
 
     const watchActiveDependencies = documentSessions.active.pipe(
       Stream.switchMap(
@@ -130,7 +125,7 @@ export const PackagesViewLive = Layer.effectDiscard(
               sessionResources
                 .runScoped(
                   session,
-                  NotebookDependencies.pipe(
+                  NotebookDependencies.Service.pipe(
                     Effect.flatMap((dependencies) =>
                       dependencies.changes.pipe(
                         Stream.runForEach((state) =>
@@ -148,7 +143,7 @@ export const PackagesViewLive = Layer.effectDiscard(
                 .pipe(
                   Scope.provide(session.scope),
                   Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
+                    "NotebookDocumentSessions.EndedError",
                     () => Effect.void,
                   ),
                 ),
@@ -162,34 +157,34 @@ export const PackagesViewLive = Layer.effectDiscard(
 
     // A dependency tree belongs to the selected environment, so a controller
     // change refreshes the resource owned by that document session.
+    const refreshDependencies = Effect.fn("PackagesView.refreshDependencies")(
+      function* ({ notebookUri }: NotebookRuntime.NotebookControllerSelection) {
+        const session = documentSessions.current(notebookUri);
+        if (Option.isNone(session)) return;
+        yield* sessionResources
+          .runScoped(
+            session.value,
+            NotebookDependencies.Service.pipe(
+              Effect.flatMap((dependencies) => dependencies.refresh),
+            ),
+          )
+          .pipe(
+            Scope.provide(session.value.scope),
+            Effect.catchTag(
+              "NotebookDocumentSessions.EndedError",
+              () => Effect.void,
+            ),
+          );
+      },
+    );
+
     yield* Effect.forkScoped(
-      notebooks.controllerChanges.pipe(
-        Stream.runForEach(
-          Effect.fn(function* ({ notebookUri }) {
-            const session = documentSessions.current(notebookUri);
-            if (Option.isNone(session)) return;
-            yield* sessionResources
-              .runScoped(
-                session.value,
-                NotebookDependencies.pipe(
-                  Effect.flatMap((dependencies) => dependencies.refresh),
-                ),
-              )
-              .pipe(
-                Scope.provide(session.value.scope),
-                Effect.catchTag(
-                  "NotebookDocumentSessionEndedError",
-                  () => Effect.void,
-                ),
-              );
-          }),
-        ),
-      ),
+      notebooks.controllerChanges.pipe(Stream.runForEach(refreshDependencies)),
     );
 
     // Register command to refresh packages
     yield* code.commands.register(refreshPackagesCommand);
 
     yield* Effect.logDebug("Packages view initialized");
-  }),
+  }).pipe(Effect.withSpan("PackagesView.layer")),
 );

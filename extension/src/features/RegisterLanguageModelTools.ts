@@ -1,6 +1,5 @@
 import {
   Array as EffectArray,
-  Context,
   Effect,
   Formatter,
   Layer,
@@ -11,10 +10,10 @@ import {
 } from "effect";
 
 import { SCRATCH_CELL_ID } from "../constants.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { scratchCellNotificationsToVsCodeOutput } from "../kernel/VsCodeCellOutputs.ts";
 import { signalFromToken } from "../lib/signalFromToken.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   extractCellIdFromCellMessage,
   MarimoNotebookDocument,
@@ -26,8 +25,6 @@ import type { CellOperationNotification } from "../types.ts";
  * entry in package.json — VS Code requires both to match.
  */
 const EXECUTE_CODE_TOOL = "marimo_executeCode";
-
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
 
 /**
  * Extract a cell-op's stdout/stderr text
@@ -54,7 +51,7 @@ export function consoleText(op: CellOperationNotification): string {
     .join("");
 }
 
-export const ExecuteCodeInput = Schema.Struct({
+export const Input = Schema.Struct({
   /** URI of the marimo notebook whose kernel to run in (explicit, no default). */
   notebookUri: Schema.String,
   /** Python to run in that notebook's live kernel (scratchpad). */
@@ -69,7 +66,7 @@ export const ExecuteCodeInput = Schema.Struct({
  */
 export function scratchpadResultText(
   ops: ReadonlyArray<CellOperationNotification>,
-  code: VsCodeService,
+  code: VsCode.Interface,
   decoder = new TextDecoder(),
 ): string {
   // `partition` returns the excluded items first. The cascade ops are the
@@ -100,24 +97,24 @@ export function scratchpadResultText(
  * `marimo._code_mode` (taught by the marimo-pair skill). The tool's output is
  * the scratch run's text (stdout/result + code mode's summary).
  */
-export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
-    const notebooks = yield* NotebookRuntime;
+    const code = yield* VsCode.Service;
+    const notebooks = yield* NotebookRuntime.Service;
     const runPromise = Effect.runPromiseWith(yield* Effect.context());
     const decoder = new TextDecoder();
 
     /**
      * Resolve the explicit URI against open notebooks
      */
-    const resolveNotebookId = Effect.fn(function* (
-      input: typeof ExecuteCodeInput.Type,
-    ) {
-      const notebooks = yield* code.workspace.getNotebookDocuments;
+    const resolveNotebookId = Effect.fn(
+      "RegisterLanguageModelTools.resolveNotebookId",
+    )(function* (input: typeof Input.Type) {
+      const documents = yield* code.workspace.getNotebookDocuments;
 
       const first = EffectArray.findFirst(
         EffectArray.getSomes(
-          notebooks.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
+          documents.map((raw) => MarimoNotebookDocument.tryFrom(raw)),
         ),
         (notebook) => notebook.id === input.notebookUri,
       );
@@ -128,35 +125,34 @@ export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
     const result = (text: string) =>
       new code.LanguageModelToolResult([new code.LanguageModelTextPart(text)]);
 
-    const executeCode = Effect.fn("lm.executeCode")(function* (
-      unknownInput: unknown,
-    ) {
-      const input =
-        yield* Schema.decodeUnknownEffect(ExecuteCodeInput)(unknownInput);
+    const executeCode = Effect.fn("RegisterLanguageModelTools.executeCode")(
+      function* (unknownInput: unknown) {
+        const input = yield* Schema.decodeUnknownEffect(Input)(unknownInput);
 
-      const notebookId = yield* resolveNotebookId(input);
-      if (Option.isNone(notebookId)) {
-        return result(
-          `No open marimo notebook matches \`${input.notebookUri}\`. ` +
-            `Pass the URI of a marimo notebook open in VS Code's notebook editor. ` +
-            `Do not fall back to editing the \`.py\` file with Edit/Write/NotebookEdit — ` +
-            `that bypasses the live kernel.`,
-        );
-      }
+        const notebookId = yield* resolveNotebookId(input);
+        if (Option.isNone(notebookId)) {
+          return result(
+            `No open marimo notebook matches \`${input.notebookUri}\`. ` +
+              `Pass the URI of a marimo notebook open in VS Code's notebook editor. ` +
+              `Do not fall back to editing the \`.py\` file with Edit/Write/NotebookEdit — ` +
+              `that bypasses the live kernel.`,
+          );
+        }
 
-      const notebook = yield* notebooks.forNotebook(notebookId.value);
-      const ops = yield* notebook
-        .executeScratchpad(input.code)
-        .pipe(Stream.runCollect);
+        const notebook = yield* notebooks.forNotebook(notebookId.value);
+        const ops = yield* notebook
+          .executeScratchpad(input.code)
+          .pipe(Stream.runCollect);
 
-      const text = scratchpadResultText(ops, code, decoder);
+        const text = scratchpadResultText(ops, code, decoder);
 
-      return result(text.trim() === "" ? "(no output)" : text);
-    });
+        return result(text.trim() === "" ? "(no output)" : text);
+      },
+    );
 
     yield* code.lm.registerTool<unknown>(EXECUTE_CODE_TOOL, {
       prepareInvocation(options) {
-        const input = Schema.decodeUnknownSync(ExecuteCodeInput)(options.input);
+        const input = Schema.decodeUnknownSync(Input)(options.input);
         return {
           invocationMessage: "Running code in the marimo kernel…",
           // Side-effecting (arbitrary code in the user's kernel) — confirm.
@@ -196,5 +192,5 @@ export const RegisterLanguageModelToolsLive = Layer.effectDiscard(
         );
       },
     });
-  }),
+  }).pipe(Effect.withSpan("RegisterLanguageModelTools.layer")),
 );

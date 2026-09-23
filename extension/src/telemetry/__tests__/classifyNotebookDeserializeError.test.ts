@@ -1,10 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { Cause, Redacted } from "effect";
 
-import {
-  MarimoClientStartError,
-  MarimoCommandError,
-} from "../../lsp/MarimoClient.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import { NotebookSourceError } from "../../notebook/NotebookSourceError.ts";
 import { classifyNotebookDeserializeError } from "../classifyNotebookDeserializeError.ts";
 
@@ -41,7 +38,7 @@ it("does not report known notebook source failures", () => {
 
 it("separates LSP startup failures", () => {
   const result = classifyNotebookDeserializeError(
-    new MarimoClientStartError({
+    new MarimoClient.StartError({
       exec: { command: "uv", args: ["run", "marimo-lsp"] },
       mode: "uv",
       cause: new Error("spawn failed"),
@@ -53,7 +50,7 @@ it("separates LSP startup failures", () => {
     domain: "notebook.deserialize",
     kind: "transport.lsp-start",
     safeContext: {
-      "error.exception_class": "MarimoClientStartError",
+      "error.exception_class": "MarimoClient.StartError",
       "lsp.mode": "uv",
     },
   });
@@ -111,7 +108,7 @@ it("separates client lifecycle failures from internal RPC errors", () => {
 });
 
 function commandError(cause: unknown) {
-  return new MarimoCommandError({
+  return new MarimoClient.CommandError({
     command: Redacted.make({
       kind: "parse-notebook" as const,
       source: "DO_NOT_UPLOAD_COMMAND_SOURCE",

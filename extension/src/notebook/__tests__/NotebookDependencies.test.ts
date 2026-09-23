@@ -19,19 +19,13 @@ import {
   makeTestNotebookRuntime,
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type {
-  NotebookController,
-  NotebookControllerSelection,
-} from "../../kernel/NotebookRuntime.ts";
+import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import {
-  NotebookDependencies,
-  type NotebookDependencyState,
-} from "../NotebookDependencies.ts";
-import { NotebookDocumentSessions } from "../NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../NotebookSessionResources.ts";
+import * as NotebookDependencies from "../NotebookDependencies.ts";
+import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const OTHER_NOTEBOOK_URI = notebookId("file:///test/other.py");
@@ -46,7 +40,7 @@ const TREE: DependencyTreeNode = {
 function makeController(options: {
   readonly id: string;
   readonly executable?: string;
-}): NotebookController {
+}): NotebookRuntime.NotebookController {
   return {
     ...options,
     drive: () => () => Effect.void,
@@ -56,12 +50,12 @@ function makeController(options: {
   };
 }
 
-const isTerminal = (state: NotebookDependencyState) =>
+const isTerminal = (state: NotebookDependencies.State) =>
   state._tag === "Loaded" || state._tag === "Failed";
 
 const makeContext = Effect.fn(function* (options: {
   readonly notebookIds?: ReadonlyArray<NotebookId>;
-  readonly controllers?: ReadonlyArray<NotebookControllerSelection>;
+  readonly controllers?: ReadonlyArray<NotebookRuntime.NotebookControllerSelection>;
   readonly send: (
     request: TestCommand,
   ) => Effect.Effect<unknown, Schema.SchemaError>;
@@ -98,8 +92,8 @@ const inNotebook = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
-    const sessions = yield* NotebookDocumentSessions;
-    const resources = yield* NotebookSessionResources;
+    const sessions = yield* NotebookDocumentSessions.Service;
+    const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));
     return yield* resources
@@ -110,7 +104,7 @@ const inNotebook = <A, E, R>(
 const collectUntilTerminal = (notebookUri: NotebookId) =>
   inNotebook(
     notebookUri,
-    NotebookDependencies.pipe(
+    NotebookDependencies.Service.pipe(
       Effect.flatMap((dependencies) =>
         dependencies.changes.pipe(
           Stream.takeUntil(isTerminal),
@@ -178,7 +172,7 @@ describe("NotebookDependencies", () => {
       const collect = (subscribed: Deferred.Deferred<void>) =>
         inNotebook(
           NOTEBOOK_URI,
-          NotebookDependencies.pipe(
+          NotebookDependencies.Service.pipe(
             Effect.flatMap((dependencies) =>
               dependencies.changes.pipe(
                 Stream.tap(() => Deferred.succeed(subscribed, undefined)),
@@ -319,7 +313,7 @@ describe("NotebookDependencies", () => {
 
       yield* inNotebook(
         NOTEBOOK_URI,
-        NotebookDependencies.pipe(
+        NotebookDependencies.Service.pipe(
           Effect.flatMap((dependencies) =>
             Effect.gen(function* () {
               const initial = yield* dependencies.changes.pipe(
@@ -382,7 +376,7 @@ describe("NotebookDependencies", () => {
 
       yield* inNotebook(
         NOTEBOOK_URI,
-        NotebookDependencies.pipe(
+        NotebookDependencies.Service.pipe(
           Effect.flatMap((dependencies) =>
             Effect.gen(function* () {
               const staleRefresh = yield* dependencies.refresh.pipe(

@@ -7,9 +7,9 @@ import {
   makeTestMarimoClient,
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import { ThemeSyncLive } from "../ThemeSync.ts";
+import * as ThemeSync from "../ThemeSync.ts";
 
 const withTestCtx = Effect.fn(function* (
   initialTheme: "light" | "dark" = "light",
@@ -40,7 +40,7 @@ const withTestCtx = Effect.fn(function* (
   });
 
   const layer = Layer.empty.pipe(
-    Layer.provideMerge(ThemeSyncLive),
+    Layer.provideMerge(ThemeSync.layer),
     Layer.provide(NotebookEditorRegistry.layer),
     Layer.provide(
       makeTestMarimoClient({

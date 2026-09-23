@@ -3,13 +3,13 @@ import * as NodeFs from "node:fs";
 import { Cause, Data, Effect, Option } from "effect";
 
 import { assert } from "../assert.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   formatProjectDependencyTarget,
   inspectProjectDependencies,
   ProjectDependencyTarget,
 } from "../python/ProjectDependencyTarget.ts";
-import { Uv, UvUnknownError } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export function installPackages(
@@ -17,23 +17,23 @@ export function installPackages(
   options: {
     venvPath: string;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv.Service | VsCode.Service>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script: MarimoNotebookDocument;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode>;
+): Effect.Effect<InstallPackagesOutcome, never, Uv.Service | VsCode.Service>;
 export function installPackages(
   packages: ReadonlyArray<string>,
   options: {
     script?: MarimoNotebookDocument;
     venvPath?: string;
   },
-): Effect.Effect<InstallPackagesOutcome, never, Uv | VsCode> {
+): Effect.Effect<InstallPackagesOutcome, never, Uv.Service | VsCode.Service> {
   return Effect.gen(function* () {
-    const uv = yield* Uv;
-    const code = yield* VsCode;
+    const uv = yield* Uv.Service;
+    const code = yield* VsCode.Service;
     return yield* code.window.withProgress(
       {
         location: code.ProgressLocation.Notification,
@@ -51,7 +51,7 @@ export function installPackages(
             const requests = yield* resolveProjectInstallRequests(
               packages,
               venvPath,
-            ).pipe(Effect.provideService(VsCode, code));
+            ).pipe(Effect.provideService(VsCode.Service, code));
             if (requests == null) return "cancelled" as const;
 
             for (const request of requests) {
@@ -63,7 +63,7 @@ export function installPackages(
                 })
                 .pipe(
                   Effect.catchTag(
-                    "UvMissingPyProjectError",
+                    "Uv.MissingPyProjectError",
                     Effect.fn(function* () {
                       yield* Effect.logWarning(
                         "Failed to `uv add`, attempting `uv pip install`.",
@@ -81,14 +81,14 @@ export function installPackages(
 
             // safely update the the notebook
             yield* uvAddScriptSafe(packages, notebook).pipe(
-              Effect.provideService(VsCode, code),
-              Effect.provideService(Uv, uv),
+              Effect.provideService(VsCode.Service, code),
+              Effect.provideService(Uv.Service, uv),
             );
 
             // sync the virtual env
             yield* uv.syncScript({ script: notebook.uri.fsPath }).pipe(
               // Should be added by `uvAddScriptSafe`
-              Effect.catchTag("UvMissingPep723MetadataError", () =>
+              Effect.catchTag("Uv.MissingPep723MetadataError", () =>
                 Effect.die("Expected PEP 723 metadata to be present"),
               ),
             );
@@ -137,7 +137,7 @@ class ProjectInspectionError extends Data.TaggedError(
 export const resolveProjectInstallRequests = Effect.fn(
   "resolveProjectInstallRequests",
 )(function* (packages: ReadonlyArray<string>, directory: string) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const requests: ProjectInstallRequest[] = [];
 
   const inspection = yield* Effect.try({
@@ -215,8 +215,8 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
   packages: ReadonlyArray<string>,
   notebook: MarimoNotebookDocument,
 ) {
-  const uv = yield* Uv;
-  const code = yield* VsCode;
+  const uv = yield* Uv.Service;
+  const code = yield* VsCode.Service;
   const tmpFile = `${notebook.uri.fsPath}.tmp`;
   const metadata = yield* notebook.parseMetadata();
   yield* Effect.promise(() =>
@@ -263,7 +263,7 @@ export const uvAddScriptSafe = Effect.fn("uvAddScriptSafe")(function* (
 });
 
 /**
- * Walk the Cause tree looking for a UvUnknownError and return the last
+ * Walk the Cause tree looking for a Uv.UnknownError and return the last
  * line of its stderr (typically the most actionable message).
  */
 function extractUvErrorDetail(cause: Cause.Cause<unknown>): string | null {
@@ -271,7 +271,7 @@ function extractUvErrorDetail(cause: Cause.Cause<unknown>): string | null {
     .filter(Cause.isFailReason)
     .map((reason) => reason.error);
   for (const failure of failures) {
-    if (failure instanceof UvUnknownError && failure.stderr) {
+    if (failure instanceof Uv.UnknownError && failure.stderr) {
       const lines = failure.stderr.trim().split("\n");
       return lines[lines.length - 1] ?? null;
     }

@@ -12,11 +12,11 @@ import {
   mergeMarimoConfig,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../../types.ts";
-import { NotebookConfiguration } from "../NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../NotebookConfiguration.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const NOTEBOOK_URI_1 = notebookId("file:///test/notebook1.py");
@@ -37,8 +37,8 @@ const inNotebook = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ) =>
   Effect.gen(function* () {
-    const sessions = yield* NotebookDocumentSessions;
-    const resources = yield* NotebookSessionResources;
+    const sessions = yield* NotebookDocumentSessions.Service;
+    const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));
     return yield* resources
@@ -49,7 +49,7 @@ const inNotebook = <A, E, R>(
 const getConfig = (notebookUri: NotebookId) =>
   inNotebook(
     notebookUri,
-    NotebookConfiguration.pipe(
+    NotebookConfiguration.Service.pipe(
       Effect.flatMap((configuration) => configuration.get),
     ),
   );
@@ -60,7 +60,7 @@ const updateConfig = (
 ) =>
   inNotebook(
     notebookUri,
-    NotebookConfiguration.pipe(
+    NotebookConfiguration.Service.pipe(
       Effect.flatMap((configuration) => configuration.update(partialConfig)),
     ),
   );
@@ -68,7 +68,7 @@ const updateConfig = (
 const invalidateConfig = (notebookUri: NotebookId) =>
   inNotebook(
     notebookUri,
-    NotebookConfiguration.pipe(
+    NotebookConfiguration.Service.pipe(
       Effect.flatMap((configuration) => configuration.invalidate),
     ),
   );
@@ -79,14 +79,14 @@ const configurationChanges = (
   ready: Deferred.Deferred<void>,
 ) =>
   Effect.gen(function* () {
-    const sessions = yield* NotebookDocumentSessions;
-    const resources = yield* NotebookSessionResources;
+    const sessions = yield* NotebookDocumentSessions.Service;
+    const resources = yield* NotebookSessionResources.Service;
     const session = sessions.current(notebookUri);
     assert(Option.isSome(session));
     return yield* resources
       .runScoped(
         session.value,
-        NotebookConfiguration.pipe(
+        NotebookConfiguration.Service.pipe(
           Effect.flatMap((configuration) =>
             configuration.changes.pipe(
               Stream.tap((value) =>
@@ -260,7 +260,7 @@ describe("NotebookConfiguration", () => {
 
       yield* inNotebook(
         NOTEBOOK_URI,
-        NotebookConfiguration.pipe(
+        NotebookConfiguration.Service.pipe(
           Effect.flatMap((configuration) =>
             Effect.gen(function* () {
               const stale = yield* configuration.get.pipe(Effect.forkChild);

@@ -8,10 +8,7 @@ import {
   Uri,
 } from "../../__mocks__/TestVsCode.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import {
-  type NotebookDocumentSessionId,
-  NotebookDocumentSessions,
-} from "../NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
 
 it.effect(
   "ends the old session when a document is replaced at the same URI",
@@ -26,7 +23,7 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      const sessions = yield* NotebookDocumentSessions;
+      const sessions = yield* NotebookDocumentSessions.Service;
       const firstSession = sessions.current(id);
       expect(
         Option.exists(firstSession, (session) => session.document === first),
@@ -88,7 +85,7 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      const sessions = yield* NotebookDocumentSessions;
+      const sessions = yield* NotebookDocumentSessions.Service;
       expect(Option.isNone(sessions.current(id))).toBe(true);
 
       yield* vscode.openNotebook(replacement);
@@ -120,7 +117,7 @@ it.effect(
     const staleBackgroundStarted = yield* Deferred.make<void>();
 
     yield* Effect.gen(function* () {
-      const sessions = yield* NotebookDocumentSessions;
+      const sessions = yield* NotebookDocumentSessions.Service;
       const session = sessions.current(id);
       expect(Option.isSome(session)).toBe(true);
       if (Option.isNone(session)) return;
@@ -169,13 +166,13 @@ it.effect(
     );
 
     yield* Effect.gen(function* () {
-      const sessions = yield* NotebookDocumentSessions;
+      const sessions = yield* NotebookDocumentSessions.Service;
       const firstSession = sessions.current(id);
       expect(Option.isSome(firstSession)).toBe(true);
       if (Option.isNone(firstSession)) return;
 
       const observed = yield* Ref.make<
-        ReadonlyArray<NotebookDocumentSessionId | null>
+        ReadonlyArray<NotebookDocumentSessions.NotebookDocumentSessionId | null>
       >([]);
       yield* sessions.active.pipe(
         Stream.runForEach((active) =>

@@ -5,15 +5,15 @@
 import type * as vscode from "vscode";
 import * as lsp from "vscode-languageserver-protocol";
 
-import type { VsCode } from "../platform/VsCode.ts";
+import type * as VsCode from "../platform/VsCode.ts";
 
 /**
- * The VsCode service shape. This is what `yield* VsCode` produces.
+ * The VsCode service shape. This is what `yield* VsCode.Service` produces.
  *
  * The class type is the context key and not the service value. Converter
  * signatures must name the shape.
  */
-export type VsCodeService = VsCode["Service"];
+export type VsCodeService = VsCode.Interface;
 
 export function toVsCodeRange(
   code: VsCodeService,

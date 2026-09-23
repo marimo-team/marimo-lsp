@@ -11,14 +11,11 @@ import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import {
-  isPathInsideDirectory,
-  NotebookControllersLive,
-} from "../../kernel/NotebookControllers.ts";
-import { NotebookRuntime } from "../../kernel/NotebookRuntime.ts";
+import * as NotebookControllers from "../../kernel/NotebookControllers.ts";
+import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
-import { Constants } from "../../platform/Constants.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as Constants from "../../platform/Constants.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
 
 const affinityMap = (
@@ -47,10 +44,10 @@ const withTestCtx = Effect.fn(function* (
   const vscode = yield* TestVsCode.make();
   const python = yield* TestPythonExtension.make(options.initialEnvs ?? []);
   const runtime = makeTestNotebookRuntime();
-  const controllers = NotebookControllersLive.pipe(Layer.provide(runtime));
+  const controllers = NotebookControllers.layer.pipe(Layer.provide(runtime));
 
   const layer = Layer.merge(runtime, controllers).pipe(
-    Layer.provide(Constants.layer),
+    Layer.provide(Constants.defaultLayer),
     Layer.provide(TestTelemetryLive),
     Layer.provideMerge(vscode.layer),
     Layer.provideMerge(python.layer),
@@ -70,7 +67,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
 
       expect((yield* ctx.vscode.snapshot()).controllers).toEqual([
         "marimo-/home/user/.venv/bin/python",
@@ -83,13 +80,13 @@ it.effect(
 
 it("distinguishes uv cache descendants from shared path prefixes", () => {
   expect(
-    isPathInsideDirectory(
+    NotebookControllers.isPathInside(
       "/home/user/.cache/uv/archive-v0/env/bin/python",
       "/home/user/.cache/uv",
     ),
   ).toBe(true);
   expect(
-    isPathInsideDirectory(
+    NotebookControllers.isPathInside(
       "/home/user/.cache/uv-other/bin/python",
       "/home/user/.cache/uv",
     ),
@@ -105,7 +102,7 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      const notebooks = yield* NotebookRuntime;
+      const notebooks = yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
       const initial = yield* notebooks.forNotebook(
@@ -180,7 +177,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialEnvs: [first] });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
 
       // Drain once so the forked environmentChanges consumer subscribes to
       // the mock PubSub before we publish; the PubSub has no replay, so an
@@ -214,7 +211,7 @@ it.effect(
     const ctx = yield* withTestCtx({ initialEnvs: [environment] });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
+      yield* NotebookRuntime.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
       yield* ctx.vscode.addNotebookDocument(editor.notebook);
       // Drain so the selection listener and the environmentChanges consumer
@@ -247,8 +244,8 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
-      const code = yield* VsCode;
+      yield* NotebookRuntime.Service;
+      const code = yield* VsCode.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(Option.some(editor));
@@ -273,8 +270,8 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
-      const code = yield* VsCode;
+      yield* NotebookRuntime.Service;
+      const code = yield* VsCode.Service;
       const uri = "/test/notebook_mo.py";
 
       yield* ctx.vscode.setActiveNotebookEditor(
@@ -317,8 +314,8 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
-      const code = yield* VsCode;
+      yield* NotebookRuntime.Service;
+      const code = yield* VsCode.Service;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(
@@ -361,8 +358,8 @@ it.effect(
     });
 
     yield* Effect.gen(function* () {
-      yield* NotebookRuntime;
-      const code = yield* VsCode;
+      yield* NotebookRuntime.Service;
+      const code = yield* VsCode.Service;
       const uri = NodePath.join(project.path, "notebook_mo.py");
 
       yield* ctx.vscode.setActiveNotebookEditor(

@@ -11,7 +11,7 @@ import type { DebugProtocol } from "@vscode/debugprotocol";
 import { Cause, Data, Deferred, Effect, Queue, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 class SocketError extends Data.TaggedError("SocketError")<{
   cause: Error;
@@ -142,7 +142,7 @@ export const makeDapProxy = Effect.fn("makeDapProxy")(function* (
   port: number,
   mapping: SourceMapping,
 ) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const runFork = Effect.runForkWith(yield* Effect.context());
   const configurationDone = yield* Deferred.make<void>();
   const socket = yield* Effect.acquireRelease(

@@ -2,7 +2,6 @@ import * as NodeEvents from "node:events";
 import * as NodePath from "node:path";
 
 import {
-  Context,
   Data,
   Deferred,
   Effect,
@@ -21,16 +20,11 @@ import type * as vscode from "vscode";
 import { commandId, decodeCommandResult } from "../commands.ts";
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import {
-  Commands,
-  Env,
-  FileSystemError,
-  type NotebookLifecycleEvent,
-  ParseUriError,
-  VsCode,
-  Window,
-  Workspace,
-} from "../platform/VsCode.ts";
+import * as Commands from "../platform/Commands.ts";
+import * as Env from "../platform/Env.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as Window from "../platform/Window.ts";
+import * as Workspace from "../platform/Workspace.ts";
 import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
 
 class NotebookCellData implements vscode.NotebookCellData {
@@ -1516,7 +1510,7 @@ export function createTestNotebookEditor(
 }
 
 export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
-  readonly layer: Layer.Layer<VsCode>;
+  readonly layer: Layer.Layer<VsCode.Service>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
   readonly commands: Ref.Ref<HashSet.HashSet<string>>;
   readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
@@ -1541,7 +1535,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly documentChangesPubSub: PubSub.PubSub<vscode.NotebookDocumentChangeEvent>;
   readonly documentOpenedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
   readonly documentClosedPubSub: PubSub.PubSub<vscode.NotebookDocument>;
-  readonly documentLifecyclePubSub: PubSub.PubSub<NotebookLifecycleEvent>;
+  readonly documentLifecyclePubSub: PubSub.PubSub<Workspace.NotebookLifecycleEvent>;
   readonly setActiveNotebookEditor: (
     editor: Option.Option<vscode.NotebookEditor>,
   ) => Effect.Effect<void>;
@@ -1660,10 +1654,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       visibleNotebookEditors?: Array<vscode.NotebookEditor>;
       version?: string;
       fileSystem?: Map<string, Uint8Array | Error>;
-      window?: Partial<Context.Service.Shape<typeof Window>>;
-      commands?: Partial<Context.Service.Shape<typeof Commands>>;
-      workspace?: Partial<Context.Service.Shape<typeof Workspace>>;
-      env?: Partial<Context.Service.Shape<typeof Env>>;
+      window?: Partial<Window.Interface>;
+      commands?: Partial<Commands.Interface>;
+      workspace?: Partial<Workspace.Interface>;
+      env?: Partial<Env.Interface>;
       installedExtensions?: ReadonlyArray<string>;
     } = {},
   ) {
@@ -1694,7 +1688,8 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const documentClosed = yield* PubSub.unbounded<vscode.NotebookDocument>();
 
-    const documentLifecycle = yield* PubSub.unbounded<NotebookLifecycleEvent>();
+    const documentLifecycle =
+      yield* PubSub.unbounded<Workspace.NotebookLifecycleEvent>();
 
     const commands = yield* Ref.make(HashSet.empty<string>());
     const controllers = yield* Ref.make(
@@ -1747,7 +1742,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const commandResultsPubSub =
       yield* PubSub.unbounded<Result.Result<string, string>>();
 
-    const layer = Layer.succeed(VsCode, {
+    const layer = Layer.succeed(VsCode.Service, {
       // namespaces
       window: {
         showSaveDialog() {
@@ -1963,7 +1958,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             const entry = fileSystem.get(key);
 
             if (entry instanceof Error) {
-              return Effect.fail(new FileSystemError({ cause: entry }));
+              return Effect.fail(
+                new Workspace.FileSystemError({ cause: entry }),
+              );
             }
 
             if (entry !== undefined) {
@@ -1972,7 +1969,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
             // File not in map - return error for missing file
             return Effect.fail(
-              new FileSystemError({ cause: new Error(`ENOENT: ${key}`) }),
+              new Workspace.FileSystemError({
+                cause: new Error(`ENOENT: ${key}`),
+              }),
             );
           },
           writeFile() {
@@ -2392,7 +2391,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         parseUri(value: string) {
           return Result.try({
             try: () => Uri.parse(value, /* strict */ true),
-            catch: (cause) => new ParseUriError({ cause }),
+            catch: (cause) => new VsCode.ParseUriError({ cause }),
           });
         },
       },

@@ -10,10 +10,7 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import {
   decodeVariablesOperation,
   type NotebookId,
@@ -26,13 +23,47 @@ import type {
 
 type VariableStateKey = readonly [
   notebookId: NotebookId,
-  sessionId: NotebookDocumentSession["id"],
+  sessionId: NotebookDocumentSessions.Session["id"],
 ];
 
-const keyFor = (session: NotebookDocumentSession): VariableStateKey => [
-  session.notebookId,
-  session.id,
-];
+const keyFor = (
+  session: NotebookDocumentSessions.Session,
+): VariableStateKey => [session.notebookId, session.id];
+
+export type Variables = ReturnType<typeof decodeVariablesOperation>;
+export type Values = Array<VariableValuesNotification["variables"][number]>;
+export interface Update {
+  readonly notebookId: NotebookId;
+  readonly kind: "declaration" | "values";
+}
+
+export interface Interface {
+  readonly updateVariables: (
+    session: NotebookDocumentSessions.Session,
+    operation: VariablesNotification,
+  ) => Effect.Effect<void>;
+  readonly updateVariableValues: (
+    session: NotebookDocumentSessions.Session,
+    operation: VariableValuesNotification,
+  ) => Effect.Effect<void>;
+  readonly getVariables: (
+    notebookUri: NotebookId,
+  ) => Effect.Effect<Option.Option<Variables>>;
+  readonly getVariableValues: (
+    notebookUri: NotebookId,
+  ) => Effect.Effect<Option.Option<Values>>;
+  readonly getAllVariableData: (notebookUri: NotebookId) => Effect.Effect<{
+    readonly variables: Option.Option<Variables>;
+    readonly values: Option.Option<Values>;
+  }>;
+  readonly streamVariablesChanges: Stream.Stream<
+    HashMap.HashMap<NotebookId, VariablesNotification>
+  >;
+  readonly streamVariableValuesChanges: Stream.Stream<
+    HashMap.HashMap<NotebookId, VariableValuesNotification>
+  >;
+  readonly notebookUpdates: Stream.Stream<Update>;
+}
 
 /**
  * Manages variable state across all notebooks.
@@ -43,247 +74,232 @@ const keyFor = (session: NotebookDocumentSession): VariableStateKey => [
  *
  * Uses SubscriptionRef for reactive state management.
  */
-export class NotebookVariables extends Context.Service<NotebookVariables>()(
-  "NotebookVariables",
-  {
-    make: Effect.gen(function* () {
-      const documentSessions = yield* NotebookDocumentSessions;
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/NotebookVariables",
+) {}
 
-      // Track variable declarations by exact document opening.
-      const variablesRef = yield* SubscriptionRef.make(
-        HashMap.empty<VariableStateKey, VariablesNotification>(),
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const documentSessions = yield* NotebookDocumentSessions.Service;
+
+    // Track variable declarations by exact document opening.
+    const variablesRef = yield* SubscriptionRef.make(
+      HashMap.empty<VariableStateKey, VariablesNotification>(),
+    );
+
+    // Track variable values by exact document opening.
+    const variableValuesRef = yield* SubscriptionRef.make(
+      HashMap.empty<VariableStateKey, VariableValuesNotification>(),
+    );
+
+    const registeredSessionCleanups =
+      new WeakSet<NotebookDocumentSessions.Session>();
+
+    const releaseSession = Effect.fn("NotebookVariables.releaseSession")(
+      function* (session: NotebookDocumentSessions.Session) {
+        const notebookUri = session.notebookId;
+        registeredSessionCleanups.delete(session);
+        yield* SubscriptionRef.update(
+          variablesRef,
+          HashMap.remove(keyFor(session)),
+        );
+        yield* SubscriptionRef.update(
+          variableValuesRef,
+          HashMap.remove(keyFor(session)),
+        );
+
+        yield* Effect.logTrace("Released variable data").pipe(
+          Effect.annotateLogs({ notebookUri }),
+        );
+      },
+    );
+
+    const registerSessionCleanup = Effect.fn(
+      "NotebookVariables.registerSessionCleanup",
+    )(function* (session: NotebookDocumentSessions.Session) {
+      if (registeredSessionCleanups.has(session)) return;
+      registeredSessionCleanups.add(session);
+      yield* Scope.addFinalizer(session.scope, releaseSession(session));
+    });
+
+    // PubSub to notify when any notebook's variables change
+    const notebookUpdatesPubSub = yield* PubSub.unbounded<Update>();
+
+    /**
+     * Get variable declarations for a notebook
+     */
+    const getVariables = Effect.fn("NotebookVariables.getVariables")(function* (
+      notebookUri: NotebookId,
+    ) {
+      const map = yield* SubscriptionRef.get(variablesRef);
+      return Option.flatMap(documentSessions.current(notebookUri), (session) =>
+        Option.map(HashMap.get(map, keyFor(session)), (operation) =>
+          decodeVariablesOperation(operation),
+        ),
       );
+    });
 
-      // Track variable values by exact document opening.
-      const variableValuesRef = yield* SubscriptionRef.make(
-        HashMap.empty<VariableStateKey, VariableValuesNotification>(),
-      );
+    const getVariableValues = Effect.fn("NotebookVariables.getVariableValues")(
+      function* (notebookUri: NotebookId) {
+        const map = yield* SubscriptionRef.get(variableValuesRef);
+        return Option.flatMap(
+          documentSessions.current(notebookUri),
+          (session) =>
+            Option.map(HashMap.get(map, keyFor(session)), (operation) => [
+              ...operation.variables,
+            ]),
+        );
+      },
+    );
 
-      const registeredSessionCleanups = new WeakSet<NotebookDocumentSession>();
+    const projectCurrent = <A>(state: HashMap.HashMap<VariableStateKey, A>) => {
+      let projection = HashMap.empty<NotebookId, A>();
+      for (const [[notebookId, sessionId], value] of state) {
+        if (
+          Option.exists(
+            documentSessions.current(notebookId),
+            (session) => session.id === sessionId,
+          )
+        ) {
+          projection = HashMap.set(projection, notebookId, value);
+        }
+      }
+      return projection;
+    };
 
-      const releaseSession = Effect.fn("NotebookVariables.releaseSession")(
-        function* (session: NotebookDocumentSession) {
+    const updateVariables = Effect.fn("NotebookVariables.updateVariables")(
+      function* (
+        session: NotebookDocumentSessions.Session,
+        operation: VariablesNotification,
+      ) {
+        yield* Effect.uninterruptible(
+          Effect.gen(function* () {
+            const notebookUri = session.notebookId;
+            yield* SubscriptionRef.update(variablesRef, (map) =>
+              HashMap.set(map, keyFor(session), operation),
+            );
+
+            // Filter variable values to only include variables that exist in declarations
+            const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
+            const existingValues = HashMap.get(valuesMap, keyFor(session));
+
+            if (Option.isSome(existingValues)) {
+              const declaredVarNames = new Set(
+                operation.variables.map((v) => v.name),
+              );
+              const filteredValues = existingValues.value.variables.filter(
+                (v) => {
+                  // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
+                  const varName: VariableName = v.name;
+                  return declaredVarNames.has(varName);
+                },
+              );
+
+              yield* SubscriptionRef.update(variableValuesRef, (map) =>
+                HashMap.set(map, keyFor(session), {
+                  ...existingValues.value,
+                  variables: filteredValues,
+                }),
+              );
+            }
+
+            // Register after mutation: adding a finalizer to an already-closed
+            // scope runs it immediately, so late writes cannot repopulate state.
+            yield* registerSessionCleanup(session);
+
+            yield* PubSub.publish(notebookUpdatesPubSub, {
+              notebookId: notebookUri,
+              kind: "declaration" as const,
+            });
+
+            yield* Effect.logTrace("Updated variable declarations").pipe(
+              Effect.annotateLogs({
+                notebookUri,
+                count: operation.variables.length,
+              }),
+            );
+          }),
+        );
+      },
+    );
+
+    const updateVariableValues = Effect.fn(
+      "NotebookVariables.updateVariableValues",
+    )(function* (
+      session: NotebookDocumentSessions.Session,
+      operation: VariableValuesNotification,
+    ) {
+      yield* Effect.uninterruptible(
+        Effect.gen(function* () {
           const notebookUri = session.notebookId;
-          registeredSessionCleanups.delete(session);
-          yield* SubscriptionRef.update(
-            variablesRef,
-            HashMap.remove(keyFor(session)),
+          yield* SubscriptionRef.update(variableValuesRef, (map) =>
+            HashMap.set(map, keyFor(session), operation),
           );
-          yield* SubscriptionRef.update(
-            variableValuesRef,
-            HashMap.remove(keyFor(session)),
-          );
+          yield* registerSessionCleanup(session);
 
-          yield* Effect.logTrace("Released variable data").pipe(
-            Effect.annotateLogs({ notebookUri }),
-          );
-        },
-      );
+          yield* PubSub.publish(notebookUpdatesPubSub, {
+            notebookId: notebookUri,
+            kind: "values" as const,
+          });
 
-      const registerSessionCleanup = Effect.fn(
-        "NotebookVariables.registerSessionCleanup",
-      )((session: NotebookDocumentSession) =>
-        Effect.suspend(() => {
-          if (registeredSessionCleanups.has(session)) return Effect.void;
-          registeredSessionCleanups.add(session);
-          return Scope.addFinalizer(session.scope, releaseSession(session));
+          yield* Effect.logTrace("Updated variable values").pipe(
+            Effect.annotateLogs({
+              notebookUri,
+              count: operation.variables.length,
+            }),
+          );
         }),
       );
+    });
 
-      // PubSub to notify when any notebook's variables change
-      const notebookUpdatesPubSub = yield* PubSub.unbounded<{
-        notebookId: NotebookId;
-        kind: "declaration" | "values";
-      }>();
+    const getAllVariableData = Effect.fn(
+      "NotebookVariables.getAllVariableData",
+    )(function* (notebookUri: NotebookId) {
+      const variables = yield* getVariables(notebookUri);
+      const values = yield* getVariableValues(notebookUri);
+      return { variables, values };
+    });
+
+    return Service.of({
+      updateVariables,
+      updateVariableValues,
+      getVariables,
+      getVariableValues,
+      getAllVariableData,
 
       /**
-       * Get variable declarations for a notebook
+       * Stream of variable declaration changes.
+       *
+       * Emits the current value on subscription, then all subsequent changes.
+       * Filters consecutive duplicates via Stream.changes.
        */
-      function getVariables(notebookUri: NotebookId) {
-        return Effect.gen(function* () {
-          const map = yield* SubscriptionRef.get(variablesRef);
-          return Option.flatMap(
-            documentSessions.current(notebookUri),
-            (session) =>
-              Option.map(HashMap.get(map, keyFor(session)), (operation) =>
-                decodeVariablesOperation(operation),
-              ),
-          );
-        });
-      }
+      streamVariablesChanges: SubscriptionRef.changes(variablesRef).pipe(
+        Stream.map(projectCurrent),
+        Stream.changes,
+      ),
 
-      function getVariableValues(notebookUri: NotebookId) {
-        return Effect.gen(function* () {
-          const map = yield* SubscriptionRef.get(variableValuesRef);
-          return Option.flatMap(
-            documentSessions.current(notebookUri),
-            (session) =>
-              Option.map(HashMap.get(map, keyFor(session)), (operation) => [
-                ...operation.variables,
-              ]),
-          );
-        });
-      }
+      /**
+       * Stream of variable value changes.
+       *
+       * Emits the current value on subscription, then all subsequent changes.
+       * Filters consecutive duplicates via Stream.changes.
+       */
+      streamVariableValuesChanges: SubscriptionRef.changes(
+        variableValuesRef,
+      ).pipe(Stream.map(projectCurrent), Stream.changes),
 
-      const projectCurrent = <A>(
-        state: HashMap.HashMap<VariableStateKey, A>,
-      ) => {
-        let projection = HashMap.empty<NotebookId, A>();
-        for (const [[notebookId, sessionId], value] of state) {
-          if (
-            Option.exists(
-              documentSessions.current(notebookId),
-              (session) => session.id === sessionId,
-            )
-          ) {
-            projection = HashMap.set(projection, notebookId, value);
-          }
-        }
-        return projection;
-      };
+      /**
+       * Stream of notebook IDs that had variable updates.
+       *
+       * Emits the NotebookId whenever variables or variable values are updated.
+       * Use this for reacting to changes without needing the full data.
+       */
+      notebookUpdates: Stream.fromPubSub(notebookUpdatesPubSub),
+    });
+  }),
+);
 
-      return {
-        /**
-         * Update variable declarations for a notebook
-         */
-        updateVariables(
-          session: NotebookDocumentSession,
-          operation: VariablesNotification,
-        ) {
-          return Effect.uninterruptible(
-            Effect.gen(function* () {
-              const notebookUri = session.notebookId;
-              yield* SubscriptionRef.update(variablesRef, (map) =>
-                HashMap.set(map, keyFor(session), operation),
-              );
-
-              // Filter variable values to only include variables that exist in declarations
-              const valuesMap = yield* SubscriptionRef.get(variableValuesRef);
-              const existingValues = HashMap.get(valuesMap, keyFor(session));
-
-              if (Option.isSome(existingValues)) {
-                const declaredVarNames = new Set(
-                  operation.variables.map((v) => v.name),
-                );
-                const filteredValues = existingValues.value.variables.filter(
-                  (v) => {
-                    // @ts-expect-error - should be able to remove in once branded types are fully fixed in marimo main
-                    const varName: VariableName = v.name;
-                    return declaredVarNames.has(varName);
-                  },
-                );
-
-                yield* SubscriptionRef.update(variableValuesRef, (map) =>
-                  HashMap.set(map, keyFor(session), {
-                    ...existingValues.value,
-                    variables: filteredValues,
-                  }),
-                );
-              }
-
-              // Register after mutation: adding a finalizer to an already-closed
-              // scope runs it immediately, so late writes cannot repopulate state.
-              yield* registerSessionCleanup(session);
-
-              yield* PubSub.publish(notebookUpdatesPubSub, {
-                notebookId: notebookUri,
-                kind: "declaration" as const,
-              });
-
-              yield* Effect.logTrace("Updated variable declarations").pipe(
-                Effect.annotateLogs({
-                  notebookUri,
-                  count: operation.variables.length,
-                }),
-              );
-            }),
-          );
-        },
-
-        /**
-         * Update variable values for a notebook
-         */
-        updateVariableValues(
-          session: NotebookDocumentSession,
-          operation: VariableValuesNotification,
-        ) {
-          return Effect.uninterruptible(
-            Effect.gen(function* () {
-              const notebookUri = session.notebookId;
-              yield* SubscriptionRef.update(variableValuesRef, (map) =>
-                HashMap.set(map, keyFor(session), operation),
-              );
-              yield* registerSessionCleanup(session);
-
-              yield* PubSub.publish(notebookUpdatesPubSub, {
-                notebookId: notebookUri,
-                kind: "values" as const,
-              });
-
-              yield* Effect.logTrace("Updated variable values").pipe(
-                Effect.annotateLogs({
-                  notebookUri,
-                  count: operation.variables.length,
-                }),
-              );
-            }),
-          );
-        },
-
-        /**
-         * Get variable declarations for a notebook
-         */
-        getVariables,
-
-        /**
-         * Get variable values for a notebook
-         */
-        getVariableValues,
-
-        /**
-         * Get all variables and their values for a notebook
-         */
-        getAllVariableData(notebookUri: NotebookId) {
-          return Effect.gen(function* () {
-            const variables = yield* getVariables(notebookUri);
-            const values = yield* getVariableValues(notebookUri);
-            return { variables, values };
-          });
-        },
-
-        /**
-         * Stream of variable declaration changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         * Filters consecutive duplicates via Stream.changes.
-         */
-        streamVariablesChanges: SubscriptionRef.changes(variablesRef).pipe(
-          Stream.map(projectCurrent),
-          Stream.changes,
-        ),
-
-        /**
-         * Stream of variable value changes.
-         *
-         * Emits the current value on subscription, then all subsequent changes.
-         * Filters consecutive duplicates via Stream.changes.
-         */
-        streamVariableValuesChanges: SubscriptionRef.changes(
-          variableValuesRef,
-        ).pipe(Stream.map(projectCurrent), Stream.changes),
-
-        /**
-         * Stream of notebook IDs that had variable updates.
-         *
-         * Emits the NotebookId whenever variables or variable values are updated.
-         * Use this for reacting to changes without needing the full data.
-         */
-        notebookUpdates: Stream.fromPubSub(notebookUpdatesPubSub),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(NotebookDocumentSessions.layer),
-  );
-}
+export const defaultLayer = layer.pipe(
+  Layer.provide(NotebookDocumentSessions.layer),
+);

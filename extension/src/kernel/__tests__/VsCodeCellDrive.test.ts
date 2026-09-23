@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
-import { Effect, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
@@ -9,9 +9,9 @@ import {
   MarimoNotebookDocument,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellRuntimeState } from "../../types.ts";
-import { CellOutputProjections } from "../CellOutputProjections.ts";
+import * as CellOutputProjections from "../CellOutputProjections.ts";
 import { CellCommand, runIdFromWire } from "../CellRunReducer.ts";
-import { VsCodeCellDrive } from "../VsCodeCellDrive.ts";
+import * as VsCodeCellDrive from "../VsCodeCellDrive.ts";
 
 const errorState = (): CellRuntimeState => ({
   ...createCellRuntimeState(),
@@ -44,8 +44,10 @@ describe("VsCodeCellDrive", () => {
       const code = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
-      const projections = yield* CellOutputProjections.make.pipe(
-        Effect.provide(code.layer),
+      const projections = yield* CellOutputProjections.Service.pipe(
+        Effect.provide(
+          CellOutputProjections.layer.pipe(Layer.provide(code.layer)),
+        ),
       );
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cellId = Option.getOrThrow(notebook.cellAt(0).id);
@@ -77,9 +79,15 @@ describe("VsCodeCellDrive", () => {
         appendOutputItems: async () => {},
         replaceOutputItems: async () => {},
       };
-      const drive = (yield* VsCodeCellDrive.make.pipe(
-        Effect.provide(code.layer),
-        Effect.provideService(CellOutputProjections, projections),
+      const drive = (yield* VsCodeCellDrive.Service.pipe(
+        Effect.provide(
+          VsCodeCellDrive.layer.pipe(
+            Layer.provide(code.layer),
+            Layer.provide(
+              Layer.succeed(CellOutputProjections.Service, projections),
+            ),
+          ),
+        ),
       )).bind({
         notebook,
         controller: { createNotebookCellExecution: () => execution },
@@ -130,8 +138,10 @@ describe("VsCodeCellDrive", () => {
       const code = yield* TestVsCode.make({
         initialDocuments: [editor.notebook],
       });
-      const projections = yield* CellOutputProjections.make.pipe(
-        Effect.provide(code.layer),
+      const projections = yield* CellOutputProjections.Service.pipe(
+        Effect.provide(
+          CellOutputProjections.layer.pipe(Layer.provide(code.layer)),
+        ),
       );
       const notebook = MarimoNotebookDocument.from(editor.notebook);
       const cellId = Option.getOrThrow(notebook.cellAt(0).id);
@@ -169,9 +179,15 @@ describe("VsCodeCellDrive", () => {
           };
         },
       };
-      const cellDrive = yield* VsCodeCellDrive.make.pipe(
-        Effect.provide(code.layer),
-        Effect.provideService(CellOutputProjections, projections),
+      const cellDrive = yield* VsCodeCellDrive.Service.pipe(
+        Effect.provide(
+          VsCodeCellDrive.layer.pipe(
+            Layer.provide(code.layer),
+            Layer.provide(
+              Layer.succeed(CellOutputProjections.Service, projections),
+            ),
+          ),
+        ),
       );
 
       yield* cellDrive.bind({

@@ -11,8 +11,8 @@ import {
   References,
 } from "effect";
 
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 
 const structuredMessage = (u: unknown): unknown => {
   switch (typeof u) {
@@ -33,9 +33,7 @@ const formatValue = (value: unknown): string => {
   return typeof redacted === "string" ? redacted : JSON.stringify(redacted);
 };
 
-const makeVsCodeLogger = (
-  channel: Context.Service.Shape<typeof OutputChannel>,
-) => {
+const makeVsCodeLogger = (channel: OutputChannel.Interface) => {
   const mapping = {
     Info: channel.info.bind(channel),
     Trace: channel.trace.bind(channel),
@@ -158,9 +156,9 @@ export const withSpanAnnotations = <Message, Output>(
  */
 export const LoggerLive = Layer.unwrap(
   Effect.gen(function* () {
-    const outputChannel = yield* OutputChannel;
+    const outputChannel = yield* OutputChannel.Service;
     const vscodeLogger = makeVsCodeLogger(outputChannel);
-    const telemetry = yield* Telemetry;
+    const telemetry = yield* Telemetry.Service;
     return Logger.layer([
       vscodeLogger,
       withSpanAnnotations(telemetry.errorLogger),

@@ -1,10 +1,10 @@
 import { Effect, Option, Scope } from "effect";
 
-import { NotebookConfiguration } from "../config/NotebookConfiguration.ts";
+import * as NotebookConfiguration from "../config/NotebookConfiguration.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { MarimoConfig } from "../types.ts";
 
@@ -34,9 +34,9 @@ export const createConfigToggle = <T extends string>({
   getDisplayName: (value: T) => string;
 }) =>
   Effect.gen(function* () {
-    const code = yield* VsCode;
-    const documentSessions = yield* NotebookDocumentSessions;
-    const sessionResources = yield* NotebookSessionResources;
+    const code = yield* VsCode.Service;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
+    const sessionResources = yield* NotebookSessionResources.Service;
 
     if (Option.isNone(notebook)) {
       yield* showErrorAndPromptLogs(
@@ -59,7 +59,7 @@ export const createConfigToggle = <T extends string>({
       .runScoped(
         session.value,
         Effect.gen(function* () {
-          const configuration = yield* NotebookConfiguration;
+          const configuration = yield* NotebookConfiguration.Service;
           const config = yield* configuration.get;
           const currentValue = getCurrentValue(config);
 
@@ -107,7 +107,7 @@ export const createConfigToggle = <T extends string>({
       )
       .pipe(Scope.provide(session.value.scope));
   }).pipe(
-    Effect.catchTag("NotebookDocumentSessionEndedError", () => Effect.void),
+    Effect.catchTag("NotebookDocumentSessions.EndedError", () => Effect.void),
     Effect.tapCause(Effect.logError),
     Effect.catchCause(() =>
       showErrorAndPromptLogs(`Could not update ${settingName.toLowerCase()}.`),

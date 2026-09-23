@@ -1,10 +1,10 @@
 import { Effect, Layer, Option, Scope, Stream, SubscriptionRef } from "effect";
 
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
-import { NotebookConfiguration } from "./NotebookConfiguration.ts";
+import * as NotebookConfiguration from "./NotebookConfiguration.ts";
 
 /**
  * Mirrors kernel configuration into VS Code context keys for UI:
@@ -13,11 +13,11 @@ import { NotebookConfiguration } from "./NotebookConfiguration.ts";
  *
  * Pure side effect: nothing consumes this as a service.
  */
-export const ConfigContextManagerLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
-    const documentSessions = yield* NotebookDocumentSessions;
-    const sessionResources = yield* NotebookSessionResources;
+    const code = yield* VsCode.Service;
+    const documentSessions = yield* NotebookDocumentSessions.Service;
+    const sessionResources = yield* NotebookSessionResources.Service;
     const desiredConfiguration = yield* SubscriptionRef.make(
       Option.none<MarimoConfig>(),
     );
@@ -68,7 +68,7 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
               sessionResources
                 .runScoped(
                   session,
-                  NotebookConfiguration.pipe(
+                  NotebookConfiguration.Service.pipe(
                     Effect.flatMap((configuration) =>
                       configuration.changes.pipe(
                         Stream.runForEach((value) =>
@@ -81,7 +81,7 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
                 .pipe(
                   Scope.provide(session.scope),
                   Effect.catchTag(
-                    "NotebookDocumentSessionEndedError",
+                    "NotebookDocumentSessions.EndedError",
                     () => Effect.void,
                   ),
                 ),
@@ -100,5 +100,5 @@ export const ConfigContextManagerLive = Layer.effectDiscard(
       ),
     );
     yield* Effect.forkScoped(publishActiveConfiguration);
-  }).pipe(Effect.annotateLogs("service", "ConfigContextManager")),
+  }).pipe(Effect.withSpan("ConfigContextManager.layer")),
 );

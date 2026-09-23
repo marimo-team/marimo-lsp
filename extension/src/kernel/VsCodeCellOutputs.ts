@@ -3,7 +3,7 @@ import type {
   CellOutput,
   OutputMessage,
 } from "@marimo-team/frontend/unstable_internal/core/kernel/messages.ts";
-import { Context, Option, Array as EffectArray } from "effect";
+import { Option, Array as EffectArray } from "effect";
 import type * as vscode from "vscode";
 
 import { logUnreachable } from "../assert.ts";
@@ -14,7 +14,7 @@ import {
   parseTraceback,
   type TracebackCellFrame,
 } from "../lib/tracebacks.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import type * as VsCode from "../platform/VsCode.ts";
 import {
   type NotebookCellId,
   MarimoNotebookDocument,
@@ -27,7 +27,7 @@ import {
 import type { KeyedCellOutput } from "./CellOutputProjection.ts";
 import { transitionCell } from "./CellRunReducer.ts";
 
-type VsCodeService = Context.Service.Shape<typeof VsCode>;
+type VsCodeService = VsCode.Interface;
 
 /** Convert scratch-cell notifications to one VS Code output. */
 export function scratchCellNotificationsToVsCodeOutput(

@@ -1,139 +1,137 @@
 import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
-import { Config } from "../config/Config.ts";
-import { ConfigContextManagerLive } from "../config/ConfigContextManager.ts";
-import { CellExecutions } from "../kernel/CellExecutions.ts";
-import { DebugAdapter } from "../kernel/DebugAdapter.ts";
-import { NotebookControllersLive } from "../kernel/NotebookControllers.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
-import type { MarimoClient } from "../lsp/MarimoClient.ts";
-import type { RuffLanguageServer } from "../lsp/RuffLanguageServer.ts";
-import type { TyLanguageServer } from "../lsp/TyLanguageServer.ts";
-import { CellMetadataUIBindingService } from "../notebook/CellMetadataUIBindingService.ts";
-import { NotebookDocumentSessions } from "../notebook/NotebookDocumentSessions.ts";
-import { NotebookEditorRegistry } from "../notebook/NotebookEditorRegistry.ts";
-import { NotebookRenderer } from "../notebook/NotebookRenderer.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { NotebookSessionResources } from "../notebook/NotebookSessionResources.ts";
-import { DatasourcesViewLive } from "../panel/datasources/DatasourcesView.ts";
-import { NotebookDatasources } from "../panel/datasources/NotebookDatasources.ts";
-import { PackagesViewLive } from "../panel/packages/PackagesView.ts";
-import { LiveSessions } from "../panel/sessions/LiveSessions.ts";
-import { SessionFileLifecycleLive } from "../panel/sessions/SessionFileLifecycle.ts";
-import { SessionsViewLive } from "../panel/sessions/SessionsView.ts";
-import { TreeView } from "../panel/TreeView.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
-import { VariablesViewLive } from "../panel/variables/VariablesView.ts";
-import { Api, type MarimoApi } from "../platform/Api.ts";
-import { Constants } from "../platform/Constants.ts";
-import { GitHubClient } from "../platform/GitHubClient.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { ExtensionContext, Storage } from "../platform/Storage.ts";
-import type { VsCode } from "../platform/VsCode.ts";
-import { PythonEnvInvalidation } from "../python/PythonEnvInvalidation.ts";
-import type { PythonExtension } from "../python/PythonExtension.ts";
-import { Uv } from "../python/Uv.ts";
-import { MarimoStatusBarLive } from "../statusbar/MarimoStatusBar.ts";
-import { PythonEnvironmentStatusBarLive } from "../statusbar/PythonEnvironmentStatusBar.ts";
-import { StatusBar } from "../statusbar/StatusBar.ts";
-import { HealthService } from "../telemetry/HealthService.ts";
-import type { Telemetry } from "../telemetry/Telemetry.ts";
-import { AutoExportLive } from "./AutoExport.ts";
-import { CellInputVisibilitySyncLive } from "./CellInputVisibilitySync.ts";
-import { CellMetadataBindingsLive } from "./CellMetadataBindings.ts";
-import { CellStatusBarProviderLive } from "./CellStatusBarProvider.ts";
-import { DebugLayerLive } from "./DebugLayer.ts";
-import { MarimoCodeLensProviderLive } from "./MarimoCodeLensProvider.ts";
-import { MarimoFileDetectorLive } from "./MarimoFileDetector.ts";
-import { RegisterCommandsLive } from "./RegisterCommands.ts";
-import { RegisterLanguageModelToolsLive } from "./RegisterLanguageModelTools.ts";
-import { ReloadOnConfigChangeLive } from "./ReloadOnConfigChange.ts";
-import { ThemeSyncLive } from "./ThemeSync.ts";
+import * as Config from "../config/Config.ts";
+import * as ConfigContextManager from "../config/ConfigContextManager.ts";
+import * as CellExecutions from "../kernel/CellExecutions.ts";
+import * as DebugAdapter from "../kernel/DebugAdapter.ts";
+import * as NotebookControllers from "../kernel/NotebookControllers.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
+import type * as MarimoClient from "../lsp/MarimoClient.ts";
+import type * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
+import type * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
+import * as CellMetadataUIBinding from "../notebook/CellMetadataUIBinding.ts";
+import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
+import * as NotebookEditorRegistry from "../notebook/NotebookEditorRegistry.ts";
+import * as NotebookRenderer from "../notebook/NotebookRenderer.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
+import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
+import * as DatasourcesView from "../panel/datasources/DatasourcesView.ts";
+import * as NotebookDatasources from "../panel/datasources/NotebookDatasources.ts";
+import * as PackagesView from "../panel/packages/PackagesView.ts";
+import * as LiveSessions from "../panel/sessions/LiveSessions.ts";
+import * as SessionFileLifecycle from "../panel/sessions/SessionFileLifecycle.ts";
+import * as SessionsView from "../panel/sessions/SessionsView.ts";
+import * as TreeView from "../panel/TreeView.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
+import * as VariablesView from "../panel/variables/VariablesView.ts";
+import * as Api from "../platform/Api.ts";
+import * as Constants from "../platform/Constants.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
+import * as GitHubClient from "../platform/GitHubClient.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
+import * as Storage from "../platform/Storage.ts";
+import type * as VsCode from "../platform/VsCode.ts";
+import * as PythonEnvInvalidation from "../python/PythonEnvInvalidation.ts";
+import type * as PythonExtension from "../python/PythonExtension.ts";
+import * as Uv from "../python/Uv.ts";
+import * as MarimoStatusBar from "../statusbar/MarimoStatusBar.ts";
+import * as PythonEnvironmentStatusBar from "../statusbar/PythonEnvironmentStatusBar.ts";
+import * as StatusBar from "../statusbar/StatusBar.ts";
+import * as HealthService from "../telemetry/HealthService.ts";
+import type * as Telemetry from "../telemetry/Telemetry.ts";
+import * as AutoExport from "./AutoExport.ts";
+import * as CellInputVisibilitySync from "./CellInputVisibilitySync.ts";
+import * as CellMetadataBindings from "./CellMetadataBindings.ts";
+import * as CellStatusBarProvider from "./CellStatusBarProvider.ts";
+import * as Debug from "./Debug.ts";
+import * as MarimoCodeLensProvider from "./MarimoCodeLensProvider.ts";
+import * as MarimoFileDetector from "./MarimoFileDetector.ts";
+import * as RegisterCommands from "./RegisterCommands.ts";
+import * as RegisterLanguageModelTools from "./RegisterLanguageModelTools.ts";
+import * as ReloadOnConfigChange from "./ReloadOnConfigChange.ts";
+import * as ThemeSync from "./ThemeSync.ts";
 
-/**
- * Main application layer that wires together all services and layers
- * required for the marimo VS Code extension to function.
- */
-const MainLive = Layer.empty
-  .pipe(
-    Layer.merge(RegisterCommandsLive),
-    Layer.merge(RegisterLanguageModelToolsLive),
-    Layer.merge(MarimoStatusBarLive),
-    Layer.merge(PythonEnvironmentStatusBarLive),
-    Layer.merge(MarimoFileDetectorLive),
-    Layer.merge(MarimoCodeLensProviderLive),
-    Layer.merge(SessionsViewLive),
-    Layer.merge(SessionFileLifecycleLive),
-    Layer.merge(VariablesViewLive),
-    Layer.merge(DatasourcesViewLive),
-    Layer.merge(PackagesViewLive),
-    Layer.merge(CellStatusBarProviderLive),
-    Layer.merge(CellMetadataBindingsLive),
-    Layer.merge(AutoExportLive),
-    Layer.merge(ReloadOnConfigChangeLive),
-    Layer.merge(ConfigContextManagerLive),
-    Layer.merge(ThemeSyncLive),
-    Layer.merge(CellInputVisibilitySyncLive),
-    Layer.merge(DebugLayerLive),
-    Layer.merge(NotebookControllersLive),
-  )
-  .pipe(
-    Layer.provideMerge(Api.layer),
-    Layer.provide(DebugAdapter.layer),
-    Layer.provide(GitHubClient.layer),
-    Layer.provide(NotebookRenderer.layer),
-    Layer.provide(NotebookSerializer.layer),
-    Layer.provide(CellExecutions.layer),
-    Layer.provide(NotebookVariables.layer),
-    Layer.provide(NotebookDatasources.layer),
-    Layer.provideMerge(LiveSessions.layer),
-    Layer.provide(HealthService.layer),
-    Layer.provide(CellMetadataUIBindingService.layer),
-  )
-  .pipe(
-    Layer.provide(NotebookSessionResources.layer),
-    Layer.provide(NotebookDocumentSessions.layer),
-    Layer.provide(NotebookEditorRegistry.layer),
-    Layer.provide(Uv.layer),
-    Layer.provide(TreeView.layer),
-    Layer.provide(StatusBar.layer),
-    Layer.provide(Storage.layer),
-    Layer.provide(Constants.layer),
-    Layer.provide(Config.layer),
-    Layer.provide(OutputChannel.layer),
-    Layer.provide(PythonEnvInvalidation.layer),
-    Layer.provide(NotebookRuntime.layer),
-  );
+const activations = Layer.mergeAll(
+  RegisterCommands.layer,
+  RegisterLanguageModelTools.layer,
+  MarimoStatusBar.layer,
+  PythonEnvironmentStatusBar.layer,
+  MarimoFileDetector.layer,
+  MarimoCodeLensProvider.layer,
+  SessionsView.layer,
+  SessionFileLifecycle.layer,
+  VariablesView.layer,
+  DatasourcesView.layer,
+  PackagesView.layer,
+  CellStatusBarProvider.layer,
+  CellMetadataBindings.layer,
+  AutoExport.layer,
+  ReloadOnConfigChange.layer,
+  ConfigContextManager.layer,
+  ThemeSync.layer,
+  CellInputVisibilitySync.layer,
+  Debug.layer,
+  NotebookControllers.layer,
+);
+
+const MainLive = activations.pipe(
+  Layer.provideMerge(Api.layer),
+  Layer.provide([
+    DebugAdapter.layer,
+    GitHubClient.defaultLayer,
+    NotebookRenderer.layer,
+    NotebookSerializer.layer,
+    CellExecutions.layer,
+    NotebookVariables.defaultLayer,
+    NotebookDatasources.defaultLayer,
+  ]),
+  Layer.provideMerge(LiveSessions.layer),
+  Layer.provide([HealthService.layer, CellMetadataUIBinding.layer]),
+  Layer.provide(Uv.layer),
+  Layer.provide([
+    NotebookSessionResources.layer,
+    NotebookDocumentSessions.layer,
+    NotebookEditorRegistry.layer,
+    TreeView.layer,
+    StatusBar.layer,
+    Storage.layer,
+    Constants.defaultLayer,
+    Config.layer,
+    OutputChannel.layer,
+    PythonEnvInvalidation.layer,
+  ]),
+  Layer.provide(NotebookRuntime.defaultLayer),
+);
 
 export function makeExtension(
   layer: Layer.Layer<
-    | MarimoClient
-    | VsCode
-    | PythonExtension
-    | Telemetry
-    | TyLanguageServer
-    | RuffLanguageServer,
+    | MarimoClient.Service
+    | VsCode.Service
+    | PythonExtension.Service
+    | Telemetry.Service
+    | TyLanguageServer.Service
+    | RuffLanguageServer.Service,
     never,
-    ExtensionContext
+    ExtensionContext.Service
   >,
   minimumLogLevel: LogLevel.LogLevel,
 ): {
   readonly activate: (
-    context: typeof ExtensionContext.Service,
-  ) => Promise<MarimoApi>;
+    context: ExtensionContext.Interface,
+  ) => Promise<Api.Interface>;
   readonly deactivate: () => Promise<void>;
 } {
   let closeActive: (() => Promise<void>) | undefined;
 
   return {
-    async activate(context): Promise<MarimoApi> {
+    async activate(context): Promise<Api.Interface> {
       if (closeActive !== undefined) {
         throw new Error("Extension is already active");
       }
 
       const appLayer = Layer.provide(
         Layer.provide(MainLive, layer),
-        Layer.succeed(ExtensionContext, context),
+        Layer.succeed(ExtensionContext.Service, context),
       ).pipe(
         Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
       );
@@ -141,7 +139,7 @@ export function makeExtension(
       closeActive = runtime.dispose;
 
       try {
-        const api = await runtime.runPromise(Api);
+        const api = await runtime.runPromise(Api.Service);
         return { experimental: api.experimental };
       } catch (error) {
         closeActive = undefined;

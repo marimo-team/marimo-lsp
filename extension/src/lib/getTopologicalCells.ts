@@ -2,7 +2,7 @@ import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
 import { LanguageId } from "../constants.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import type { NotebookCellId } from "../schemas/MarimoNotebookDocument.ts";
 import { getTopologicalCellIds } from "./getTopologicalCellIds.ts";
@@ -17,9 +17,9 @@ import { getTopologicalCellIds } from "./getTopologicalCellIds.ts";
  */
 export function getTopologicalCells(
   doc: MarimoNotebookDocument,
-): Effect.Effect<Array<vscode.NotebookCell>, never, NotebookVariables> {
+): Effect.Effect<Array<vscode.NotebookCell>, never, NotebookVariables.Service> {
   return Effect.gen(function* () {
-    const notebookVariables = yield* NotebookVariables;
+    const notebookVariables = yield* NotebookVariables.Service;
 
     // Filter to only Python cells - LSP server only understands Python
     const cells = doc

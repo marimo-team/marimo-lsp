@@ -1,0 +1,294 @@
+import { Context, Effect, Layer, Option, Scope, Stream } from "effect";
+import type * as vscode from "vscode";
+
+import { assert } from "../assert.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../schemas/MarimoNotebookDocument.ts";
+import * as Api from "../schemas/Models.gen.ts";
+import * as CellMetadata from "./CellMetadata.ts";
+
+/**
+ * Configuration for a metadata binding
+ */
+export interface MetadataBinding {
+  /**
+   * Unique identifier for this binding
+   */
+  id: string;
+
+  /**
+   * Type of the binding
+   */
+  type: "toggle" | "text" | "option";
+
+  /**
+   * Predicate to determine if this binding applies to the cell
+   * (e.g., check if cell language is SQL)
+   */
+  shouldShow: (cell: MarimoNotebookCell) => boolean;
+
+  /**
+   * Get the current value from cell metadata
+   */
+  getValue: (metadata: Api.MarimoCellMetadata) => string | boolean | undefined;
+
+  /**
+   * Update the cell metadata with a new value
+   */
+  setValue: (
+    metadata: Api.MarimoCellMetadata,
+    value: string | boolean,
+  ) => Api.MarimoCellMetadata;
+
+  /**
+   * Create the status bar item label based on the current value
+   */
+  getLabel: (value: string | boolean | undefined) => string;
+
+  /**
+   * Tooltip for the status bar item
+   */
+  getTooltip: (value: string | boolean | undefined) => string;
+
+  /**
+   * Alignment of the status bar item
+   */
+  alignment: vscode.NotebookCellStatusBarAlignment;
+
+  /**
+   * For text bindings: prompt shown in the input box
+   */
+  inputPrompt?: string;
+
+  /**
+   * For text bindings: placeholder text in the input box
+   */
+  inputPlaceholder?: string;
+
+  /**
+   * For text bindings: default value when creating new
+   */
+  defaultValue?: string;
+
+  /**
+   * For text bindings: validation function
+   */
+  validateInput?: (value: string) => string | undefined;
+
+  /**
+   * For option bindings: get available options
+   */
+  getOptions?: (
+    cell: MarimoNotebookCell,
+  ) => Effect.Effect<Array<{ label: string; value: string }>>;
+}
+
+/**
+ * Service that manages two-way bindings between cell metadata and UI elements.
+ *
+ * This service:
+ * - Creates status bar items for metadata fields
+ * - Handles clicks to update metadata (toggles or text inputs)
+ * - Updates UI when metadata changes
+ *
+ * Usage:
+ * 1. Register bindings using the MetadataBinding interface
+ * 2. The service automatically creates status bar items and commands
+ * 3. Updates flow bidirectionally between UI and metadata
+ */
+export interface Interface {
+  readonly registerBinding: (
+    binding: MetadataBinding,
+  ) => Effect.Effect<void, never, Scope.Scope>;
+  readonly updateBinding: (
+    cell: Option.Option<MarimoNotebookCell>,
+    bindingId: string,
+  ) => Effect.Effect<
+    void,
+    CellMetadata.EditRejected | CellMetadata.TargetNotFound
+  >;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/CellMetadataUIBinding",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
+    const bindings = new Map<string, MetadataBinding>();
+
+    // Stream that fires when metadata changes on any marimo notebook cell
+    const metadataChanges = code.workspace.notebookDocumentChanges.pipe(
+      Stream.filter((event) => {
+        if (Option.isNone(MarimoNotebookDocument.tryFrom(event.notebook))) {
+          return false;
+        }
+        return (
+          event.contentChanges.length > 0 ||
+          event.cellChanges.some((change) => change.metadata !== undefined)
+        );
+      }),
+      Stream.map(() => undefined),
+    );
+
+    /**
+     * Register a new metadata binding
+     */
+    const registerBinding = Effect.fn("CellMetadataUIBinding.registerBinding")(
+      function* (binding: MetadataBinding) {
+        bindings.set(binding.id, binding);
+
+        yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
+          NOTEBOOK_TYPE,
+          {
+            provideCellStatusBarItems(rawCell) {
+              const cell = MarimoNotebookCell.from(rawCell);
+
+              if (!binding.shouldShow(cell)) {
+                return Effect.succeed([]);
+              }
+
+              const value = Option.isSome(cell.metadata)
+                ? binding.getValue(cell.metadata.value.marimo)
+                : undefined;
+
+              const item = new code.NotebookCellStatusBarItem(
+                binding.getLabel(value),
+                binding.alignment,
+              );
+              item.tooltip = binding.getTooltip(value);
+              item.command = code.commands.bind(
+                MarimoCommands.updateCellMetadata,
+                "Update cell metadata",
+                rawCell,
+                binding.id,
+              );
+
+              return Effect.succeed([item]);
+            },
+            changes: metadataChanges,
+          },
+        );
+      },
+    );
+
+    /**
+     * Create a command handler for a binding
+     */
+    function createBindingCommandFor(
+      binding: MetadataBinding,
+      activeCell: MarimoNotebookCell,
+    ) {
+      return Effect.fn(function* () {
+        if (!binding.shouldShow(activeCell)) {
+          return;
+        }
+
+        const currentValue = Option.isSome(activeCell.metadata)
+          ? binding.getValue(activeCell.metadata.value.marimo)
+          : undefined;
+
+        let newValue: string | boolean | undefined;
+
+        if (binding.type === "toggle") {
+          // Toggle the boolean value
+          newValue = !currentValue;
+        } else if (binding.type === "option") {
+          // Show quick pick for options
+          assert(
+            binding.getOptions !== undefined,
+            "getOptions is required for option bindings",
+          );
+          const options = yield* binding.getOptions(activeCell);
+
+          const selected = yield* code.window.showQuickPickItems(options, {
+            placeHolder: binding.inputPlaceholder ?? "Select an option",
+          });
+
+          if (Option.isNone(selected)) {
+            // User cancelled
+            return;
+          }
+
+          newValue = selected.value.value;
+        } else {
+          // Show input box for text
+          const input = yield* code.window.showInputBox({
+            prompt: binding.inputPrompt ?? "Enter value",
+            value:
+              typeof currentValue === "string"
+                ? currentValue
+                : binding.defaultValue,
+            placeHolder: binding.inputPlaceholder ?? binding.defaultValue ?? "",
+            validateInput: binding.validateInput
+              ? (value) => {
+                  assert(
+                    binding.validateInput !== undefined,
+                    "validateInput is required",
+                  );
+                  const error = binding.validateInput(value);
+                  return error ? error : undefined;
+                }
+              : undefined,
+          });
+
+          if (Option.isNone(input)) {
+            // User cancelled
+            return;
+          }
+
+          newValue = input.value;
+        }
+
+        assert(newValue !== undefined, "newValue should not be undefined");
+
+        const cellIndex = yield* CellMetadata.update(activeCell, (current) =>
+          binding.setValue(current, newValue),
+        ).pipe(Effect.provideService(VsCode.Service, code));
+
+        // Re-execute the cell to apply the metadata changes
+        yield* code.commands.executeVSCode("notebook.cell.execute", {
+          ranges: [
+            {
+              start: cellIndex,
+              end: cellIndex + 1,
+            },
+          ],
+          document: activeCell.notebook.uri,
+        });
+
+        yield* Effect.logInfo(
+          `Updated cell metadata for binding: ${binding.id}`,
+        ).pipe(
+          Effect.annotateLogs({
+            cell: cellIndex,
+            newValue,
+          }),
+        );
+      });
+    }
+
+    const updateBinding = Effect.fn("CellMetadataUIBinding.updateBinding")(
+      function* (cell: Option.Option<MarimoNotebookCell>, bindingId: string) {
+        if (Option.isNone(cell)) return;
+        const binding = bindings.get(bindingId);
+        if (binding === undefined) {
+          yield* Effect.logWarning("Unknown cell metadata binding").pipe(
+            Effect.annotateLogs({ bindingId }),
+          );
+          return;
+        }
+        yield* createBindingCommandFor(binding, cell.value)();
+      },
+    );
+
+    return Service.of({ registerBinding, updateBinding });
+  }),
+);

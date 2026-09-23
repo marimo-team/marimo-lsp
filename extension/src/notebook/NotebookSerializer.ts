@@ -14,9 +14,9 @@ import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
-import { Constants } from "../platform/Constants.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as Constants from "../platform/Constants.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -40,9 +40,25 @@ type EncodedNotebookDocumentMetadata =
 const DESERIALIZE_TIMEOUT = Duration.seconds(120);
 export { NotebookSourceError } from "./NotebookSourceError.ts";
 
-class NotebookSerializerError extends Data.TaggedError(
-  "NotebookSerializerError",
+export class OperationError extends Data.TaggedError(
+  "NotebookSerializer.OperationError",
 )<{ readonly message: string }> {}
+
+export interface Interface {
+  readonly notebookType: typeof NOTEBOOK_TYPE;
+  readonly serializeEffect: (
+    notebook: vscode.NotebookData,
+  ) => Effect.Effect<Uint8Array, MarimoClient.Error | Schema.SchemaError>;
+  readonly deserializeEffect: (
+    bytes: Uint8Array,
+  ) => Effect.Effect<
+    vscode.NotebookData,
+    | MarimoClient.Error
+    | Schema.SchemaError
+    | Cause.TimeoutError
+    | NotebookSourceError
+  >;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,187 +84,180 @@ const NotebookCellKind = {
  * Handles serialization and deserialization of marimo notebooks,
  * converting between VS Code's notebook format and marimo's Python format.
  */
-export class NotebookSerializer extends Context.Service<NotebookSerializer>()(
-  "NotebookSerializer",
-  {
-    make: Effect.gen(function* () {
-      const marimo = yield* MarimoClient;
-      const constants = yield* Constants;
-      const code = yield* Effect.serviceOption(VsCode);
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/NotebookSerializer",
+) {}
 
-      const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
-        function* (notebook: vscode.NotebookData) {
-          yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const marimo = yield* MarimoClient.Service;
+    const constants = yield* Constants.Service;
+    const code = yield* Effect.serviceOption(VsCode.Service);
 
-          const result = yield* marimo.printNotebook({
-            document: yield* notebookDataToNotebookDocument(
-              notebook,
-              constants,
-            ),
-          });
-          return new TextEncoder().encode(result.source);
-        },
-      );
+    const serializeEffect = Effect.fn("NotebookSerializer.serialize")(
+      function* (notebook: vscode.NotebookData) {
+        yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-      const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
-        function* (bytes: Uint8Array) {
-          yield* Effect.annotateCurrentSpan("bytes", bytes.length);
-          const result = yield* marimo
-            .parseNotebook({
-              source: new TextDecoder().decode(bytes),
-            })
-            .pipe(Effect.timeout(DESERIALIZE_TIMEOUT));
-          if (result.kind !== "success") {
-            return yield* new NotebookSourceError({ failure: result });
-          }
-          const { document } = result;
+        const result = yield* marimo.printNotebook({
+          document: yield* notebookDataToNotebookDocument(notebook, constants),
+        });
+        return new TextEncoder().encode(result.source);
+      },
+    );
 
-          const notebook = {
-            metadata: MarimoNotebookDocument.createMetadata({
-              appOptions: document.appOptions,
-              header: document.header,
-              notebookMetadata: document.metadata,
-            }),
-            cells: document.cells.map((cell) => {
-              // Same classification the live transaction path uses, so a file
-              // open and a code-mode commit agree on markdown/sql vs python.
-              const classified = classifyCellCode(
-                cell.code ?? "",
-                constants.LanguageId,
-              );
-              return {
-                kind: classified.kind,
-                value: classified.code,
-                languageId: classified.languageId,
-                metadata: MarimoNotebookCell.createMetadata({
-                  marimo: {
-                    name: cell.name ?? DEFAULT_CELL_NAME,
-                    options: cell.config,
-                    ...(classified.sourceProjections
-                      ? { sourceProjections: classified.sourceProjections }
-                      : {}),
-                  },
-                  marimoRuntime: {
-                    stableId: cell.id ?? crypto.randomUUID(),
-                  },
-                }),
-              };
-            }),
-          };
+    const deserializeEffect = Effect.fn("NotebookSerializer.deserialize")(
+      function* (bytes: Uint8Array) {
+        yield* Effect.annotateCurrentSpan("bytes", bytes.length);
+        const result = yield* marimo
+          .parseNotebook({
+            source: new TextDecoder().decode(bytes),
+          })
+          .pipe(Effect.timeout(DESERIALIZE_TIMEOUT));
+        if (result.kind !== "success") {
+          return yield* new NotebookSourceError({ failure: result });
+        }
+        const { document } = result;
 
-          yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
+        const notebook: vscode.NotebookData = {
+          metadata: MarimoNotebookDocument.createMetadata({
+            appOptions: document.appOptions,
+            header: document.header,
+            notebookMetadata: document.metadata,
+          }),
+          cells: document.cells.map((cell) => {
+            // Same classification the live transaction path uses, so a file
+            // open and a code-mode commit agree on markdown/sql vs python.
+            const classified = classifyCellCode(
+              cell.code ?? "",
+              constants.LanguageId,
+            );
+            return {
+              kind: classified.kind,
+              value: classified.code,
+              languageId: classified.languageId,
+              metadata: MarimoNotebookCell.createMetadata({
+                marimo: {
+                  name: cell.name ?? DEFAULT_CELL_NAME,
+                  options: cell.config,
+                  ...(classified.sourceProjections
+                    ? { sourceProjections: classified.sourceProjections }
+                    : {}),
+                },
+                marimoRuntime: {
+                  stableId: cell.id ?? crypto.randomUUID(),
+                },
+              }),
+            };
+          }),
+        };
 
-          if (Option.isNone(code)) return notebook;
+        yield* Effect.annotateCurrentSpan("cellCount", notebook.cells.length);
 
-          const liveDoc = yield* pickLiveNotebook(bytes, code.value);
-          if (Option.isNone(liveDoc)) return notebook;
+        if (Option.isNone(code)) return notebook;
 
-          return enrichNotebookFromLive(
-            notebook,
-            snapshotLiveNotebook(liveDoc.value, code.value),
-          );
-        },
-      );
+        const liveDoc = yield* pickLiveNotebook(bytes, code.value);
+        if (Option.isNone(liveDoc)) return notebook;
 
-      if (Option.isSome(code)) {
-        // Register with VS Code if present
-        const runPromise = Effect.runPromiseWith(yield* Effect.context());
-
-        yield* code.value.workspace.registerNotebookSerializer(
-          NOTEBOOK_TYPE,
-          {
-            serializeNotebook(notebook, token) {
-              return runPromise(
-                Effect.gen(function* () {
-                  const fiber = yield* Effect.forkChild(
-                    serializeEffect(notebook),
-                  );
-                  token.onCancellationRequested(() =>
-                    runPromise(Fiber.interrupt(fiber)),
-                  );
-                  return yield* Fiber.join(fiber);
-                }).pipe(
-                  Effect.tapCause((cause) =>
-                    Effect.logError(`Notebook serialize failed`).pipe(
-                      Effect.annotateLogs({
-                        cause,
-                        "error.tag": causeTag(cause),
-                      }),
-                    ),
-                  ),
-                  Effect.mapError(
-                    () =>
-                      new NotebookSerializerError({
-                        message:
-                          "Failed to serialize notebook. See marimo logs for details.",
-                      }),
-                  ),
-                ),
-              );
-            },
-            deserializeNotebook(bytes, token) {
-              return runPromise(
-                Effect.gen(function* () {
-                  const fiber = yield* Effect.forkChild(
-                    deserializeEffect(bytes),
-                  );
-                  token.onCancellationRequested(() =>
-                    runPromise(Fiber.interrupt(fiber)),
-                  );
-                  return yield* Fiber.join(fiber);
-                }).pipe(
-                  Effect.tapCause(logDeserializeFailure),
-                  Effect.mapError((error) =>
-                    error instanceof NotebookSourceError
-                      ? new NotebookSerializerError({
-                          message: notebookSourceFailureMessage(error.failure),
-                        })
-                      : Cause.isTimeoutError(error)
-                        ? new NotebookSerializerError({
-                            message: `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
-                          })
-                        : new NotebookSerializerError({
-                            message:
-                              "Failed to deserialize notebook. See marimo logs for details.",
-                          }),
-                  ),
-                ),
-              );
-            },
-          },
-          {
-            // Outputs are not persisted to the .py file — they're ephemeral
-            // and restored at deserialize time from the matched live
-            // NotebookDocument (see pickLiveNotebook + enrichNotebookFromLive).
-            // Marking as transient prevents cell execution from dirtying the
-            // notebook, which would block auto-reload of external file changes.
-            transientOutputs: true,
-            transientCellMetadata: {
-              marimo: false,
-              // Runtime metadata is ephemeral and never written to the .py
-              // file. Marking the whole namespace transient keeps stable-ID
-              // and execution-state changes from dirtying the document.
-              marimoRuntime: true,
-            } satisfies BooleanMap<EncodedCellMetadata>,
-            transientDocumentMetadata: {
-              marimo: false,
-            } satisfies BooleanMap<EncodedNotebookDocumentMetadata>,
-          },
+        return enrichNotebookFromLive(
+          notebook,
+          snapshotLiveNotebook(liveDoc.value, code.value),
         );
-      }
+      },
+    );
 
-      return {
-        notebookType: NOTEBOOK_TYPE,
-        serializeEffect,
-        deserializeEffect,
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([Constants.layer]),
-  );
-}
+    if (Option.isSome(code)) {
+      // Register with VS Code if present
+      const runPromise = Effect.runPromiseWith(yield* Effect.context());
+
+      yield* code.value.workspace.registerNotebookSerializer(
+        NOTEBOOK_TYPE,
+        {
+          serializeNotebook(notebook, token) {
+            return runPromise(
+              Effect.gen(function* () {
+                const fiber = yield* Effect.forkChild(
+                  serializeEffect(notebook),
+                );
+                token.onCancellationRequested(() =>
+                  runPromise(Fiber.interrupt(fiber)),
+                );
+                return yield* Fiber.join(fiber);
+              }).pipe(
+                Effect.tapCause((cause) =>
+                  Effect.logError(`Notebook serialize failed`).pipe(
+                    Effect.annotateLogs({
+                      cause,
+                      "error.tag": causeTag(cause),
+                    }),
+                  ),
+                ),
+                Effect.mapError(
+                  () =>
+                    new OperationError({
+                      message:
+                        "Failed to serialize notebook. See marimo logs for details.",
+                    }),
+                ),
+              ),
+            );
+          },
+          deserializeNotebook(bytes, token) {
+            return runPromise(
+              Effect.gen(function* () {
+                const fiber = yield* Effect.forkChild(deserializeEffect(bytes));
+                token.onCancellationRequested(() =>
+                  runPromise(Fiber.interrupt(fiber)),
+                );
+                return yield* Fiber.join(fiber);
+              }).pipe(
+                Effect.tapCause(logDeserializeFailure),
+                Effect.mapError((error) =>
+                  error instanceof NotebookSourceError
+                    ? new OperationError({
+                        message: notebookSourceFailureMessage(error.failure),
+                      })
+                    : Cause.isTimeoutError(error)
+                      ? new OperationError({
+                          message: `Timed out after ${Duration.toSeconds(DESERIALIZE_TIMEOUT)} seconds while opening the notebook. See marimo logs for details.`,
+                        })
+                      : new OperationError({
+                          message:
+                            "Failed to deserialize notebook. See marimo logs for details.",
+                        }),
+                ),
+              ),
+            );
+          },
+        },
+        {
+          // Outputs are not persisted to the .py file — they're ephemeral
+          // and restored at deserialize time from the matched live
+          // NotebookDocument (see pickLiveNotebook + enrichNotebookFromLive).
+          // Marking as transient prevents cell execution from dirtying the
+          // notebook, which would block auto-reload of external file changes.
+          transientOutputs: true,
+          transientCellMetadata: {
+            marimo: false,
+            // Runtime metadata is ephemeral and never written to the .py
+            // file. Marking the whole namespace transient keeps stable-ID
+            // and execution-state changes from dirtying the document.
+            marimoRuntime: true,
+          } satisfies BooleanMap<EncodedCellMetadata>,
+          transientDocumentMetadata: {
+            marimo: false,
+          } satisfies BooleanMap<EncodedNotebookDocumentMetadata>,
+        },
+      );
+    }
+
+    return Service.of({
+      notebookType: NOTEBOOK_TYPE,
+      serializeEffect,
+      deserializeEffect,
+    });
+  }),
+).pipe(Layer.provide([Constants.defaultLayer]));
 
 function logDeserializeFailure(cause: Cause.Cause<unknown>) {
   if (Cause.hasInterruptsOnly(cause)) return Effect.void;
@@ -301,7 +310,7 @@ function notebookDataToNotebookDocument(
   {
     LanguageId,
   }: {
-    LanguageId: Constants["Service"]["LanguageId"];
+    LanguageId: Constants.Interface["LanguageId"];
   },
 ): Effect.Effect<typeof Api.NotebookDocument.Encoded, Schema.SchemaError> {
   const { cells, metadata = {} } = notebook;
@@ -417,7 +426,7 @@ ${code}
  */
 function snapshotLiveNotebook(
   doc: vscode.NotebookDocument,
-  code: VsCode["Service"],
+  code: VsCode.Interface,
 ): vscode.NotebookData {
   return {
     metadata: doc.metadata,

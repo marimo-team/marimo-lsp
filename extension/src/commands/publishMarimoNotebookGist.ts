@@ -3,20 +3,20 @@ import * as NodePath from "node:path";
 import { Cause, Effect, flow, Option, Result, Schema } from "effect";
 
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { MarimoClient } from "../lsp/MarimoClient.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { GitHubClient } from "../platform/GitHubClient.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
+import * as GitHubClient from "../platform/GitHubClient.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 export const publishMarimoNotebookGist = Effect.fn(
   "command.publishMarimoNotebookGist",
 )(
   function* (notebook: MarimoNotebookDocument) {
-    const code = yield* VsCode;
-    const gh = yield* GitHubClient;
-    const marimo = yield* MarimoClient;
-    const serializer = yield* NotebookSerializer;
+    const code = yield* VsCode.Service;
+    const gh = yield* GitHubClient.Service;
+    const marimo = yield* MarimoClient.Service;
+    const serializer = yield* NotebookSerializer.Service;
 
     const choice = yield* code.window.showQuickPick(["Public", "Secret"], {
       placeHolder: "Gist visibility",

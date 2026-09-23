@@ -14,16 +14,13 @@ import type * as vscode from "vscode";
 
 import { type BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
-import {
-  createStorageKey,
-  ExtensionContext,
-  Storage,
-} from "../platform/Storage.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
+import * as Storage from "../platform/Storage.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { acquirePostHogAdapter, type PostHogAdapter } from "./posthogSink.ts";
 import { acquireSentryAdapter, type SentryAdapter } from "./sentrySink.ts";
 
-const ANONYMOUS_ID_KEY = createStorageKey(
+const ANONYMOUS_ID_KEY = Storage.createStorageKey(
   "telemetry.anonymousId",
   Schema.String,
 );
@@ -77,16 +74,45 @@ const NOOP_POSTHOG: PostHogAdapter = {
  * responsible for its global usage/error gates and for cleaning all caller
  * data before the private PostHog and Sentry adapters receive it.
  */
-export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
-  make: Effect.gen(function* () {
-    const code = yield* VsCode;
+export interface Interface {
+  readonly tySetup: (action: TySetupAction) => Effect.Effect<void>;
+  readonly commandExecuted: (
+    command: string,
+    success: boolean,
+  ) => Effect.Effect<void>;
+  readonly notebookCreated: Effect.Effect<void>;
+  readonly notebookOpened: (cellCount: number) => Effect.Effect<void>;
+  readonly tutorialOpened: (tutorial: string) => Effect.Effect<void>;
+  readonly uvMissing: (
+    binType: "Default" | "Configured" | "Discovered" | "Bundled",
+  ) => Effect.Effect<void>;
+  readonly uvInstallClicked: Effect.Effect<void>;
+  readonly binaryResolved: (binary: ResolvedBinary) => Effect.Effect<void>;
+  readonly binaryUnresolved: (server: "ruff" | "ty") => Effect.Effect<void>;
+  readonly lspModeSelected: (
+    mode: "wasm" | "uv" | "configured",
+  ) => Effect.Effect<void>;
+  readonly lspStarted: (
+    mode: "wasm" | "uv" | "configured",
+  ) => Effect.Effect<void>;
+  readonly errorLogger: Logger.Logger<unknown, void>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/Telemetry",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
     const config = yield* code.workspace.getConfiguration("marimo");
     const enabled = config.get<boolean>("telemetry") ?? true;
-    if (!enabled) return disabledTelemetry();
+    if (!enabled) return Service.of(disabledTelemetry());
 
-    const storage = yield* Storage;
+    const storage = yield* Storage.Service;
     const activationId = crypto.randomUUID();
-    const { extensionMode } = yield* ExtensionContext;
+    const { extensionMode } = yield* ExtensionContext.Service;
     const development =
       process.env.MARIMO_REPLAY_TY_PROMPT === "1" ||
       extensionMode === ExtensionMode.Development ||
@@ -126,7 +152,7 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
           ),
         ),
       );
-    if (Option.isNone(maybeLogger)) return disabledTelemetry();
+    if (Option.isNone(maybeLogger)) return Service.of(disabledTelemetry());
     const logger = maybeLogger.value;
 
     adapters.sentry = yield* acquireSentryAdapter({
@@ -153,13 +179,19 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
 
     const errorLogger = makeEffectErrorLogger(logger);
 
-    const usage = (event: string, data?: Record<string, unknown>) =>
-      Effect.sync(() =>
+    const usage = Effect.fnUntraced(function* (
+      event: string,
+      data?: Record<string, unknown>,
+    ) {
+      yield* Effect.sync(() =>
         ignoreTelemetryError(() => logger.logUsage(event, data)),
       );
+    });
 
-    const binaryResolved = (binary: ResolvedBinary): Effect.Effect<void> =>
-      Effect.sync(() => {
+    const binaryResolved = Effect.fn("Telemetry.binaryResolved")(function* (
+      binary: ResolvedBinary,
+    ) {
+      yield* Effect.sync(() => {
         ignoreTelemetryError(() => {
           logger.logError("marimo.binary.resolved", {
             server: binary.server,
@@ -184,46 +216,80 @@ export class Telemetry extends Context.Service<Telemetry>()("Telemetry", {
           }
         });
       });
+    });
 
-    const lspModeSelected = (
+    const lspModeSelected = Effect.fn("Telemetry.lspModeSelected")(function* (
       mode: "wasm" | "uv" | "configured",
-    ): Effect.Effect<void> =>
-      Effect.sync(() => adapters.sentry.setLspMode(mode));
+    ) {
+      yield* Effect.sync(() => adapters.sentry.setLspMode(mode));
+    });
 
-    const lspStarted = (
+    const lspStarted = Effect.fn("Telemetry.lspStarted")(function* (
       mode: "wasm" | "uv" | "configured",
-    ): Effect.Effect<void> => usage("marimo_lsp_started", { mode });
+    ) {
+      yield* usage("marimo_lsp_started", { mode });
+    });
+
+    const tySetup = Effect.fn("Telemetry.tySetup")(function* (
+      action: TySetupAction,
+    ) {
+      if (!development) yield* usage("ty_setup", { action });
+    });
+
+    const commandExecuted = Effect.fn("Telemetry.commandExecuted")(function* (
+      command: string,
+      success: boolean,
+    ) {
+      yield* usage("executed_command", { command, success });
+    });
+
+    const notebookCreated = usage("new_notebook_created");
+
+    const notebookOpened = Effect.fn("Telemetry.notebookOpened")(function* (
+      cellCount: number,
+    ) {
+      yield* usage("notebook_opened", { cellCount });
+    });
+
+    const tutorialOpened = Effect.fn("Telemetry.tutorialOpened")(function* (
+      tutorial: string,
+    ) {
+      yield* usage("tutorial_opened", { tutorial });
+    });
+
+    const uvMissing = Effect.fn("Telemetry.uvMissing")(function* (
+      binType: "Default" | "Configured" | "Discovered" | "Bundled",
+    ) {
+      yield* usage("uv_missing", { binType });
+    });
+
+    const uvInstallClicked = usage("uv_install_clicked");
+
+    const binaryUnresolved = Effect.fn("Telemetry.binaryUnresolved")(function* (
+      server: "ruff" | "ty",
+    ) {
+      yield* usage("lsp_binary_unresolved", { server });
+    });
 
     yield* usage("extension_activated");
-    return {
-      tySetup: (action: TySetupAction) =>
-        development ? Effect.void : usage("ty_setup", { action }),
-      commandExecuted: (command: string, success: boolean) =>
-        usage("executed_command", { command, success }),
-      notebookCreated: usage("new_notebook_created"),
-      notebookOpened: (cellCount: number) =>
-        usage("notebook_opened", { cellCount }),
-      tutorialOpened: (tutorial: string) =>
-        usage("tutorial_opened", { tutorial }),
-      uvMissing: (
-        binType: "Default" | "Configured" | "Discovered" | "Bundled",
-      ) => usage("uv_missing", { binType }),
-      uvInstallClicked: usage("uv_install_clicked"),
+    return Service.of({
+      tySetup,
+      commandExecuted,
+      notebookCreated,
+      notebookOpened,
+      tutorialOpened,
+      uvMissing,
+      uvInstallClicked,
       binaryResolved,
-      binaryUnresolved: (server: "ruff" | "ty") =>
-        usage("lsp_binary_unresolved", { server }),
+      binaryUnresolved,
       lspModeSelected,
       lspStarted,
       errorLogger,
-    };
+    });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(Storage.layer),
-  );
-}
+).pipe(Layer.provide(Storage.layer));
 
-function disabledTelemetry() {
+function disabledTelemetry(): Interface {
   return {
     tySetup: (_action: TySetupAction) => Effect.void,
     commandExecuted: (_command: string, _success: boolean) => Effect.void,
@@ -492,7 +558,7 @@ function ignoreTelemetryError(action: () => void): void {
   }
 }
 
-function anonymousId(storage: typeof Storage.Service): Effect.Effect<string> {
+function anonymousId(storage: Storage.Interface): Effect.Effect<string> {
   return Effect.gen(function* () {
     const maybeId = yield* storage.global.get(ANONYMOUS_ID_KEY);
     if (Option.isSome(maybeId)) return maybeId.value;

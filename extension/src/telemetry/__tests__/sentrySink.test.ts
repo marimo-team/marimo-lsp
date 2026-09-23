@@ -1,12 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import { Redacted } from "effect";
 
-import { MarimoCommandError } from "../../lsp/MarimoClient.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import { classifyNotebookDeserializeError } from "../classifyNotebookDeserializeError.ts";
 import { classifySentryError } from "../sentrySink.ts";
 
-function commandError(cause: Error): MarimoCommandError {
-  return new MarimoCommandError({
+function commandError(cause: Error): MarimoClient.CommandError {
+  return new MarimoClient.CommandError({
     command: Redacted.make({
       kind: "parse-notebook",
       source: "",
@@ -16,7 +16,7 @@ function commandError(cause: Error): MarimoCommandError {
   });
 }
 
-function rpcCommandError(rootCause: Error): MarimoCommandError {
+function rpcCommandError(rootCause: Error): MarimoClient.CommandError {
   return commandError(
     Object.assign(new Error("An error has occurred", { cause: rootCause }), {
       name: "ResponseError",
@@ -25,7 +25,7 @@ function rpcCommandError(rootCause: Error): MarimoCommandError {
   );
 }
 
-function deserializeErrorData(error: MarimoCommandError) {
+function deserializeErrorData(error: MarimoClient.CommandError) {
   const classification = classifyNotebookDeserializeError(error);
   return {
     "error.domain": classification.domain,

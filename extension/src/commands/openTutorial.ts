@@ -4,10 +4,10 @@ import * as NodePath from "node:path";
 import { Cause, Effect, Option, Result } from "effect";
 
 import { defineCommand } from "../commands.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { ExtensionContext } from "../platform/Storage.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as NotebookSerializer from "../notebook/NotebookSerializer.ts";
+import * as ExtensionContext from "../platform/ExtensionContext.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 
 const TUTORIALS = [
@@ -23,10 +23,10 @@ const TUTORIALS = [
 ] as const;
 
 const openTutorial = Effect.fn("command.openTutorial")(function* () {
-  const code = yield* VsCode;
-  const context = yield* ExtensionContext;
-  const serializer = yield* NotebookSerializer;
-  const telemetry = yield* Telemetry;
+  const code = yield* VsCode.Service;
+  const context = yield* ExtensionContext.Service;
+  const serializer = yield* NotebookSerializer.Service;
+  const telemetry = yield* Telemetry.Service;
   const selection = yield* code.window.showQuickPickItems(
     TUTORIALS.map(([label, filename, icon]) => ({
       label,
@@ -79,7 +79,7 @@ const handler = () =>
   openTutorial().pipe(
     Effect.catch(
       Effect.fn(function* (error) {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         yield* Effect.logError("Failed to open tutorial").pipe(
           Effect.annotateLogs({ cause: Cause.fail(error) }),
         );

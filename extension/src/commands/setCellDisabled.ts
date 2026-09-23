@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 
 import { SETUP_CELL_NAME } from "../constants.ts";
-import { updateMarimoCellMetadata } from "../notebook/updateMarimoCellMetadata.ts";
+import * as CellMetadata from "../notebook/CellMetadata.ts";
 import type { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 
 export const setCellDisabled = Effect.fn("command.setCellDisabled")(function* (
@@ -14,7 +14,7 @@ export const setCellDisabled = Effect.fn("command.setCellDisabled")(function* (
     Option.contains(cell.value.stableId, SETUP_CELL_NAME);
   if (disabled && isSetupCell) return;
 
-  yield* updateMarimoCellMetadata(cell.value, (metadata) => ({
+  yield* CellMetadata.update(cell.value, (metadata) => ({
     ...metadata,
     options: { ...metadata.options, disabled },
   }));

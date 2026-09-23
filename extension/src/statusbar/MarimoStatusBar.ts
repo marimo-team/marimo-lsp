@@ -3,14 +3,14 @@ import { Effect, Layer } from "effect";
 import { commandId } from "../commands.ts";
 import openTutorial from "../commands/openTutorial.ts";
 import showMarimoMenu from "../commands/showMarimoMenu.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import { StatusBar } from "./StatusBar.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as StatusBar from "./StatusBar.ts";
 
 /** Manages the marimo status bar item with quick pick menu. */
-export const MarimoStatusBarLive = Layer.effectDiscard(
+export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
-    const code = yield* VsCode;
-    const statusBar = yield* StatusBar;
+    const code = yield* VsCode.Service;
+    const statusBar = yield* StatusBar.Service;
 
     yield* code.commands.register(showMarimoMenu);
     yield* code.commands.register(openTutorial);
@@ -24,5 +24,5 @@ export const MarimoStatusBarLive = Layer.effectDiscard(
     });
 
     yield* Effect.logDebug("marimo status bar initialized");
-  }),
+  }).pipe(Effect.withSpan("MarimoStatusBar.layer")),
 );

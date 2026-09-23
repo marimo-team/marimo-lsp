@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import { Data, Effect, Option, Order, Schema } from "effect";
 import type * as vscode from "vscode";
 
-import { resolvePlatformBinaryName } from "../python/Uv.ts";
+import * as Uv from "../python/Uv.ts";
 import { Version } from "./Version.ts";
 
 /**
@@ -282,7 +282,7 @@ export function companionExtensionBundledBinary(
         "bundled",
         "libs",
         "bin",
-        resolvePlatformBinaryName(binaryName),
+        Uv.resolvePlatformBinaryName(binaryName),
       );
       const validated = yield* validateBinary(bundledPath, minimumVersion);
       if (Option.isNone(validated)) {

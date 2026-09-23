@@ -20,11 +20,7 @@ import {
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import {
-  CellExecutions,
-  type Drive,
-  type NotebookExecutions,
-} from "../../kernel/CellExecutions.ts";
+import * as CellExecutionsModule from "../../kernel/CellExecutions.ts";
 import { CellCommand } from "../../kernel/CellRunReducer.ts";
 import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
 import {
@@ -32,8 +28,8 @@ import {
   runId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -43,13 +39,16 @@ import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
 
 const TestNotebookRuntime = makeTestNotebookRuntime();
+const CellExecutions = CellExecutionsModule.Service;
+type Drive = CellExecutionsModule.Drive;
+type NotebookExecutions = CellExecutionsModule.NotebookExecutions;
 
 const withTestCtx = Effect.fn(function* (
   options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
 ) {
   const vscode = yield* TestVsCode.make(options);
   const layer = Layer.empty.pipe(
-    Layer.merge(CellExecutions.layer),
+    Layer.merge(CellExecutionsModule.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provide(TestNotebookRuntime),
     Layer.provide(TestTelemetryLive),
@@ -87,7 +86,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -112,7 +111,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -138,7 +137,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -176,7 +175,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -204,7 +203,7 @@ describe("buildCellOutputs", () => {
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -228,7 +227,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -250,7 +249,7 @@ describe("buildCellOutputs", () => {
     Effect.fn(function* () {
       const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -288,7 +287,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -314,7 +313,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = createCellRuntimeState();
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
@@ -330,7 +329,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -364,7 +363,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -402,7 +401,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           consoleOutputs: [
@@ -446,7 +445,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -481,7 +480,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -507,7 +506,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -521,7 +520,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -558,7 +557,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -596,7 +595,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -634,7 +633,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -673,7 +672,7 @@ describe("buildCellOutputs", () => {
       const ctx = yield* withTestCtx();
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
           ...createCellRuntimeState(),
           output: {
@@ -746,7 +745,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -769,7 +768,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -792,7 +791,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -835,7 +834,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -854,7 +853,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -877,7 +876,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -902,7 +901,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -925,7 +924,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -948,7 +947,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -973,7 +972,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -1016,7 +1015,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -1048,7 +1047,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -1080,7 +1079,7 @@ describe("buildCellOutputs", () => {
       };
 
       const outputs = yield* Effect.gen(function* () {
-        const code = yield* VsCode;
+        const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
       }).pipe(Effect.provide(ctx.layer));
 
@@ -1111,7 +1110,7 @@ describe("NotebookExecutions", () => {
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
     yield* Effect.yieldNow;
-    const sessions = yield* NotebookDocumentSessions;
+    const sessions = yield* NotebookDocumentSessions.Service;
     const session = sessions.forDocument(document);
     if (Option.isNone(session)) {
       return yield* Effect.die("Expected an open notebook document session");
@@ -2720,7 +2719,7 @@ describe("NotebookExecutions", () => {
         const error = yield* executions
           .open(first.session, { getDrive: Effect.succeed(Option.none()) })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("NotebookDocumentSessionEndedError");
+        expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
         yield* ctx.vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;

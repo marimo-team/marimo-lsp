@@ -1,10 +1,7 @@
 import { Effect, Layer, Option } from "effect";
 
 import { BinarySource } from "../lib/binaryResolution.ts";
-import {
-  TyLanguageServer,
-  TyLanguageServerStatus,
-} from "../lsp/TyLanguageServer.ts";
+import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 
 /**
  * Test mock for TyLanguageServer.
@@ -13,14 +10,14 @@ import {
  * avoiding the need to start an actual `ty` language server during tests.
  */
 export const TestTyLanguageServerLive = Layer.effect(
-  TyLanguageServer,
+  TyLanguageServer.Service,
   Effect.gen(function* () {
     yield* Effect.logWarning(
       "Using test mock for TyLanguageServer - skipping actual server startup",
     );
     return {
       getHealthStatus: Effect.succeed(
-        TyLanguageServerStatus.Running({
+        TyLanguageServer.Status.Running({
           serverVersion: "0.0.0-test",
           binarySource: BinarySource.UserConfigured({ path: "/test/ty" }),
           pythonEnvironment: Option.none(),

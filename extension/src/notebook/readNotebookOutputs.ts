@@ -1,16 +1,12 @@
 import * as NodePath from "node:path";
 
-import { Context } from "effect";
-
-import { MarimoClient } from "../lsp/MarimoClient.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
 import type { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
-
-type MarimoClientService = Context.Service.Shape<typeof MarimoClient>;
 
 /** Ask the LSP to replay live output or a conventional cold sidecar. */
 export const readNotebookOutputs = (
   notebook: MarimoNotebookDocument,
-  marimo: MarimoClientService,
+  marimo: MarimoClient.Interface,
 ) => {
   const sessionCachePath = conventionalSessionCachePath(notebook);
   return marimo.readNotebookOutputs({

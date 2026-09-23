@@ -4,13 +4,13 @@ import { unreachable } from "../assert.ts";
 import { defineCommand } from "../commands.ts";
 import { Links } from "../lib/links.ts";
 import { openExternalUrl } from "../lib/openExternalUrl.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoCommands } from "./MarimoCommands.ts";
 import openTutorial from "./openTutorial.ts";
 import showDiagnostics from "./showDiagnostics.ts";
 
 const handler = Effect.fn("command.showMarimoMenu")(function* () {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
   const selection = yield* code.window.showQuickPickItems(
     [
       {

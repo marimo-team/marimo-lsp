@@ -1,12 +1,12 @@
 import { Effect, Layer, Option, Result, Stream } from "effect";
 
 import restartKernel from "../commands/restartKernel.ts";
-import { NotebookRuntime } from "../kernel/NotebookRuntime.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
-export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
-  const code = yield* VsCode;
+export const promptForFileRootChange = Effect.gen(function* () {
+  const code = yield* VsCode.Service;
 
   const restart = yield* code.window.showInformationMessage(
     "The notebook file root changed. Restart the marimo kernel to apply it.",
@@ -15,40 +15,37 @@ export const promptToRestartKernelForFileRootChange = Effect.fn(function* () {
   if (Option.isSome(restart) && restart.value === "Restart Kernel") {
     yield* code.commands.execute(restartKernel.command);
   }
-});
+}).pipe(Effect.withSpan("ReloadOnConfigChange.promptForFileRootChange"));
 
 /** Watches configuration changes that require an explicit reload or restart. */
-export const watchForConfigurationChanges = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const notebooks = yield* NotebookRuntime;
+export const watch = Effect.gen(function* () {
+  const code = yield* VsCode.Service;
+  const notebooks = yield* NotebookRuntime.Service;
   const pendingFileRootChanges = new Set<string>();
 
-  const watchForWindowReload = Effect.fn(function* (
-    sections: readonly string[],
-    message: string,
-  ) {
+  const watchForWindowReload = Effect.fn(
+    "ReloadOnConfigChange.watchForWindowReload",
+  )(function* (sections: readonly string[], message: string) {
+    const prompt = Effect.gen(function* () {
+      const reload = yield* code.window.showInformationMessage(message, {
+        items: ["Reload Window"],
+      });
+      if (Option.isSome(reload) && reload.value === "Reload Window") {
+        yield* code.commands.executeVSCode("workbench.action.reloadWindow");
+      }
+    }).pipe(Effect.withSpan("ReloadOnConfigChange.promptForWindowReload"));
+
     yield* Effect.forkScoped(
       code.workspace.configurationChanges.pipe(
         Stream.filter((event) =>
           sections.some((section) => event.affectsConfiguration(section)),
         ),
-        Stream.runForEach(
-          Effect.fn(function* () {
-            const reload = yield* code.window.showInformationMessage(message, {
-              items: ["Reload Window"],
-            });
-            if (Option.isSome(reload) && reload.value === "Reload Window") {
-              yield* code.commands.executeVSCode(
-                "workbench.action.reloadWindow",
-              );
-            }
-          }),
-        ),
+        Stream.runForEach(() => prompt),
       ),
     );
   });
 
-  const promptForActiveAffectedSession = Effect.fn(function* () {
+  const promptForActiveAffectedSession = Effect.gen(function* () {
     const activeNotebook = Option.flatMap(
       yield* code.window.getActiveNotebookEditor,
       (editor) => MarimoNotebookDocument.tryFrom(editor.notebook),
@@ -66,8 +63,10 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
     ) {
       return;
     }
-    yield* promptToRestartKernelForFileRootChange();
-  });
+    yield* promptForFileRootChange;
+  }).pipe(
+    Effect.withSpan("ReloadOnConfigChange.promptForActiveAffectedSession"),
+  );
 
   yield* watchForWindowReload(
     ["marimo.telemetry"],
@@ -98,7 +97,7 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
               pendingFileRootChanges.add(notebookId);
             }
           }
-          yield* promptForActiveAffectedSession();
+          yield* promptForActiveAffectedSession;
         }),
       ),
     ),
@@ -106,11 +105,9 @@ export const watchForConfigurationChanges = Effect.fn(function* () {
 
   yield* Effect.forkScoped(
     code.window.activeNotebookEditorChanges.pipe(
-      Stream.runForEach(promptForActiveAffectedSession),
+      Stream.runForEach(() => promptForActiveAffectedSession),
     ),
   );
-});
+}).pipe(Effect.withSpan("ReloadOnConfigChange.watch"));
 
-export const ReloadOnConfigChangeLive = Layer.effectDiscard(
-  watchForConfigurationChanges(),
-);
+export const layer = Layer.effectDiscard(watch);

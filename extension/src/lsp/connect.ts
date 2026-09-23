@@ -14,7 +14,7 @@ import * as lsp from "vscode-languageserver-protocol";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 import {
   makeNotebookLspClient,
@@ -36,7 +36,7 @@ import { registerLspProviders } from "./registerLspProviders.ts";
 export const connectMarimoNotebookLspClient = Effect.fn(
   "connectMarimoNotebookLspClient",
 )(function* (config: NotebookLspClientConfig) {
-  const code = yield* VsCode;
+  const code = yield* VsCode.Service;
 
   // -- Resolve workspace folders -------------------------------------------
 

@@ -9,10 +9,10 @@ import { Context, Effect, Layer, Result } from "effect";
 import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { EnvironmentValidator } from "../../python/EnvironmentValidator.ts";
+import * as EnvironmentValidator from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
-import { PythonEnvInvalidation } from "../../python/PythonEnvInvalidation.ts";
-import { Uv } from "../../python/Uv.ts";
+import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
+import * as Uv from "../../python/Uv.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 
@@ -50,7 +50,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should build",
     Effect.fn(function* () {
-      const api = yield* EnvironmentValidator;
+      const api = yield* EnvironmentValidator.Service;
       expect(api).toBeDefined();
     }),
   );
@@ -58,8 +58,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should fail with missing marimo",
     Effect.fn(function* () {
-      const uv = yield* Uv;
-      const validator = yield* EnvironmentValidator;
+      const uv = yield* Uv.Service;
+      const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
       // Validation results are cached per interpreter path, so each test
@@ -75,8 +75,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       assert(Result.isFailure(result), "Expected validation to fail");
       assert(
-        result.failure._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
+        result.failure._tag === "EnvironmentValidator.RequirementError",
+        `Expected RequirementError, got ${result.failure._tag}`,
       );
       expect(result.failure.diagnostics).toMatchInlineSnapshot(`
         [
@@ -96,8 +96,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect.skipIf(isWindows)(
     "Should fail with outdated marimo",
     Effect.fn(function* () {
-      const uv = yield* Uv;
-      const validator = yield* EnvironmentValidator;
+      const uv = yield* Uv.Service;
+      const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
       const venv = NodePath.join(tmpdir.path, ".venv-outdated");
@@ -112,8 +112,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
       assert(Result.isFailure(result), "Expected validation to fail");
       assert(
-        result.failure._tag === "EnvironmentRequirementError",
-        `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
+        result.failure._tag === "EnvironmentValidator.RequirementError",
+        `Expected RequirementError, got ${result.failure._tag}`,
       );
       expect(result.failure.diagnostics).toMatchInlineSnapshot(`
         [
@@ -136,8 +136,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should succeed with marimo installed",
     Effect.fn(function* () {
-      const uv = yield* Uv;
-      const validator = yield* EnvironmentValidator;
+      const uv = yield* Uv.Service;
+      const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
       const venv = NodePath.join(tmpdir.path, ".venv-ok");
@@ -159,7 +159,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   it.effect(
     "should fail for no python interpreter",
     Effect.fn(function* () {
-      const validator = yield* EnvironmentValidator;
+      const validator = yield* EnvironmentValidator.Service;
       const tmpdir = yield* TempDir;
 
       const venv = NodePath.join(tmpdir.path, ".venv-nonexistent");
@@ -171,7 +171,10 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
       assert(Result.isFailure(result), "Expected validation to fail");
-      assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
+      assert.strictEqual(
+        result.failure._tag,
+        "EnvironmentValidator.InspectionError",
+      );
     }),
     { timeout: 30_000 },
   );
@@ -181,9 +184,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   // directly, so we skip these tests there.
   describe.skipIf(isWindows)("subprocess output parsing", () => {
     it.effect(
-      "should fail with EnvironmentInspectionError when stdout is empty",
+      "should fail with InspectionError when stdout is empty",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "empty-stdout", {
           stdout: "",
@@ -195,14 +198,17 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         );
 
         assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
+        assert.strictEqual(
+          result.failure._tag,
+          "EnvironmentValidator.InspectionError",
+        );
       }),
     );
 
     it.effect(
-      "should fail with EnvironmentInspectionError when stdout is not JSON",
+      "should fail with InspectionError when stdout is not JSON",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "non-json", {
           stdout: "WARNING: some import warning\nAnother warning line\n",
@@ -215,17 +221,17 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
         assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.failure._tag === "EnvironmentInspectionError",
-          `Expected EnvironmentInspectionError, got ${result.failure._tag}`,
+          result.failure._tag === "EnvironmentValidator.InspectionError",
+          `Expected InspectionError, got ${result.failure._tag}`,
         );
         expect(result.failure.stdout).toContain("WARNING");
       }),
     );
 
     it.effect(
-      "should fail with EnvironmentInspectionError on non-zero exit code",
+      "should fail with InspectionError on non-zero exit code",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "exit-1", {
           stdout: "",
@@ -239,17 +245,17 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
         assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.failure._tag === "EnvironmentInspectionError",
-          `Expected EnvironmentInspectionError, got ${result.failure._tag}`,
+          result.failure._tag === "EnvironmentValidator.InspectionError",
+          `Expected InspectionError, got ${result.failure._tag}`,
         );
         expect(result.failure.stderr).toContain("SyntaxError");
       }),
     );
 
     it.effect(
-      "should fail with EnvironmentInspectionError on truncated JSON",
+      "should fail with InspectionError on truncated JSON",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "truncated-json", {
           stdout: '[{"name":"marimo","version"',
@@ -261,14 +267,17 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         );
 
         assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
+        assert.strictEqual(
+          result.failure._tag,
+          "EnvironmentValidator.InspectionError",
+        );
       }),
     );
 
     it.effect(
-      "should fail with EnvironmentInspectionError on wrong JSON shape",
+      "should fail with InspectionError on wrong JSON shape",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "wrong-shape", {
           stdout: '{"error": "unexpected format"}',
@@ -280,14 +289,17 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         );
 
         assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
+        assert.strictEqual(
+          result.failure._tag,
+          "EnvironmentValidator.InspectionError",
+        );
       }),
     );
 
     it.effect(
       "should handle JSON with extra whitespace/newlines",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
         const script = makeFakeExecutable(tmpdir.path, "extra-whitespace", {
@@ -307,7 +319,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     it.effect(
       "should treat null versions as missing packages",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const json = JSON.stringify([{ name: "marimo", version: null }]);
         const script = makeFakeExecutable(tmpdir.path, "null-versions", {
@@ -321,8 +333,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
 
         assert(Result.isFailure(result), "Expected validation to fail");
         assert(
-          result.failure._tag === "EnvironmentRequirementError",
-          `Expected EnvironmentRequirementError, got ${result.failure._tag}`,
+          result.failure._tag === "EnvironmentValidator.RequirementError",
+          `Expected RequirementError, got ${result.failure._tag}`,
         );
         expect(result.failure.diagnostics).toEqual([
           { kind: "missing", package: "marimo" },
@@ -333,7 +345,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     it.effect(
       "should cache successful validation per environment",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const countFile = NodePath.join(tmpdir.path, "cached-success-count");
         const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
@@ -356,7 +368,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     it.effect(
       "should not cache failed validation",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const countFile = NodePath.join(tmpdir.path, "uncached-failure-count");
         const json = JSON.stringify([{ name: "marimo", version: null }]);
@@ -379,8 +391,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     it.effect(
       "should re-validate after a PythonEnvInvalidation event",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
-        const invalidation = yield* PythonEnvInvalidation;
+        const validator = yield* EnvironmentValidator.Service;
+        const invalidation = yield* PythonEnvInvalidation.Service;
         const tmpdir = yield* TempDir;
         const countFile = NodePath.join(tmpdir.path, "invalidation-count");
         const json = JSON.stringify([{ name: "marimo", version: "1.0.0" }]);
@@ -409,9 +421,9 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     );
 
     it.effect(
-      "should fail with EnvironmentInspectionError when stderr has content but exit code 0 and empty stdout",
+      "should fail with InspectionError when stderr has content but exit code 0 and empty stdout",
       Effect.fn(function* () {
-        const validator = yield* EnvironmentValidator;
+        const validator = yield* EnvironmentValidator.Service;
         const tmpdir = yield* TempDir;
         const script = makeFakeExecutable(tmpdir.path, "stderr-only", {
           stdout: "",
@@ -424,7 +436,10 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         );
 
         assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(result.failure._tag, "EnvironmentInspectionError");
+        assert.strictEqual(
+          result.failure._tag,
+          "EnvironmentValidator.InspectionError",
+        );
       }),
     );
   });

@@ -7,8 +7,8 @@ import {
   createTestNotebookEditor,
   TestVsCode,
 } from "../../__mocks__/TestVsCode.ts";
-import { NotebookEditorRegistry } from "../../notebook/NotebookEditorRegistry.ts";
-import { VsCode } from "../../platform/VsCode.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
+import * as VsCode from "../../platform/VsCode.ts";
 
 function makeRegistryLayer(vscode: TestVsCode) {
   return Layer.empty.pipe(
@@ -25,7 +25,7 @@ it.effect(
 
     yield* Effect.provide(
       Effect.gen(function* () {
-        const registry = yield* NotebookEditorRegistry;
+        const registry = yield* NotebookEditorRegistry.Service;
 
         const activeUri = yield* registry.getActiveNotebookUri;
         expect(Option.isNone(activeUri)).toBe(true);
@@ -50,7 +50,7 @@ it.effect(
 
     yield* Effect.provide(
       Effect.gen(function* () {
-        const registry = yield* NotebookEditorRegistry;
+        const registry = yield* NotebookEditorRegistry.Service;
         yield* Effect.yieldNow;
 
         expect(yield* registry.getActiveNotebookUri).toEqual(
@@ -72,8 +72,8 @@ it.effect(
 
     yield* Effect.provide(
       Effect.gen(function* () {
-        const code = yield* VsCode;
-        const registry = yield* NotebookEditorRegistry;
+        const code = yield* VsCode.Service;
+        const registry = yield* NotebookEditorRegistry.Service;
 
         // Create a mock notebook
         const notebook = createTestNotebookDocument(
@@ -128,8 +128,8 @@ it.effect(
 
     yield* Effect.provide(
       Effect.gen(function* () {
-        const code = yield* VsCode;
-        const registry = yield* NotebookEditorRegistry;
+        const code = yield* VsCode.Service;
+        const registry = yield* NotebookEditorRegistry.Service;
 
         const stream = registry.streamActiveNotebookChanges;
         const mockEditor = createTestNotebookEditor(

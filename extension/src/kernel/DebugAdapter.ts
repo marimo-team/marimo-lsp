@@ -3,7 +3,6 @@ import * as NodePath from "node:path";
 
 import {
   Context,
-  Data,
   Effect,
   HashMap,
   Layer,
@@ -15,15 +14,17 @@ import {
 
 import { createSourceMapping, makeDapProxy } from "../lib/dap-proxy.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { NotebookSerializer } from "../notebook/NotebookSerializer.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as Debug from "../platform/Debug.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
+import * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import {
   type NotebookId,
   NotebookIdFromString,
 } from "../schemas/MarimoNotebookDocument.ts";
-import { NotebookRuntime } from "./NotebookRuntime.ts";
+import { NotebookFileRootError } from "./NotebookFileRoot.ts";
+import * as NotebookRuntime from "./NotebookRuntime.ts";
 
 const DEBUG_TYPE = "marimo";
 
@@ -43,7 +44,7 @@ print(_json.dumps({"port": _sys._marimo_debugpy_port, "tmpdir": _tmpdir}))
 }
 
 /** Resolve the bundled debugpy libs path from the ms-python.debugpy extension. */
-const resolveDebugpyPath = Effect.fn(function* (code: VsCode["Service"]) {
+const resolveDebugpyPath = Effect.fn(function* (code: VsCode.Interface) {
   const ext = code.extensions.getExtension("ms-python.debugpy");
   if (Option.isNone(ext)) {
     yield* Effect.logWarning("ms-python.debugpy extension not found");
@@ -66,9 +67,18 @@ const DebugpyState = Schema.Struct({
  * example, the kernel emitted no parseable activation output. The `reason`
  * field describes the specific failure.
  */
-class DebugpyActivationError extends Data.TaggedError(
+export class DebugpyActivationError extends Schema.TaggedError<DebugpyActivationError>()(
   "DebugpyActivationError",
-)<{ readonly reason: string }> {}
+  { reason: Schema.String },
+) {}
+
+export class DebugSourceWriteError extends Schema.TaggedError<DebugSourceWriteError>()(
+  "DebugSourceWriteError",
+  {
+    cause: Schema.Defect(),
+    tmpdir: Schema.String,
+  },
+) {}
 
 /** Schema for the debug configuration passed through `startDebugging`. */
 const MarimoDebugConfiguration = Schema.Struct({
@@ -92,187 +102,207 @@ const MarimoDebugConfiguration = Schema.Struct({
  * and debugpy, rewriting source paths so that notebook cell URIs map
  * to the temp file paths debugpy knows about.
  */
-export class DebugAdapter extends Context.Service<DebugAdapter>()(
-  "DebugAdapter",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
+export interface Interface {
+  readonly debugCell: (
+    cell: MarimoNotebookCell,
+  ) => Effect.Effect<
+    void,
+    Error,
+    NotebookRuntime.Service | OutputChannel.Service | VsCode.Service
+  >;
+}
 
-      const debugpyLibsPath = yield* resolveDebugpyPath(code);
+export type Error =
+  | DebugpyActivationError
+  | DebugSourceWriteError
+  | Debug.SessionStartError
+  | NotebookRuntime.ExecutableResolutionError
+  | MarimoClient.StartError
+  | MarimoClient.CommandError
+  | NotebookFileRootError
+  | Schema.SchemaError
+  | Debug.Error;
 
-      // Map from notebookUri -> debug session ID for lifecycle management
-      const activeSessions = yield* Ref.make(
-        HashMap.empty<NotebookId, string>(),
-      );
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/DebugAdapter",
+) {}
 
-      yield* code.debug.onDidTerminateDebugSession((session) =>
-        Effect.gen(function* () {
-          const sessions = yield* Ref.get(activeSessions);
-          const entry = HashMap.findFirst(sessions, (id) => id === session.id);
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
 
-          if (Option.isSome(entry)) {
-            yield* Ref.update(activeSessions, HashMap.remove(entry.value[0]));
-            yield* Effect.logInfo("Debug session ended").pipe(
+    const debugpyLibsPath = yield* resolveDebugpyPath(code);
+
+    // Map from notebookUri -> debug session ID for lifecycle management
+    const activeSessions = yield* Ref.make(HashMap.empty<NotebookId, string>());
+
+    yield* code.debug.onDidTerminateDebugSession((session) =>
+      Effect.gen(function* () {
+        const sessions = yield* Ref.get(activeSessions);
+        const entry = HashMap.findFirst(sessions, (id) => id === session.id);
+
+        if (Option.isSome(entry)) {
+          yield* Ref.update(activeSessions, HashMap.remove(entry.value[0]));
+          yield* Effect.logInfo("Debug session ended").pipe(
+            Effect.annotateLogs({
+              sessionId: session.id,
+              notebookUri: entry.value[0],
+            }),
+          );
+        }
+      }),
+    );
+
+    yield* code.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, {
+      createDebugAdapter: Effect.fn(function* (session) {
+        const config = Schema.decodeUnknownOption(MarimoDebugConfiguration)(
+          session.configuration,
+        );
+
+        if (Option.isNone(config)) {
+          yield* Effect.logWarning(
+            "Debug session configuration did not match expected schema",
+          ).pipe(Effect.annotateLogs({ configuration: session.configuration }));
+          return Option.none();
+        }
+
+        const { notebookUri, port, cellIndex, cellMappings } =
+          config.value.marimo;
+
+        yield* Ref.update(activeSessions, HashMap.set(notebookUri, session.id));
+
+        const mapping = createSourceMapping(cellMappings);
+
+        const proxy = yield* makeDapProxy("127.0.0.1", port, mapping);
+
+        yield* proxy.ready.pipe(
+          Effect.andThen(
+            code.commands.executeVSCode("notebook.cell.execute", {
+              ranges: [{ start: cellIndex, end: cellIndex + 1 }],
+            }),
+          ),
+          Effect.forkScoped,
+        );
+
+        return Option.some(proxy.adapter);
+      }),
+    });
+
+    yield* code.debug.registerDebugConfigurationProvider(DEBUG_TYPE, {
+      resolveDebugConfiguration(_folder, config) {
+        // Config is pre-filled by debugCell(); just pass through
+        if (config.type === DEBUG_TYPE) {
+          return config;
+        }
+        return undefined;
+      },
+    });
+
+    const debugCell = Effect.fn("DebugAdapter.debugCell")(
+      function* (cell: MarimoNotebookCell) {
+        if (!debugpyLibsPath) {
+          yield* showErrorAndPromptLogs(
+            "Cannot debug: ms-python.debugpy extension is not installed.",
+          );
+          return;
+        }
+
+        const cellId = cell.id;
+        if (Option.isNone(cellId)) {
+          yield* code.window.showWarningMessage(
+            "No notebook kernel is running. Run a cell first to start the kernel.",
+          );
+          return;
+        }
+
+        const notebook = cell.notebook;
+        const notebookUri = notebook.id;
+
+        // Stop any existing debug session for this notebook
+        const existingSessionId = HashMap.get(
+          yield* Ref.get(activeSessions),
+          notebookUri,
+        );
+        if (Option.isSome(existingSessionId)) {
+          yield* Effect.logInfo("Stopping existing debug session");
+          yield* code.debug.stopDebugging(existingSessionId.value);
+        }
+        const cellIndex = cell.index;
+        const allCells = notebook.getCells();
+
+        // Activate debugpy (idempotent — returns existing port if running).
+        yield* Effect.logInfo("Activating debugpy in kernel");
+        const state = yield* activateDebugpy(notebookUri, debugpyLibsPath);
+        yield* Effect.logInfo("debugpy ready").pipe(
+          Effect.annotateLogs({
+            port: state.port,
+            tmpdir: state.tmpdir,
+          }),
+        );
+
+        // Build mappings for ALL cells so stepping across cells works.
+        // Each cell URI maps to its temp file path on disk.
+        const cellMappings: Record<string, string> = {};
+        yield* Effect.try({
+          try: () => {
+            NodeFs.mkdirSync(state.tmpdir, { recursive: true });
+            for (const c of allCells) {
+              const id = c.id;
+              if (Option.isNone(id)) continue;
+              const filePath = NodePath.join(
+                state.tmpdir,
+                `__marimo__cell_${id.value}_.py`,
+              );
+              cellMappings[c.document.uri.toString()] = filePath;
+              NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
+            }
+          },
+          catch: (cause) =>
+            new DebugSourceWriteError({
+              cause,
+              tmpdir: state.tmpdir,
+            }),
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.logError("Failed to write cell files to disk").pipe(
               Effect.annotateLogs({
-                sessionId: session.id,
-                notebookUri: entry.value[0],
-              }),
-            );
-          }
-        }),
-      );
-
-      yield* code.debug.registerDebugAdapterDescriptorFactory(DEBUG_TYPE, {
-        createDebugAdapter: Effect.fn(function* (session) {
-          const config = Schema.decodeUnknownOption(MarimoDebugConfiguration)(
-            session.configuration,
-          );
-
-          if (Option.isNone(config)) {
-            yield* Effect.logWarning(
-              "Debug session configuration did not match expected schema",
-            ).pipe(
-              Effect.annotateLogs({ configuration: session.configuration }),
-            );
-            return Option.none();
-          }
-
-          const { notebookUri, port, cellIndex, cellMappings } =
-            config.value.marimo;
-
-          yield* Ref.update(
-            activeSessions,
-            HashMap.set(notebookUri, session.id),
-          );
-
-          const mapping = createSourceMapping(cellMappings);
-
-          const proxy = yield* makeDapProxy("127.0.0.1", port, mapping);
-
-          yield* proxy.ready.pipe(
-            Effect.andThen(
-              code.commands.executeVSCode("notebook.cell.execute", {
-                ranges: [{ start: cellIndex, end: cellIndex + 1 }],
+                cause: error.cause,
+                tmpdir: error.tmpdir,
               }),
             ),
-            Effect.forkScoped,
-          );
+          ),
+        );
 
-          return Option.some(proxy.adapter);
-        }),
-      });
-
-      yield* code.debug.registerDebugConfigurationProvider(DEBUG_TYPE, {
-        resolveDebugConfiguration(_folder, config) {
-          // Config is pre-filled by debugCell(); just pass through
-          if (config.type === DEBUG_TYPE) {
-            return config;
-          }
-          return undefined;
-        },
-      });
-
-      return {
-        debugCell: Effect.fn("DebugAdapter.debugCell")(
-          function* (cell: MarimoNotebookCell) {
-            if (!debugpyLibsPath) {
-              yield* showErrorAndPromptLogs(
-                "Cannot debug: ms-python.debugpy extension is not installed.",
-              );
-              return;
-            }
-
-            const cellId = cell.id;
-            if (Option.isNone(cellId)) {
-              yield* code.window.showWarningMessage(
-                "No notebook kernel is running. Run a cell first to start the kernel.",
-              );
-              return;
-            }
-
-            const notebook = cell.notebook;
-            const notebookUri = notebook.id;
-
-            // Stop any existing debug session for this notebook
-            const existingSessionId = HashMap.get(
-              yield* Ref.get(activeSessions),
-              notebookUri,
-            );
-            if (Option.isSome(existingSessionId)) {
-              yield* Effect.logInfo("Stopping existing debug session");
-              yield* code.debug.stopDebugging(existingSessionId.value);
-            }
-            const cellIndex = cell.index;
-            const allCells = notebook.getCells();
-
-            // Activate debugpy (idempotent — returns existing port if running).
-            yield* Effect.logInfo("Activating debugpy in kernel");
-            const state = yield* activateDebugpy(notebookUri, debugpyLibsPath);
-            yield* Effect.logInfo("debugpy ready").pipe(
-              Effect.annotateLogs({
-                port: state.port,
-                tmpdir: state.tmpdir,
-              }),
-            );
-
-            // Build mappings for ALL cells so stepping across cells works.
-            // Each cell URI maps to its temp file path on disk.
-            const cellMappings: Record<string, string> = {};
-            yield* Effect.try(() => {
-              NodeFs.mkdirSync(state.tmpdir, { recursive: true });
-              for (const c of allCells) {
-                const id = c.id;
-                if (Option.isNone(id)) continue;
-                const filePath = NodePath.join(
-                  state.tmpdir,
-                  `__marimo__cell_${id.value}_.py`,
-                );
-                cellMappings[c.document.uri.toString()] = filePath;
-                NodeFs.writeFileSync(filePath, c.document.getText(), "utf-8");
-              }
-            }).pipe(
-              Effect.tapError((error) =>
-                Effect.logError("Failed to write cell files to disk").pipe(
-                  Effect.annotateLogs({
-                    error: String(error),
-                    tmpdir: state.tmpdir,
-                  }),
-                ),
-              ),
-            );
-
-            yield* code.debug.startDebugging(undefined, {
-              type: DEBUG_TYPE,
-              request: "attach",
-              name: "Debug Cell",
-              justMyCode: false,
-              marimo: {
-                notebookUri,
-                port: state.port,
-                cellIndex,
-                cellMappings,
-              },
-            });
+        yield* code.debug.startDebugging(undefined, {
+          type: DEBUG_TYPE,
+          request: "attach",
+          name: "Debug Cell",
+          justMyCode: false,
+          marimo: {
+            notebookUri,
+            port: state.port,
+            cellIndex,
+            cellMappings,
           },
-          Effect.catchTags({
-            NoActiveKernelError: () =>
-              code.window.showWarningMessage(
-                "No active kernel for this notebook — run a cell to start one before debugging.",
-              ),
-            UnsavedNotebookError: () =>
-              code.window.showWarningMessage(
-                "Save the notebook before debugging — its sandbox kernel needs a file on disk.",
-              ),
-          }),
-        ),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([NotebookSerializer.layer, OutputChannel.layer]),
-  );
-}
+        });
+      },
+      Effect.catchTags({
+        NoActiveKernelError: () =>
+          code.window.showWarningMessage(
+            "No active kernel for this notebook — run a cell to start one before debugging.",
+          ),
+        UnsavedNotebookError: () =>
+          code.window.showWarningMessage(
+            "Save the notebook before debugging — its sandbox kernel needs a file on disk.",
+          ),
+      }),
+      Effect.asVoid,
+    );
+
+    return Service.of({ debugCell });
+  }),
+);
 
 /**
  * Activate debugpy in the kernel by running a scratchpad snippet
@@ -282,7 +312,7 @@ const activateDebugpy = Effect.fn("DebugAdapter.activateDebugpy")(function* (
   notebookUri: NotebookId,
   debugpyLibsPath: string,
 ) {
-  const notebooks = yield* NotebookRuntime;
+  const notebooks = yield* NotebookRuntime.Service;
   const script = activationScript(debugpyLibsPath);
   const notebook = yield* notebooks.forNotebook(notebookUri);
   const ops = notebook.executeScratchpad(script);

@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
-import type { VsCode } from "../platform/VsCode.ts";
+import type * as VsCode from "../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
 
 /**
@@ -23,7 +23,7 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
  */
 export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
   bytes: Uint8Array,
-  code: VsCode["Service"],
+  code: VsCode.Interface,
 ) {
   const active = yield* code.window.getActiveNotebookEditor;
   const activeMarimo = active.pipe(
@@ -58,7 +58,7 @@ export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
 const matchesOnDisk = Effect.fn(function* (
   bytes: Uint8Array,
   doc: vscode.NotebookDocument,
-  code: VsCode["Service"],
+  code: VsCode.Interface,
 ) {
   const disk = yield* code.workspace.fs.readFile(doc.uri).pipe(Effect.option);
   if (Option.isNone(disk)) return false;

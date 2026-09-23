@@ -1,11 +1,11 @@
 import { Effect, Layer, Logger } from "effect";
 
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 
 /**
  * Test implementation of Telemetry that does nothing
  */
-export const TestTelemetryLive = Layer.succeed(Telemetry, {
+export const TestTelemetryLive = Layer.succeed(Telemetry.Service, {
   tySetup: () => Effect.void,
   commandExecuted: () => Effect.void,
   notebookCreated: Effect.void,

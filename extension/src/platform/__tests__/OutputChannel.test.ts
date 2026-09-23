@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import { OutputChannel } from "../OutputChannel.ts";
+import * as OutputChannel from "../OutputChannel.ts";
 
 const OutputChannelLive = Layer.empty.pipe(
   Layer.provideMerge(OutputChannel.layer),
@@ -13,7 +13,7 @@ it.layer(OutputChannelLive)("OutputChannel", (it) => {
   it.effect(
     "should build",
     Effect.fn(function* () {
-      const api = yield* OutputChannel;
+      const api = yield* OutputChannel.Service;
       expect(api).toBeDefined();
     }),
   );

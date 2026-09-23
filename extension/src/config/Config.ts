@@ -2,7 +2,7 @@ import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import type * as vscode from "vscode";
 
 import { DEFAULT_NOTEBOOK_FILE_ROOT } from "../kernel/NotebookFileRoot.ts";
-import { VsCode } from "../platform/VsCode.ts";
+import * as VsCode from "../platform/VsCode.ts";
 
 const MarimoLspServerSetting = Schema.Literals(["wasm", "python", "custom"]);
 const MarimoLspCommand = Schema.NonEmptyArray(Schema.String).check(
@@ -84,7 +84,7 @@ export const resolveMarimoLspServer = Effect.fn(
   }
 });
 
-interface ConfigService {
+export interface Interface {
   readonly uv: {
     readonly path: Effect.Effect<Option.Option<string>>;
     readonly enabled: Effect.Effect<boolean>;
@@ -110,15 +110,25 @@ interface ConfigService {
 /**
  * Provides access to the extension configuration settings.
  */
-export class Config extends Context.Service<Config>()("Config", {
-  make: Effect.gen(function* () {
-    const code = yield* Effect.serviceOption(VsCode);
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/Config",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* Effect.serviceOption(VsCode.Service);
 
     if (Option.isNone(code)) {
       yield* Effect.logWarning(
         "VsCode API is not available. Using default configuration values.",
       );
-      const defaults: ConfigService = {
+      const notebookFileRoot = Effect.fn("Config.notebookFileRoot")(
+        function* () {
+          return yield* Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
+        },
+      );
+      return Service.of({
         uv: {
           path: Effect.succeed(Option.none<string>()),
           enabled: Effect.succeed(false),
@@ -132,15 +142,24 @@ export class Config extends Context.Service<Config>()("Config", {
         lsp: {
           server: Effect.succeed(MarimoLspServer.Wasm()),
         },
-        notebookFileRoot() {
-          return Effect.succeed(DEFAULT_NOTEBOOK_FILE_ROOT);
-        },
+        notebookFileRoot,
         getManagedLanguageFeaturesEnabled: Effect.succeed(false),
-      };
-      return defaults;
+      });
     }
 
-    const configured: ConfigService = {
+    const notebookFileRoot = Effect.fn("Config.notebookFileRoot")(function* (
+      scope?: vscode.ConfigurationScope,
+    ) {
+      const config = yield* code.value.workspace.getConfiguration(
+        "marimo",
+        scope,
+      );
+      return (
+        config.get<string>("notebookFileRoot") ?? DEFAULT_NOTEBOOK_FILE_ROOT
+      );
+    });
+
+    return Service.of({
       uv: {
         get path() {
           return Effect.map(
@@ -192,14 +211,7 @@ export class Config extends Context.Service<Config>()("Config", {
           });
         },
       },
-      notebookFileRoot(scope?: vscode.ConfigurationScope) {
-        return Effect.map(
-          code.value.workspace.getConfiguration("marimo", scope),
-          (config) =>
-            config.get<string>("notebookFileRoot") ??
-            DEFAULT_NOTEBOOK_FILE_ROOT,
-        );
-      },
+      notebookFileRoot,
       // This is a getter and not a plain property. getConfiguration makes a
       // snapshot of the config. Read it again at each access to see a change.
       get getManagedLanguageFeaturesEnabled() {
@@ -208,9 +220,6 @@ export class Config extends Context.Service<Config>()("Config", {
           (config) => !config.get("disableManagedLanguageFeatures", false),
         );
       },
-    };
-    return configured;
+    });
   }),
-}) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+);

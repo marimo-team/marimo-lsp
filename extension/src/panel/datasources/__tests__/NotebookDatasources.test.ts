@@ -27,10 +27,7 @@ import {
   notebookId,
   requestId,
 } from "../../../lib/__tests__/branded.ts";
-import {
-  type NotebookDocumentSession,
-  NotebookDocumentSessions,
-} from "../../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
 import type {
   DataSourceConnectionsNotification,
   DatabaseSchema,
@@ -38,7 +35,7 @@ import type {
   SqlSchemaListPreviewNotification,
   SqlTableListPreviewNotification,
 } from "../../../types.ts";
-import { NotebookDatasources } from "../NotebookDatasources.ts";
+import * as NotebookDatasources from "../NotebookDatasources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const KERNEL_SESSION_ID = kernelSessionId(
@@ -53,12 +50,12 @@ const SESSION = makeTestNotebookDocumentSession(
 const makeLayer = (
   send: (request: TestCommand) => Effect.Effect<unknown> = () =>
     Effect.succeed(null),
-  currentSession: () => NotebookDocumentSession = () => SESSION,
+  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
 ) =>
-  Layer.effect(NotebookDatasources, NotebookDatasources.make).pipe(
+  NotebookDatasources.layer.pipe(
     Layer.provide([
       makeTestMarimoClient({ send }),
-      Layer.succeed(NotebookDocumentSessions, {
+      Layer.succeed(NotebookDocumentSessions.Service, {
         current: (notebookUri) =>
           notebookUri === currentSession().notebookId
             ? Option.some(currentSession())
@@ -75,7 +72,7 @@ const makeLayer = (
   );
 
 const makeRecordingLayer = (
-  currentSession: () => NotebookDocumentSession = () => SESSION,
+  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
 ) => {
   const calls: TestCommand[] = [];
   const waiters = new Map<number, Deferred.Deferred<TestCommand>>();
@@ -154,7 +151,7 @@ const connections = (
 });
 
 const getDatabase = Effect.fn(function* () {
-  const service = yield* NotebookDatasources;
+  const service = yield* NotebookDatasources.Service;
   const state = yield* service.getConnections(NOTEBOOK_URI);
   assert(Option.isSome(state));
   const database = state.value.connections
@@ -166,7 +163,7 @@ const getDatabase = Effect.fn(function* () {
 
 it.effect("preserves recursive schemas and deferred discovery", () =>
   Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -210,7 +207,7 @@ it.effect("isolates datasource state by document session", () => {
   );
 
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       displaced,
       KERNEL_SESSION_ID,
@@ -259,7 +256,7 @@ it.effect(
     );
 
     return Effect.gen(function* () {
-      const service = yield* NotebookDatasources;
+      const service = yield* NotebookDatasources.Service;
       yield* service.updateConnections(
         SESSION,
         KERNEL_SESSION_ID,
@@ -298,7 +295,7 @@ it.effect(
 it.effect("merges child schemas at their parent path", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -340,7 +337,7 @@ it.effect("merges child schemas at their parent path", () => {
 it.effect("merges tables at a nested schema path", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -386,7 +383,7 @@ it.effect("merges tables at a nested schema path", () => {
 it.effect("does not resolve deferred state after an error", () => {
   const { layer, nextCall } = makeRecordingLayer();
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -425,7 +422,7 @@ it.effect("does not resolve deferred state after an error", () => {
 
 it.effect("ignores uncorrelated expansion responses", () =>
   Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -462,7 +459,7 @@ it.effect("deduplicates concurrent schema expansion requests", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -522,7 +519,7 @@ it.effect("interrupts an expansion send when its document session closes", () =>
     );
 
     yield* Effect.gen(function* () {
-      const service = yield* NotebookDatasources;
+      const service = yield* NotebookDatasources.Service;
       yield* service.updateConnections(
         session,
         KERNEL_SESSION_ID,
@@ -556,7 +553,7 @@ it.effect("releases resources owned by completed expansions", () => {
   const { layer, nextCall } = makeRecordingLayer(() => session);
 
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     const resources = yield* makeScopedResourceCounter();
     yield* service.updateConnections(
       session,
@@ -607,7 +604,7 @@ it.effect("retries nested table expansion after an error", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,
@@ -666,7 +663,7 @@ it.effect("shares one timeout deadline and retries after it expires", () => {
   const { calls, layer, nextCall } = makeRecordingLayer();
 
   return Effect.gen(function* () {
-    const service = yield* NotebookDatasources;
+    const service = yield* NotebookDatasources.Service;
     yield* service.updateConnections(
       SESSION,
       KERNEL_SESSION_ID,

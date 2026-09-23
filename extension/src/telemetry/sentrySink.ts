@@ -180,7 +180,7 @@ export function classifySentryError(
 function classifyMarimoCommandCause(
   error: Error,
 ): { readonly exceptionClass: string; readonly kind: string } | undefined {
-  if (error.name !== "MarimoCommandError") {
+  if (error.name !== "MarimoClient.CommandError") {
     return undefined;
   }
 

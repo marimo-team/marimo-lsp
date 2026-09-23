@@ -21,17 +21,17 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { Version } from "../lib/Version.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import { PythonEnvInvalidation } from "./PythonEnvInvalidation.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as PythonEnvInvalidation from "./PythonEnvInvalidation.ts";
 
 class InvalidExecutableError extends Data.TaggedError(
-  "InvalidExecutableError",
+  "EnvironmentValidator.InvalidExecutableError",
 )<{
   readonly env: py.Environment;
 }> {}
 
-class EnvironmentInspectionError extends Data.TaggedError(
-  "EnvironmentInspectionError",
+export class InspectionError extends Data.TaggedError(
+  "EnvironmentValidator.InspectionError",
 )<{
   readonly env: py.Environment;
   readonly cause?: PlatformError | Schema.SchemaError | InvalidExecutableError;
@@ -69,8 +69,8 @@ class EnvironmentKey implements Equal.Equal {
   }
 }
 
-class EnvironmentRequirementError extends Data.TaggedError(
-  "EnvironmentRequirementError",
+export class RequirementError extends Data.TaggedError(
+  "EnvironmentValidator.RequirementError",
 )<{
   readonly env: py.Environment;
   readonly diagnostics: ReadonlyArray<RequirementDiagnostic>;
@@ -94,26 +94,38 @@ class EnvironmentRequirementError extends Data.TaggedError(
  * warning, so a slow environment pays the wait once instead of on every
  * run.
  */
-export class EnvironmentValidator extends Context.Service<EnvironmentValidator>()(
-  "EnvironmentValidator",
-  {
-    make: Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const fs = yield* FileSystem.FileSystem;
-      const code = yield* VsCode;
-      const invalidation = yield* PythonEnvInvalidation;
+export interface Interface {
+  readonly validate: (
+    env: py.Environment,
+  ) => Effect.Effect<
+    ValidPythonEnvironment,
+    InspectionError | RequirementError
+  >;
+}
 
-      const EnvCheck = Schema.Array(
-        Schema.Struct({
-          name: Schema.String,
-          version: Schema.NullOr(Version.Schema),
-        }),
-      );
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/EnvironmentValidator",
+) {}
 
-      const inspect = Effect.fnUntraced(function* (env: py.Environment) {
-        const packages = yield* ChildProcess.make(env.path, [
-          "-c",
-          `\
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const fs = yield* FileSystem.FileSystem;
+    const code = yield* VsCode.Service;
+    const invalidation = yield* PythonEnvInvalidation.Service;
+
+    const EnvCheck = Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        version: Schema.NullOr(Version.Schema),
+      }),
+    );
+
+    const inspect = Effect.fnUntraced(function* (env: py.Environment) {
+      const packages = yield* ChildProcess.make(env.path, [
+        "-c",
+        `\
 import json, sys, io
 
 # Redirect stdout during imports so that noisy packages
@@ -133,141 +145,129 @@ except Exception:
 # Restore stdout and emit the result
 sys.stdout = _real_stdout
 print(json.dumps(packages), flush=True)`,
-        ]).pipe(
-          Effect.flatMap((handle) =>
-            Effect.all(
-              [
-                handle.exitCode,
-                collectString(handle.stdout),
-                collectString(handle.stderr),
-              ],
-              { concurrency: 3 },
-            ),
-          ),
-          Effect.scoped,
-          Effect.andThen(([exitCode, stdout, stderr]) => {
-            if (exitCode !== 0) {
-              return Effect.fail(
-                new EnvironmentInspectionError({ env, stdout, stderr }),
-              );
-            }
-            return Schema.decodeUnknownEffect(Schema.fromJsonString(EnvCheck))(
-              stdout,
-            ).pipe(
-              Effect.catch(
-                (cause) =>
-                  new EnvironmentInspectionError({
-                    env,
-                    cause,
-                    stdout,
-                    stderr,
-                  }),
-              ),
-            );
-          }),
-          Effect.catchTag(
-            "PlatformError",
-            Effect.fn(function* (error) {
-              const exists = yield* fs.exists(env.path);
-              return yield* exists
-                ? error
-                : new InvalidExecutableError({ env });
-            }),
-          ),
-          Effect.catch((cause) =>
-            cause._tag === "EnvironmentInspectionError"
-              ? cause
-              : new EnvironmentInspectionError({ env, cause }),
-          ),
-          Effect.timeoutOption(INSPECTION_TIMEOUT),
-          Effect.provideService(
-            ChildProcessSpawner.ChildProcessSpawner,
-            spawner,
-          ),
-        );
-
-        if (Option.isNone(packages)) {
-          yield* Effect.logWarning(
-            "Environment inspection timed out; running without verification",
-          ).pipe(Effect.annotateLogs({ executable: env.path }));
-          yield* Effect.forkDetach(
-            code.window.showWarningMessage(
-              `Could not verify marimo in ${env.path} (timed out); running anyway. ` +
-                `This can happen when the environment lives on a slow filesystem (e.g. a Windows drive mounted in WSL2).`,
-            ),
-          );
-          return new ValidPythonEnvironment({ inner: env });
-        }
-
-        const diagnostics: Array<RequirementDiagnostic> = [];
-
-        for (const pkg of packages.value) {
-          if (pkg.version == null) {
-            diagnostics.push({ kind: "missing", package: pkg.name });
-          } else if (
-            pkg.name === "marimo" &&
-            !Order.isGreaterThanOrEqualTo(Version.Order)(
-              pkg.version,
-              MINIMUM_MARIMO_KERNEL_VERSION,
-            )
-          ) {
-            diagnostics.push({
-              kind: "outdated",
-              package: "marimo",
-              currentVersion: pkg.version,
-              requiredVersion: MINIMUM_MARIMO_KERNEL_VERSION,
-            });
-          }
-        }
-
-        if (diagnostics.length > 0) {
-          return yield* new EnvironmentRequirementError({
-            env,
-            diagnostics,
-          });
-        }
-
-        return new ValidPythonEnvironment({ inner: env });
-      });
-
-      const cache = yield* Cache.make({
-        capacity: 32,
-        timeToLive: Duration.infinity,
-        lookup: (key: EnvironmentKey) => inspect(key.env),
-      });
-
-      yield* Effect.forkScoped(
-        invalidation.changes.pipe(
-          Stream.runForEach((reason) =>
-            Effect.logDebug("Invalidating environment validation cache").pipe(
-              Effect.annotateLogs({ reason }),
-              Effect.andThen(Cache.invalidateAll(cache)),
-            ),
+      ]).pipe(
+        Effect.flatMap((handle) =>
+          Effect.all(
+            [
+              handle.exitCode,
+              collectString(handle.stdout),
+              collectString(handle.stderr),
+            ],
+            { concurrency: 3 },
           ),
         ),
-      );
-
-      return {
-        validate: Effect.fn("EnvironmentValidator.validate")(function* (
-          env: py.Environment,
-        ) {
-          const key = new EnvironmentKey(env);
-          // Only reuse successes: drop failed entries so a just-fixed
-          // environment (e.g. marimo installed in a terminal) is re-checked
-          // on the next run. Concurrent lookups for the same key still
-          // dedupe while the inspection is in flight.
-          return yield* Cache.get(cache, key).pipe(
-            Effect.tapError(() => Cache.invalidate(cache, key)),
+        Effect.scoped,
+        Effect.andThen(([exitCode, stdout, stderr]) => {
+          if (exitCode !== 0) {
+            return Effect.fail(new InspectionError({ env, stdout, stderr }));
+          }
+          return Schema.decodeUnknownEffect(Schema.fromJsonString(EnvCheck))(
+            stdout,
+          ).pipe(
+            Effect.catch(
+              (cause) =>
+                new InspectionError({
+                  env,
+                  cause,
+                  stdout,
+                  stderr,
+                }),
+            ),
           );
         }),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([NodeServices.layer, PythonEnvInvalidation.layer]),
-  );
-}
+        Effect.catchTag(
+          "PlatformError",
+          Effect.fn(function* (error) {
+            const exists = yield* fs.exists(env.path);
+            return yield* exists ? error : new InvalidExecutableError({ env });
+          }),
+        ),
+        Effect.catch((cause) =>
+          cause._tag === "EnvironmentValidator.InspectionError"
+            ? cause
+            : new InspectionError({ env, cause }),
+        ),
+        Effect.timeoutOption(INSPECTION_TIMEOUT),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+
+      if (Option.isNone(packages)) {
+        yield* Effect.logWarning(
+          "Environment inspection timed out; running without verification",
+        ).pipe(Effect.annotateLogs({ executable: env.path }));
+        yield* Effect.forkDetach(
+          code.window.showWarningMessage(
+            `Could not verify marimo in ${env.path} (timed out); running anyway. ` +
+              `This can happen when the environment lives on a slow filesystem (e.g. a Windows drive mounted in WSL2).`,
+          ),
+        );
+        return new ValidPythonEnvironment({ inner: env });
+      }
+
+      const diagnostics: Array<RequirementDiagnostic> = [];
+
+      for (const pkg of packages.value) {
+        if (pkg.version == null) {
+          diagnostics.push({ kind: "missing", package: pkg.name });
+        } else if (
+          pkg.name === "marimo" &&
+          !Order.isGreaterThanOrEqualTo(Version.Order)(
+            pkg.version,
+            MINIMUM_MARIMO_KERNEL_VERSION,
+          )
+        ) {
+          diagnostics.push({
+            kind: "outdated",
+            package: "marimo",
+            currentVersion: pkg.version,
+            requiredVersion: MINIMUM_MARIMO_KERNEL_VERSION,
+          });
+        }
+      }
+
+      if (diagnostics.length > 0) {
+        return yield* new RequirementError({
+          env,
+          diagnostics,
+        });
+      }
+
+      return new ValidPythonEnvironment({ inner: env });
+    });
+
+    const cache = yield* Cache.make({
+      capacity: 32,
+      timeToLive: Duration.infinity,
+      lookup: (key: EnvironmentKey) => inspect(key.env),
+    });
+
+    yield* Effect.forkScoped(
+      invalidation.changes.pipe(
+        Stream.runForEach((reason) =>
+          Effect.logDebug("Invalidating environment validation cache").pipe(
+            Effect.annotateLogs({ reason }),
+            Effect.andThen(Cache.invalidateAll(cache)),
+          ),
+        ),
+      ),
+    );
+
+    const validate = Effect.fn("EnvironmentValidator.validate")(function* (
+      env: py.Environment,
+    ) {
+      const key = new EnvironmentKey(env);
+      // Only reuse successes: drop failed entries so a just-fixed
+      // environment (e.g. marimo installed in a terminal) is re-checked
+      // on the next run. Concurrent lookups for the same key still
+      // dedupe while the inspection is in flight.
+      return yield* Cache.get(cache, key).pipe(
+        Effect.tapError(() => Cache.invalidate(cache, key)),
+      );
+    });
+
+    return Service.of({ validate });
+  }),
+).pipe(Layer.provide([NodeServices.layer, PythonEnvInvalidation.layer]));
 
 /**
  * A validated `py.Environment`. Cached by interpreter path, so only expose

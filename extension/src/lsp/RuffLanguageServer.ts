@@ -10,7 +10,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { Config } from "../config/Config.ts";
+import * as Config from "../config/Config.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -19,10 +19,10 @@ import {
   userConfiguredPath,
 } from "../lib/binaryResolution.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
-import { NotebookVariables } from "../panel/variables/NotebookVariables.ts";
-import { OutputChannel } from "../platform/OutputChannel.ts";
-import { VsCode } from "../platform/VsCode.ts";
-import { Telemetry } from "../telemetry/Telemetry.ts";
+import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
+import * as OutputChannel from "../platform/OutputChannel.ts";
+import * as VsCode from "../platform/VsCode.ts";
+import * as Telemetry from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
 // Pin Ruff version for stability, matching ruff-vscode's approach.
@@ -30,10 +30,9 @@ import { connectMarimoNotebookLspClient } from "./connect.ts";
 const RUFF_SERVER = { name: "ruff", version: "0.16.0" } as const;
 const RUFF_EXTENSION_ID = "charliermarsh.ruff";
 
-export const RuffLanguageServerStatus =
-  Data.taggedEnum<RuffLanguageServerStatus>();
+export const Status = Data.taggedEnum<Status>();
 
-type RuffLanguageServerStatus = Data.TaggedEnum<{
+export type Status = Data.TaggedEnum<{
   Starting: {};
   Disabled: { readonly reason: string };
   NotFound: { readonly message: string };
@@ -54,144 +53,146 @@ type RuffLanguageServerStatus = Data.TaggedEnum<{
  * Uses NotebookLspClient (custom Effect-based LSP client) instead of
  * vscode-languageclient, giving us full control over notebook cell ordering.
  */
-export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
-  "RuffLanguageServer",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      const telemetry = yield* Effect.serviceOption(Telemetry);
+export interface Interface {
+  readonly getHealthStatus: Effect.Effect<Status>;
+}
 
-      const statusRef = yield* Ref.make<RuffLanguageServerStatus>(
-        RuffLanguageServerStatus.Starting(),
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/RuffLanguageServer",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
+    const telemetry = yield* Effect.serviceOption(Telemetry.Service);
+
+    const statusRef = yield* Ref.make<Status>(Status.Starting());
+
+    const disabledReasonOption = yield* getRuffDisabledReason();
+    if (Option.isSome(disabledReasonOption)) {
+      yield* Ref.set(
+        statusRef,
+        Status.Disabled({
+          reason: disabledReasonOption.value,
+        }),
       );
+    }
 
-      const disabledReasonOption = yield* getRuffDisabledReason();
-      if (Option.isSome(disabledReasonOption)) {
-        yield* Ref.set(
-          statusRef,
-          RuffLanguageServerStatus.Disabled({
-            reason: disabledReasonOption.value,
+    yield* Effect.forkScoped(
+      Effect.gen(function* () {
+        if (Option.isSome(disabledReasonOption)) {
+          return;
+        }
+
+        yield* Effect.logDebug("Starting language server").pipe(
+          Effect.annotateLogs({
+            server: RUFF_SERVER.name,
+            version: RUFF_SERVER.version,
           }),
         );
-      }
 
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          if (Option.isSome(disabledReasonOption)) {
-            return;
-          }
-
-          yield* Effect.logDebug("Starting language server").pipe(
+        const resolvedOption = yield* resolveRuffBinary();
+        if (Option.isNone(resolvedOption)) {
+          // Ruff is opt-in: linting isn't a baseline expectation, so a
+          // missing binary is recorded for diagnostics and left silent.
+          const message = [
+            `No ruff ${RUFF_SERVER.version} or newer binary was found.`,
+            "Install the official Ruff extension (charliermarsh.ruff) or set marimo.ruff.path, then reload VS Code.",
+          ].join("\n");
+          yield* Ref.set(statusRef, Status.NotFound({ message }));
+          yield* Effect.logInfo(message).pipe(
             Effect.annotateLogs({
               server: RUFF_SERVER.name,
               version: RUFF_SERVER.version,
             }),
           );
-
-          const resolvedOption = yield* resolveRuffBinary();
-          if (Option.isNone(resolvedOption)) {
-            // Ruff is opt-in: linting isn't a baseline expectation, so a
-            // missing binary is recorded for diagnostics and left silent.
-            const message = [
-              `No ruff ${RUFF_SERVER.version} or newer binary was found.`,
-              "Install the official Ruff extension (charliermarsh.ruff) or set marimo.ruff.path, then reload VS Code.",
-            ].join("\n");
-            yield* Ref.set(
-              statusRef,
-              RuffLanguageServerStatus.NotFound({ message }),
-            );
-            yield* Effect.logInfo(message).pipe(
-              Effect.annotateLogs({
-                server: RUFF_SERVER.name,
-                version: RUFF_SERVER.version,
-              }),
-            );
-            if (Option.isSome(telemetry)) {
-              yield* telemetry.value.binaryUnresolved("ruff");
-            }
-            return;
+          if (Option.isSome(telemetry)) {
+            yield* telemetry.value.binaryUnresolved("ruff");
           }
-          const resolved = resolvedOption.value;
+          return;
+        }
+        const resolved = resolvedOption.value;
 
-          // Build initializationOptions from ruff.* settings
-          const ruffConfig = yield* code.workspace.getConfiguration("ruff");
-          const workspaceFolders = yield* code.workspace.getWorkspaceFolders;
-          const settings = Option.getOrElse(workspaceFolders, () => []).map(
-            (folder) => getRuffSettings(ruffConfig, folder),
-          );
-          const globalSettings = getGlobalRuffSettings(ruffConfig);
+        // Build initializationOptions from ruff.* settings
+        const ruffConfig = yield* code.workspace.getConfiguration("ruff");
+        const workspaceFolders = yield* code.workspace.getWorkspaceFolders;
+        const settings = Option.getOrElse(workspaceFolders, () => []).map(
+          (folder) => getRuffSettings(ruffConfig, folder),
+        );
+        const globalSettings = getGlobalRuffSettings(ruffConfig);
 
-          const outputChannel = yield* code.window.createOutputChannel(
-            `marimo (${RUFF_SERVER.name})`,
-          );
-          const clientExit = yield* Effect.exit(
-            connectMarimoNotebookLspClient({
-              name: RUFF_SERVER.name,
-              command: resolved.path,
-              args: ["server"],
-              outputChannel,
-              initializationOptions: { settings, globalSettings },
-            }),
-          );
+        const outputChannel = yield* code.window.createOutputChannel(
+          `marimo (${RUFF_SERVER.name})`,
+        );
+        const clientExit = yield* Effect.exit(
+          connectMarimoNotebookLspClient({
+            name: RUFF_SERVER.name,
+            command: resolved.path,
+            args: ["server"],
+            outputChannel,
+            initializationOptions: { settings, globalSettings },
+          }),
+        );
 
-          if (!Exit.isSuccess(clientExit)) {
-            const cause = clientExit.cause;
-            const message = "Failed to start language server";
-            yield* Ref.set(
-              statusRef,
-              RuffLanguageServerStatus.Failed({ message, cause }),
-            );
-            yield* Effect.logError(message).pipe(
-              Effect.annotateLogs({
-                server: RUFF_SERVER.name,
-                version: RUFF_SERVER.version,
-                cause,
-              }),
-            );
-            yield* Effect.forkScoped(showErrorAndPromptLogs(message));
-            return;
-          }
-
-          const client = clientExit.value;
-          const serverVersion = client.serverInfo.version;
-
-          yield* Effect.logInfo("Language server started").pipe(
+        if (!Exit.isSuccess(clientExit)) {
+          const cause = clientExit.cause;
+          const message = "Failed to start language server";
+          yield* Ref.set(statusRef, Status.Failed({ message, cause }));
+          yield* Effect.logError(message).pipe(
             Effect.annotateLogs({
               server: RUFF_SERVER.name,
-              version: serverVersion,
+              version: RUFF_SERVER.version,
+              cause,
             }),
           );
+          yield* Effect.forkScoped(showErrorAndPromptLogs(message));
+          return;
+        }
 
-          if (Option.isSome(telemetry)) {
-            yield* telemetry.value.binaryResolved({
-              server: "ruff",
-              resolved,
-              version: serverVersion,
-            });
-          }
+        const client = clientExit.value;
+        const serverVersion = client.serverInfo.version;
 
-          yield* Ref.set(
-            statusRef,
-            RuffLanguageServerStatus.Running({
-              serverVersion,
-              binarySource: resolved,
-            }),
-          );
+        yield* Effect.logInfo("Language server started").pipe(
+          Effect.annotateLogs({
+            server: RUFF_SERVER.name,
+            version: serverVersion,
+          }),
+        );
 
-          // TODO: Restart on ruff.* config changes
-        }),
-      );
+        if (Option.isSome(telemetry)) {
+          yield* telemetry.value.binaryResolved({
+            server: "ruff",
+            resolved,
+            version: serverVersion,
+          });
+        }
 
-      return {
-        getHealthStatus: Ref.get(statusRef),
-      };
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide([Config.layer, OutputChannel.layer, NotebookVariables.layer]),
-  );
-}
+        yield* Ref.set(
+          statusRef,
+          Status.Running({
+            serverVersion,
+            binarySource: resolved,
+          }),
+        );
+
+        // TODO: Restart on ruff.* config changes
+      }),
+    );
+
+    return Service.of({
+      getHealthStatus: Ref.get(statusRef),
+    });
+  }),
+);
+
+export const defaultLayer = layer.pipe(
+  Layer.provide([
+    Config.layer,
+    OutputChannel.layer,
+    NotebookVariables.defaultLayer,
+  ]),
+);
 
 /**
  * Resolves the ruff binary using a 2-tier strategy:
@@ -203,8 +204,8 @@ export class RuffLanguageServer extends Context.Service<RuffLanguageServer>()(
  * startup.
  */
 const resolveRuffBinary = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const config = yield* Config;
+  const code = yield* VsCode.Service;
+  const config = yield* Config.Service;
 
   const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
 
@@ -318,8 +319,8 @@ function getGlobalRuffSettings(
  * Returns the reason why the Ruff language server is disabled, or None if enabled.
  */
 const getRuffDisabledReason = Effect.fn(function* () {
-  const code = yield* VsCode;
-  const config = yield* Config;
+  const code = yield* VsCode.Service;
+  const config = yield* Config.Service;
 
   const managedFeaturesEnabled =
     yield* config.getManagedLanguageFeaturesEnabled;

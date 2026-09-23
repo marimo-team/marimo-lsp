@@ -12,9 +12,9 @@ import {
   marimoConfigFixture,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
-import { NotebookDocumentSessions } from "../../notebook/NotebookDocumentSessions.ts";
-import { NotebookSessionResources } from "../../notebook/NotebookSessionResources.ts";
-import { ConfigContextManagerLive } from "../ConfigContextManager.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
+import * as ConfigContextManager from "../ConfigContextManager.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const NOTEBOOK_URI_2 = notebookId("file:///test/notebook-2.py");
@@ -27,7 +27,7 @@ const managerLayer = (
     Layer.provide(vscode.layer),
   );
   const resources = NotebookSessionResources.layer.pipe(Layer.provide(runtime));
-  return ConfigContextManagerLive.pipe(
+  return ConfigContextManager.layer.pipe(
     Layer.provide(resources),
     Layer.provide(documentSessions),
     Layer.provide(vscode.layer),

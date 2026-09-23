@@ -1,15 +1,21 @@
 import { Context, Effect, Layer } from "effect";
+import type * as vscode from "vscode";
 
-import { VsCode } from "./VsCode.ts";
+import * as VsCode from "./VsCode.ts";
 
-export class OutputChannel extends Context.Service<OutputChannel>()(
-  "OutputChannel",
-  {
-    make: Effect.gen(function* () {
-      const code = yield* VsCode;
-      return yield* code.window.createLogOutputChannel("marimo");
-    }),
-  },
-) {
-  static readonly layer = Layer.effect(this, this.make);
-}
+export interface Interface extends Pick<
+  vscode.LogOutputChannel,
+  "name" | "show" | "trace" | "debug" | "info" | "warn" | "error"
+> {}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/OutputChannel",
+) {}
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const code = yield* VsCode.Service;
+    return yield* code.window.createLogOutputChannel("marimo");
+  }),
+);
