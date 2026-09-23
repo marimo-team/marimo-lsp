@@ -10,18 +10,20 @@
  * edits never reached ty.
  */
 
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { toVsCodeGlobPattern } from "../connect.ts";
+
+const it = EffectTest.make(TestVsCode.layer);
 
 describe("toVsCodeGlobPattern", () => {
   it.effect("passes string globs through unchanged", () =>
     Effect.gen(function* () {
-      const test = yield* TestVsCode.make();
-      const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
+      const code = yield* VsCode.Service;
 
       const result = toVsCodeGlobPattern(code, "**/*.py");
 
@@ -33,8 +35,7 @@ describe("toVsCodeGlobPattern", () => {
     "converts a RelativePattern object into a vscode.RelativePattern",
     () =>
       Effect.gen(function* () {
-        const test = yield* TestVsCode.make();
-        const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
+        const code = yield* VsCode.Service;
 
         // The exact shape ty sends when relativePatternSupport is on:
         // a file:// baseUri pointing at a project root / search path,
@@ -56,8 +57,7 @@ describe("toVsCodeGlobPattern", () => {
 
   it.effect("rejects shapes it cannot interpret", () =>
     Effect.gen(function* () {
-      const test = yield* TestVsCode.make();
-      const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
+      const code = yield* VsCode.Service;
 
       // A workspace-folder baseUri (object, not string) — ty never emits
       // this, and we can't resolve it here, so it must be skipped rather
@@ -77,8 +77,7 @@ describe("toVsCodeGlobPattern", () => {
 
   it.effect("returns None when baseUri can't be parsed", () =>
     Effect.gen(function* () {
-      const test = yield* TestVsCode.make();
-      const code = yield* VsCode.Service.pipe(Effect.provide(test.layer));
+      const code = yield* VsCode.Service;
 
       // Uri.parse rejects a scheme-less baseUri by throwing; the converter
       // must swallow that and skip the watcher, not abort registration.

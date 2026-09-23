@@ -1,18 +1,16 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect } from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  createNotebookCell,
-  createNotebookUri,
-  createTestNotebookDocument,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
 
-const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+const effectIt = EffectTest.make(Constants.defaultLayer);
 
 // Helper to create a mock cell with proper MarimoNotebookCell wrapping
 function createMockCell(
@@ -21,8 +19,8 @@ function createMockCell(
   value: string,
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  const rawCell = createNotebookCell(
-    createTestNotebookDocument(uri),
+  const rawCell = TestVsCode.createNotebookCell(
+    TestVsCode.createTestNotebookDocument(uri),
     {
       kind: 2, // Code
       value,
@@ -35,7 +33,7 @@ function createMockCell(
 }
 
 describe("getCellExecutableCode", () => {
-  it.effect("should transform SQL cell with custom dataframe name", () =>
+  effectIt.effect("should transform SQL cell with custom dataframe name", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -61,26 +59,28 @@ describe("getCellExecutableCode", () => {
       expect(code).toContain("my_results = mo.sql(");
       // Should not use default _df
       expect(code).not.toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+    }),
   );
 
-  it.effect("should use default metadata when SQL cell has no metadata", () =>
-    Effect.gen(function* () {
-      const { LanguageId } = yield* Constants.Service;
+  effectIt.effect(
+    "should use default metadata when SQL cell has no metadata",
+    () =>
+      Effect.gen(function* () {
+        const { LanguageId } = yield* Constants.Service;
 
-      const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
-        marimoRuntime: { stableId: "test-cell-id" },
-        // No sourceProjections.sql
-      });
+        const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
+          marimoRuntime: { stableId: "test-cell-id" },
+          // No sourceProjections.sql
+        });
 
-      const code = getCellExecutableCode(cell, LanguageId);
+        const code = getCellExecutableCode(cell, LanguageId);
 
-      // Should use default _df when no metadata
-      expect(code).toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+        // Should use default _df when no metadata
+        expect(code).toContain("_df = mo.sql(");
+      }),
   );
 
-  it.effect("should pass through Python cells unchanged", () =>
+  effectIt.effect("should pass through Python cells unchanged", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -92,10 +92,10 @@ describe("getCellExecutableCode", () => {
       const code = getCellExecutableCode(cell, LanguageId);
 
       expect(code).toBe(pythonCode);
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+    }),
   );
 
-  it.effect("should handle SQL metadata with output=False", () =>
+  effectIt.effect("should handle SQL metadata with output=False", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -119,10 +119,10 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("result = mo.sql(");
       expect(code).toContain("output=False");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+    }),
   );
 
-  it.effect("should handle SQL metadata with custom engine", () =>
+  effectIt.effect("should handle SQL metadata with custom engine", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -146,6 +146,6 @@ describe("getCellExecutableCode", () => {
 
       expect(code).toContain("df = mo.sql(");
       expect(code).toContain("engine=postgres_conn");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+    }),
   );
 });
