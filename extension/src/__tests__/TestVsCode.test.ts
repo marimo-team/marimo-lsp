@@ -1,4 +1,4 @@
-import { assert, describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
@@ -20,7 +20,7 @@ const initializedIt = EffectTest.make(
 );
 
 // Tests for our VsCode test harness
-describe("TestVsCode", () => {
+Vitest.describe("TestVsCode", () => {
   it.effect(
     "defaults to None active editor",
     Effect.fn(function* () {
@@ -28,8 +28,10 @@ describe("TestVsCode", () => {
       const code = yield* VsCode.Service;
       const editor = yield* code.window.getActiveNotebookEditor;
 
-      assert.strictEqual(editor._tag, "None");
-      expect((yield* test.snapshot).activeNotebookUri).toEqual(Option.none());
+      Vitest.assert.strictEqual(editor._tag, "None");
+      Vitest.expect((yield* test.snapshot).activeNotebookUri).toEqual(
+        Option.none(),
+      );
     }),
   );
 
@@ -41,12 +43,77 @@ describe("TestVsCode", () => {
         .map((doc) => doc.uri.toString())
         .toSorted();
 
-      expect(documents).toMatchInlineSnapshot(`
+      Vitest.expect(documents).toMatchInlineSnapshot(`
         [
           "file:///test/bar_mo.py",
           "file:///test/foo_mo.py",
         ]
       `);
+    }),
+  );
+
+  it.effect(
+    "scripts and records quick-pick interactions",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+
+      yield* test.selectQuickPick("Second");
+      const single = yield* code.window.showQuickPickItems(
+        [
+          { label: "First", description: "one" },
+          { label: "Second", description: "two" },
+        ],
+        { title: "Choose one" },
+      );
+
+      yield* test.selectQuickPickMany(["HTML", "IPYNB"]);
+      const many = yield* code.window.showQuickPickItemsMany(
+        [{ label: "HTML" }, { label: "Markdown" }, { label: "IPYNB" }],
+        { title: "Choose formats" },
+      );
+
+      Vitest.expect(Option.getOrThrow(single).label).toBe("Second");
+      Vitest.expect(Option.getOrThrow(many).map((item) => item.label)).toEqual([
+        "HTML",
+        "IPYNB",
+      ]);
+      Vitest.expect((yield* test.snapshot).quickPicks).toEqual([
+        {
+          items: [
+            { label: "First", description: "one", detail: undefined },
+            { label: "Second", description: "two", detail: undefined },
+          ],
+          title: "Choose one",
+          canPickMany: false,
+        },
+        {
+          items: [
+            { label: "HTML", description: undefined, detail: undefined },
+            { label: "Markdown", description: undefined, detail: undefined },
+            { label: "IPYNB", description: undefined, detail: undefined },
+          ],
+          title: "Choose formats",
+          canPickMany: true,
+        },
+      ]);
+    }),
+  );
+
+  it.effect(
+    "records window messages",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+
+      yield* code.window.showInformationMessage("Saved");
+      yield* code.window.showWarningMessage("Missing notebook");
+      yield* code.window.showErrorMessage("Save failed");
+
+      const snapshot = yield* test.snapshot;
+      Vitest.expect(snapshot.informationMessages).toEqual(["Saved"]);
+      Vitest.expect(snapshot.warningMessages).toEqual(["Missing notebook"]);
+      Vitest.expect(snapshot.errorMessages).toEqual(["Save failed"]);
     }),
   );
 
@@ -62,7 +129,7 @@ describe("TestVsCode", () => {
       let disposals = 0;
       const changes = makeActiveNotebookEditorChanges({
         get activeNotebookEditor() {
-          expect(listener).toBeDefined();
+          Vitest.expect(listener).toBeDefined();
           return initial;
         },
         onDidChangeActiveNotebookEditor(callback) {
@@ -88,11 +155,11 @@ describe("TestVsCode", () => {
       const editors = Array.from(yield* Fiber.join(result)).map(
         Option.map((editor) => editor.notebook.uri.toString()),
       );
-      expect(editors).toEqual([
+      Vitest.expect(editors).toEqual([
         Option.some("file:///test/initial_mo.py"),
         Option.some("file:///test/next_mo.py"),
       ]);
-      expect(disposals).toBe(1);
+      Vitest.expect(disposals).toBe(1);
     }),
   );
 
@@ -108,10 +175,10 @@ describe("TestVsCode", () => {
       yield* vscode.openNotebook(editor.notebook);
       const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
       const opened = yield* Stream.runHead(lifecycle);
-      expect(Option.map(opened, (event) => event.type)).toEqual(
+      Vitest.expect(Option.map(opened, (event) => event.type)).toEqual(
         Option.some("opened"),
       );
-      expect(yield* code.workspace.getNotebookDocuments).toContain(
+      Vitest.expect(yield* code.workspace.getNotebookDocuments).toContain(
         editor.notebook,
       );
 
@@ -123,10 +190,10 @@ describe("TestVsCode", () => {
       );
       yield* vscode.closeNotebook(editor.notebook);
       const closed = yield* Fiber.join(closedFiber);
-      expect(Option.map(closed, (event) => event.document)).toEqual(
+      Vitest.expect(Option.map(closed, (event) => event.document)).toEqual(
         Option.some(editor.notebook),
       );
-      expect(yield* code.workspace.getNotebookDocuments).not.toContain(
+      Vitest.expect(yield* code.workspace.getNotebookDocuments).not.toContain(
         editor.notebook,
       );
     }),
@@ -169,9 +236,9 @@ describe("TestVsCode", () => {
       opened?.(editor.notebook);
       yield* Fiber.join(consumer);
 
-      expect(disposals).toBe(2);
-      expect(opened).toBeUndefined();
-      expect(closed).toBeUndefined();
+      Vitest.expect(disposals).toBe(2);
+      Vitest.expect(opened).toBeUndefined();
+      Vitest.expect(closed).toBeUndefined();
     }),
   );
 
@@ -186,8 +253,8 @@ describe("TestVsCode", () => {
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       const activeEditor = yield* code.window.getActiveNotebookEditor;
 
-      assert(activeEditor._tag === "Some");
-      expect(editor).toBe(activeEditor.value);
+      Vitest.assert(activeEditor._tag === "Some");
+      Vitest.expect(editor).toBe(activeEditor.value);
     }),
   );
 
@@ -234,7 +301,7 @@ describe("TestVsCode", () => {
         Option.map((notebookEditor) => notebookEditor.notebook.uri.toString()),
       );
 
-      expect(result.map(Option.getOrNull)).toMatchInlineSnapshot(`
+      Vitest.expect(result.map(Option.getOrNull)).toMatchInlineSnapshot(`
         [
           null,
           "file:///test/foo_mo1.py",

@@ -1560,6 +1560,24 @@ export interface RegisteredStatusBarProvider {
   ) => Effect.Effect<vscode.NotebookCellStatusBarItem[]>;
 }
 
+export interface QuickPickItem {
+  readonly label: string;
+  readonly description?: string;
+  readonly detail?: string;
+}
+
+export interface QuickPickRequest {
+  readonly items: ReadonlyArray<QuickPickItem>;
+  readonly title: string | undefined;
+  readonly canPickMany: boolean;
+}
+
+type QuickPickResponse = Data.TaggedEnum<{
+  Single: { readonly label: string };
+  Many: { readonly labels: ReadonlyArray<string> };
+}>;
+const QuickPickResponse = Data.taggedEnum<QuickPickResponse>();
+
 export interface Snapshot {
   readonly views: ReadonlyArray<string>;
   readonly commands: ReadonlyArray<string>;
@@ -1572,6 +1590,10 @@ export interface Snapshot {
   readonly openNotebookUris: ReadonlyArray<string>;
   readonly activeNotebookUri: Option.Option<string>;
   readonly visibleNotebookUris: ReadonlyArray<string>;
+  readonly quickPicks: ReadonlyArray<QuickPickRequest>;
+  readonly informationMessages: ReadonlyArray<string>;
+  readonly warningMessages: ReadonlyArray<string>;
+  readonly errorMessages: ReadonlyArray<string>;
 }
 
 export interface Interface {
@@ -1595,6 +1617,10 @@ export interface Interface {
   ) => Effect.Effect<void>;
   readonly setActiveTextEditor: (
     editor: Option.Option<vscode.TextEditor>,
+  ) => Effect.Effect<void>;
+  readonly selectQuickPick: (label: string) => Effect.Effect<void>;
+  readonly selectQuickPickMany: (
+    labels: ReadonlyArray<string>,
   ) => Effect.Effect<void>;
   readonly selectNotebookController: (
     controllerId: string,
@@ -1801,6 +1827,74 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const workspaceEdits = yield* Ref.make<ReadonlyArray<vscode.WorkspaceEdit>>(
       [],
     );
+    const quickPicks = yield* Ref.make<ReadonlyArray<QuickPickRequest>>([]);
+    const quickPickResponses = yield* Queue.unbounded<QuickPickResponse>();
+    const informationMessages = yield* Ref.make<ReadonlyArray<string>>([]);
+    const warningMessages = yield* Ref.make<ReadonlyArray<string>>([]);
+    const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
+
+    const recordQuickPick = (
+      items: ReadonlyArray<QuickPickItem>,
+      title: string | undefined,
+      canPickMany: boolean,
+    ) =>
+      Ref.update(quickPicks, (requests) => [
+        ...requests,
+        {
+          items: items.map((item) => ({
+            label: item.label,
+            description: item.description,
+            detail: item.detail,
+          })),
+          title,
+          canPickMany,
+        },
+      ]);
+
+    const takeQuickPickResponse = Queue.poll(quickPickResponses);
+
+    const selectQuickPickItem = <T extends QuickPickItem>(
+      items: ReadonlyArray<T>,
+      title: string | undefined,
+    ) =>
+      Effect.gen(function* () {
+        yield* recordQuickPick(items, title, false);
+        const response = yield* takeQuickPickResponse;
+        if (Option.isNone(response)) return Option.none<T>();
+        const value = response.value;
+        if (value._tag !== "Single") {
+          return yield* Effect.die(
+            "Expected a single-item quick-pick response",
+          );
+        }
+        const selected = items.find((item) => item.label === value.label);
+        if (selected === undefined) {
+          return yield* Effect.die(`Quick-pick item not found: ${value.label}`);
+        }
+        return Option.some(selected);
+      });
+
+    const selectQuickPickItems = <T extends QuickPickItem>(
+      items: ReadonlyArray<T>,
+      title: string | undefined,
+    ) =>
+      Effect.gen(function* () {
+        yield* recordQuickPick(items, title, true);
+        const response = yield* takeQuickPickResponse;
+        if (Option.isNone(response)) return Option.none<ReadonlyArray<T>>();
+        if (response.value._tag !== "Many") {
+          return yield* Effect.die("Expected a multi-item quick-pick response");
+        }
+        const selected: T[] = [];
+        for (const label of response.value.labels) {
+          const item = items.find((candidate) => candidate.label === label);
+          if (item === undefined) {
+            return yield* Effect.die(`Quick-pick item not found: ${label}`);
+          }
+          selected.push(item);
+        }
+        return Option.some(selected);
+      });
 
     const context = yield* Effect.context();
 
@@ -1817,21 +1911,37 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
           options.window?.showInputBox ?? (() => Effect.succeed(Option.none())),
         showInformationMessage:
           options.window?.showInformationMessage ??
-          (() => Effect.succeed(Option.none())),
+          ((message) =>
+            Ref.update(informationMessages, (messages) => [
+              ...messages,
+              message,
+            ]).pipe(Effect.as(Option.none()))),
         showWarningMessage:
           options.window?.showWarningMessage ??
-          (() => Effect.succeed(Option.none())),
+          ((message) =>
+            Ref.update(warningMessages, (messages) => [
+              ...messages,
+              message,
+            ]).pipe(Effect.as(Option.none()))),
         showErrorMessage:
           options.window?.showErrorMessage ??
-          (() => Effect.succeed(Option.none())),
+          ((message) =>
+            Ref.update(errorMessages, (messages) => [
+              ...messages,
+              message,
+            ]).pipe(Effect.as(Option.none()))),
         showQuickPick:
           options.window?.showQuickPick ??
-          (() => Effect.succeed(Option.none())),
-        showQuickPickItems() {
-          return Effect.succeed(Option.none());
+          ((items, options) =>
+            selectQuickPickItem(
+              items.map((label) => ({ label })),
+              options?.title,
+            ).pipe(Effect.map(Option.map((item) => item.label)))),
+        showQuickPickItems(items, options) {
+          return selectQuickPickItem(items, options?.title);
         },
-        showQuickPickItemsMany() {
-          return Effect.succeed(Option.none());
+        showQuickPickItemsMany(items, options) {
+          return selectQuickPickItems(items, options?.title);
         },
         createOutputChannel(name) {
           return Effect.succeed({
@@ -2557,6 +2667,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       const currentAffinityUpdates = yield* Ref.get(affinityUpdates);
       const currentOpenedExternalUris = yield* Ref.get(openedExternalUris);
       const currentWorkspaceEdits = yield* Ref.get(workspaceEdits);
+      const currentQuickPicks = yield* Ref.get(quickPicks);
+      const currentInformationMessages = yield* Ref.get(informationMessages);
+      const currentWarningMessages = yield* Ref.get(warningMessages);
+      const currentErrorMessages = yield* Ref.get(errorMessages);
       const currentDocuments = yield* Ref.get(notebookDocuments);
       const currentActiveEditor =
         yield* SubscriptionRef.get(activeNotebookEditor);
@@ -2591,6 +2705,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         visibleNotebookUris: currentVisibleEditors
           .map((editor) => editor.notebook.uri.toString())
           .toSorted(),
+        quickPicks: currentQuickPicks.map((request) => ({
+          ...request,
+          items: request.items.map((item) => ({ ...item })),
+        })),
+        informationMessages: [...currentInformationMessages],
+        warningMessages: [...currentWarningMessages],
+        errorMessages: [...currentErrorMessages],
       } satisfies Snapshot;
     });
 
@@ -2611,6 +2732,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       notebookChange,
       setActiveNotebookEditor,
       setActiveTextEditor,
+      selectQuickPick: (label) =>
+        Queue.offer(quickPickResponses, QuickPickResponse.Single({ label })),
+      selectQuickPickMany: (labels) =>
+        Queue.offer(
+          quickPickResponses,
+          QuickPickResponse.Many({ labels: [...labels] }),
+        ),
       selectNotebookController,
       rendererMessaging,
     });
