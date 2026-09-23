@@ -70,6 +70,14 @@ codegen-check:
 # setup --------------------------------------------------------------
 
 [group('setup')]
+setup: setup-marimo
+    pnpm -C extension install --frozen-lockfile
+
+[group('setup')]
+setup-marimo:
+    uv run --no-project python -m scripts.marimo_source
+
+[group('setup')]
 download-tutorials:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -81,4 +89,3 @@ download-tutorials:
         curl -fsSL "$BASE_URL/$tutorial" -o "extension/tutorials/$tutorial"
     done
     echo "All tutorials downloaded successfully!"
-

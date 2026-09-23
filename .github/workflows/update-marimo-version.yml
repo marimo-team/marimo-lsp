@@ -47,6 +47,7 @@ jobs:
 
             Updates:
             - `pyproject.toml` — exact pin of the `marimo-base` dependency
+              and matching marimo source tag
             - `uv.lock` — refreshed by the marimo version-policy module
 
             Note: `[tool.marimo-lsp] minimum-kernel-version` is **not** changed by this workflow. Bump it manually when intentionally dropping support for an older marimo release.

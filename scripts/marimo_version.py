@@ -26,6 +26,7 @@ BASE_PACKAGE = "marimo-base"
 FULL_PACKAGE = "marimo"
 MARIMO_REPOSITORY = "marimo-team/marimo"
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+SOURCE_PATTERN = re.compile(r"(?m)^marimo-source\s*=\s*\{[^}\n]*\}\s*$")
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
 
 
@@ -55,16 +56,25 @@ class Version:
 
 
 @dataclass(frozen=True)
+class Source:
+    """The Git reference used for Marimo's frontend source."""
+
+    kind: str
+    value: str
+
+
+@dataclass(frozen=True)
 class VersionPolicy:
     """The repository's current marimo version policy."""
 
     bundled_marimo: Version
     kernel_compatibility_floor: Version
+    source: Source
 
     @property
     def source_ref(self) -> str:
-        """Return the marimo source tag matching the bundled release."""
-        return str(self.bundled_marimo)
+        """Return the configured Marimo Git reference."""
+        return self.source.value
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -100,6 +110,30 @@ def _kernel_floor(pyproject: dict[str, Any]) -> Version:
     return Version.parse(value)
 
 
+def _source(pyproject: dict[str, Any]) -> Source:
+    try:
+        value = pyproject["tool"]["marimo-lsp"]["marimo-source"]
+    except (KeyError, TypeError) as error:
+        msg = "Missing [tool.marimo-lsp].marimo-source"
+        raise VersionPolicyError(msg) from error
+    if not isinstance(value, dict):
+        msg = "[tool.marimo-lsp].marimo-source must be an inline table"
+        raise VersionPolicyError(msg)
+    references = [(kind, value.get(kind)) for kind in ("tag", "rev") if kind in value]
+    if len(references) != 1:
+        msg = "marimo-source must contain exactly one of tag or rev"
+        raise VersionPolicyError(msg)
+    kind, reference = references[0]
+    if not isinstance(reference, str) or not reference:
+        msg = f"marimo-source {kind} must be a non-empty string"
+        raise VersionPolicyError(msg)
+    if set(value) != {kind}:
+        unsupported = sorted(str(key) for key in value if key != kind)
+        msg = f"marimo-source contains unsupported keys: {unsupported}"
+        raise VersionPolicyError(msg)
+    return Source(kind=kind, value=reference)
+
+
 def _locked_version(lockfile: dict[str, Any]) -> Version:
     packages = lockfile.get("package", [])
     matches = [package for package in packages if package.get("name") == BASE_PACKAGE]
@@ -118,6 +152,7 @@ def check(root: Path = ROOT) -> VersionPolicy:
     pyproject = _load_toml(root / PYPROJECT)
     _, bundled = _bundled_requirement(pyproject)
     floor = _kernel_floor(pyproject)
+    source = _source(pyproject)
     locked = _locked_version(_load_toml(root / LOCKFILE))
 
     problems: list[str] = []
@@ -127,11 +162,16 @@ def check(root: Path = ROOT) -> VersionPolicy:
         problems.append(
             f"Kernel compatibility floor {floor} exceeds Bundled marimo {bundled}"
         )
+    if source.kind == "tag" and source.value != str(bundled):
+        problems.append(
+            f"Marimo source tag {source.value} does not match Bundled marimo {bundled}"
+        )
     if problems:
         raise VersionPolicyError("; ".join(problems))
     return VersionPolicy(
         bundled_marimo=bundled,
         kernel_compatibility_floor=floor,
+        source=source,
     )
 
 
@@ -214,6 +254,28 @@ def _refresh_lock(root: Path) -> None:
     )
 
 
+def _replace_source(pyproject: str, replacement: str) -> str:
+    header = "[tool.marimo-lsp]"
+    start = pyproject.find(header)
+    if start < 0:
+        msg = "Could not find [tool.marimo-lsp]"
+        raise VersionPolicyError(msg)
+    section_start = start + len(header)
+    next_section = re.search(r"(?m)^\[", pyproject[section_start:])
+    section_end = (
+        len(pyproject) if next_section is None else section_start + next_section.start()
+    )
+    section, replacements = SOURCE_PATTERN.subn(
+        replacement,
+        pyproject[section_start:section_end],
+        count=1,
+    )
+    if replacements != 1:
+        msg = "Could not update [tool.marimo-lsp].marimo-source"
+        raise VersionPolicyError(msg)
+    return pyproject[:section_start] + section + pyproject[section_end:]
+
+
 def update(target: Version | None = None, root: Path = ROOT) -> VersionPolicy:
     """Update the Bundled marimo to an eligible release."""
     current = check(root)
@@ -230,6 +292,8 @@ def update(target: Version | None = None, root: Path = ROOT) -> VersionPolicy:
     requirement, _ = _bundled_requirement(tomllib.loads(pyproject_before))
     replacement = f"{BASE_PACKAGE}=={requested}"
     pyproject_after = pyproject_before.replace(requirement, replacement, 1)
+    source_replacement = f'marimo-source = {{ tag = "{requested}" }}'
+    pyproject_after = _replace_source(pyproject_after, source_replacement)
     pyproject_path.write_text(pyproject_after, encoding="utf-8")
     try:
         _refresh_lock(root)

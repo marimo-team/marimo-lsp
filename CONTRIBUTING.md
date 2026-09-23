@@ -13,36 +13,10 @@ Repository development requires [uv](https://docs.astral.sh/uv/),
 
 ```sh
 cd marimo-lsp
+just setup
 code .
 # Press `F5` in VS Code (or "Run and Debug" > "Run Extension" in the UI).
 ```
-
-> [!NOTE]
-> The extension builds against the marimo release pinned by the exact
-> `marimo-base` dependency in `pyproject.toml`. Both repositories must be
-> cloned side-by-side:
->
-> ```
-> parent-folder/
-> ├── marimo/          # Main marimo codebase
-> └── marimo-lsp/      # This project
-> ```
->
-> For local development, checkout the matching version in the `marimo` directory:
->
-> ```sh
-> cd ../marimo
-> git checkout $(cd ../marimo-lsp && uv run --no-project python -m scripts.marimo_version show)
-> pnpm install --frozen-lockfile
-> pnpm exec turbo run build --filter='./packages/*'
-> ```
->
-> Repeat the install and package build after switching marimo versions.
->
-> CI derives the same source tag from the exact dependency. To update the Bundled
-> marimo, run `uv run --no-project python -m scripts.marimo_version update`, or pass
-> an exact release as the final argument. You may check out a different sibling ref
-> temporarily when developing against unreleased marimo changes.
 
 F5 sets `MARIMO_REPLAY_TY_PROMPT=1` to replay the missing-ty warning without
 saving dismissals. Reload to repeat; remove the variable from

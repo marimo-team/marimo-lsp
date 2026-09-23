@@ -24,8 +24,8 @@ documentation inventories of filenames; this codebase changes frequently.
 - Prefer targeted checks while iterating, then run the relevant `just` lint and
   test recipes before finishing.
 
-The extension links packages from a sibling `marimo` checkout. Follow
-`CONTRIBUTING.md` when setting up or updating that checkout.
+The extension links packages from the pinned checkout under `.cache/marimo`.
+Follow `CONTRIBUTING.md` when preparing or updating that checkout.
 
 ## Learning more about Effect
 

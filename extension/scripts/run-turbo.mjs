@@ -3,7 +3,7 @@
  * Run Turbo with hashes for build inputs that live outside extension/.
  *
  * extension/ is the pnpm/Turbo root, while the Python package and the linked
- * marimo frontend checkout are its siblings. Turbo intentionally cannot glob
+ * repository-owned marimo checkout are outside it. Turbo cannot glob
  * outside its root, so pass deterministic digests as task env inputs.
  */
 import * as NodeChildProcess from "node:child_process";
@@ -16,7 +16,7 @@ const extensionDir = NodePath.dirname(
   NodeUrl.fileURLToPath(new URL("../package.json", import.meta.url)),
 );
 const repositoryDir = NodePath.dirname(extensionDir);
-const marimoDir = NodePath.resolve(extensionDir, "..", "..", "marimo");
+const marimoDir = NodePath.resolve(repositoryDir, ".cache", "marimo");
 
 /** @param {NodeCrypto.Hash} hash @param {string} root @param {string} path */
 function hashFile(hash, root, path) {
@@ -97,6 +97,13 @@ const rendererRequested = tasks.includes("build:renderer");
 const frontendRequested = tasks.some((task) =>
   ["build:extension", "build:renderer"].includes(task),
 );
+if (frontendRequested) {
+  NodeChildProcess.execFileSync("pnpm", ["run", "check:marimo-source"], {
+    cwd: extensionDir,
+    shell: process.platform === "win32",
+    stdio: "inherit",
+  });
+}
 const [frontendSourceHash, wasmSourceHash] = await Promise.all([
   frontendRequested
     ? gitSourceHash(marimoDir, [

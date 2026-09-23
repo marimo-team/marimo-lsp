@@ -21,6 +21,9 @@ on:
 
 permissions: {}
 
+env:
+  MARIMO_SOURCE_PATH: marimo-lsp/.cache/marimo
+
 defaults:
   run:
     shell: bash
@@ -111,7 +114,7 @@ jobs:
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
-          path: marimo
+          path: ${{ env.MARIMO_SOURCE_PATH }}
 
       # Install Python for bundling the uv binary.
       #
@@ -201,12 +204,12 @@ jobs:
           node-version: 24
           cache: "pnpm"
           cache-dependency-path: |
-            marimo/pnpm-lock.yaml
+            ${{ env.MARIMO_SOURCE_PATH }}/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
 
       - name: Build marimo packages
         run: |
-          cd marimo
+          cd "${{ env.MARIMO_SOURCE_PATH }}"
           pnpm install --frozen-lockfile
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
@@ -265,7 +268,7 @@ jobs:
         with:
           repository: marimo-team/marimo
           ref: ${{ steps.marimo-version.outputs.ref }}
-          path: marimo
+          path: ${{ env.MARIMO_SOURCE_PATH }}
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
@@ -276,12 +279,12 @@ jobs:
           node-version: 24
           cache: "pnpm"
           cache-dependency-path: |
-            marimo/pnpm-lock.yaml
+            ${{ env.MARIMO_SOURCE_PATH }}/pnpm-lock.yaml
             marimo-lsp/extension/pnpm-lock.yaml
 
       - name: Build marimo packages
         run: |
-          cd marimo
+          cd "${{ env.MARIMO_SOURCE_PATH }}"
           pnpm install --frozen-lockfile
           pnpm --recursive --filter "./packages/*" codegen
           pnpm --recursive --filter "./packages/*" build
