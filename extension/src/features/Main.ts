@@ -133,7 +133,9 @@ export function makeExtension(
         Layer.provide(MainLive, layer),
         Layer.succeed(ExtensionContext.Service, context),
       ).pipe(
-        Layer.merge(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
+        Layer.provideMerge(
+          Layer.succeed(References.MinimumLogLevel, minimumLogLevel),
+        ),
       );
       const runtime = ManagedRuntime.make(appLayer);
       closeActive = runtime.dispose;
