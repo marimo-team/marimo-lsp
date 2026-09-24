@@ -16,6 +16,7 @@ describe("NotebookExecutor", () => {
       const started = yield* Latch.make();
       const release = yield* Latch.make();
       const completed = yield* Latch.make();
+      const secondCompleted = yield* Latch.make();
       const order = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebook = notebookId("notebook");
 
@@ -35,13 +36,15 @@ describe("NotebookExecutor", () => {
       yield* Fiber.interrupt(caller);
       yield* executor.post(
         notebook,
-        Ref.update(order, (events) => [...events, "second"]),
+        Ref.update(order, (events) => [...events, "second"]).pipe(
+          Effect.andThen(secondCompleted.open),
+        ),
       );
 
       assert.deepStrictEqual(yield* Ref.get(order), []);
       yield* release.open;
       yield* completed.await;
-      yield* Effect.yieldNow;
+      yield* secondCompleted.await;
       assert.deepStrictEqual(yield* Ref.get(order), ["first", "second"]);
     }),
   );
@@ -67,8 +70,7 @@ describe("NotebookExecutor", () => {
           notebook,
           Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
-        .pipe(Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(Effect.forkDetach({ startImmediately: true }));
 
       yield* Scope.close(scope, Exit.void);
       const [activeExit, bufferedExit] = yield* Effect.all([
@@ -113,8 +115,7 @@ describe("NotebookExecutor", () => {
           Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
         .pipe(Scope.provide(documentScope))
-        .pipe(Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(Effect.forkDetach({ startImmediately: true }));
 
       yield* Scope.close(documentScope, Exit.void);
       const [activeExit, bufferedExit] = yield* Effect.all([
@@ -157,8 +158,10 @@ describe("NotebookExecutor", () => {
           notebook,
           Ref.set(queuedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
-        .pipe(Scope.provide(documentScope), Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(
+          Scope.provide(documentScope),
+          Effect.forkDetach({ startImmediately: true }),
+        );
 
       yield* Scope.close(documentScope, Exit.void);
       const exit = yield* Fiber.await(queued);
