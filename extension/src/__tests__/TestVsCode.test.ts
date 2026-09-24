@@ -129,13 +129,12 @@ Vitest.describe("TestVsCode", () => {
       const received = yield* code.workspace.configurationChanges.pipe(
         Stream.take(1),
         Stream.runHead,
-        Effect.forkChild,
+        Effect.forkChild({ startImmediately: true }),
       );
       const event: vscode.ConfigurationChangeEvent = {
         affectsConfiguration: (section) => section === "marimo.telemetry",
       };
 
-      yield* Effect.yieldNow;
       yield* test.configurationChange(event);
 
       Vitest.expect(yield* Fiber.join(received)).toEqual(Option.some(event));
@@ -300,25 +299,23 @@ Vitest.describe("TestVsCode", () => {
 
       // `SubscriptionRef.changes` sends the current value at
       // subscription. Expect the first None and the five updates below.
+      const subscriptionReady = yield* Deferred.make<void>();
       const fiber = yield* code.window.activeNotebookEditorChanges.pipe(
+        Stream.tap(() => Deferred.succeed(subscriptionReady, undefined)),
         Stream.take(6),
         Stream.runCollect,
         Effect.forkChild,
       );
+      yield* Deferred.await(subscriptionReady);
 
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editors[0]));
 
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editors[1]));
 
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editors[2]));
 
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.none());
 
       const collected = yield* Fiber.join(fiber);
