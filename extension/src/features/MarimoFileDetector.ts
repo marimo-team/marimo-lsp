@@ -55,6 +55,7 @@ export const layer = Layer.effectDiscard(
       code.window.activeTextEditorChanges.pipe(
         Stream.runForEach(updateContext),
       ),
+      { startImmediately: true },
     );
   }).pipe(Effect.withSpan("MarimoFileDetector.layer")),
 );

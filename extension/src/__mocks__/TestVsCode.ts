@@ -2032,7 +2032,11 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
         ),
         visibleTextEditorsChanges: SubscriptionRef.changes(visibleTextEditors),
         getActiveTextEditor: SubscriptionRef.get(activeTextEditor),
-        activeTextEditorChanges: SubscriptionRef.changes(activeTextEditor),
+        // VS Code emits future active-editor changes; it does not replay the
+        // editor returned by `getActiveTextEditor` when a listener subscribes.
+        activeTextEditorChanges: SubscriptionRef.changes(activeTextEditor).pipe(
+          Stream.drop(1),
+        ),
         colorThemeChanges:
           options.window?.colorThemeChanges ?? Stream.make("light" as const),
         closeTextEditorTab: () => Effect.void,

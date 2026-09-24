@@ -140,7 +140,7 @@ if __name__ == "__main__":
     const before = (yield* vscode.snapshot).executions.length;
 
     yield* vscode.setActiveTextEditor(Option.some(editor));
-    yield* Effect.yieldNow;
+    yield* vscode.awaitExecutions((executions) => executions.length > before);
 
     Vitest.expect((yield* vscode.snapshot).executions.slice(before)).toEqual([
       {
@@ -237,7 +237,7 @@ my_app = marimo.App()
     const before = (yield* vscode.snapshot).executions.length;
 
     yield* vscode.setActiveTextEditor(Option.some(editor));
-    yield* Effect.yieldNow;
+    yield* vscode.awaitExecutions((executions) => executions.length > before);
 
     Vitest.expect((yield* vscode.snapshot).executions.slice(before)).toEqual([
       {
