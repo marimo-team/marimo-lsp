@@ -157,8 +157,10 @@ narrow adapters.
 - Name a yielded test service after its domain, such as `sessions`, `ty`, or
   `autoExport`. Keep names such as `vscode` and `python` for reusable test
   doubles, and reserve `fixture` for static test data.
-- When a file uses `EffectTest.make`, import `@effect/vitest` as `Vitest` and
-  name the bound runner `it`. Use `Vitest.it` for tests outside the bound layer.
+- Import `@effect/vitest` as the `Vitest` namespace and qualify its exports,
+  such as `Vitest.describe`, `Vitest.expect`, and `Vitest.it`. When a file uses
+  `EffectTest.make`, name the bound runner `it` and use `Vitest.it` for tests
+  outside the bound layer.
 - When one suite needs several configured layers, put each configuration in a
   nested `Vitest.describe` and name its locally scoped runner `it`. The nested
   suite describes where the configuration applies; each test still receives a
