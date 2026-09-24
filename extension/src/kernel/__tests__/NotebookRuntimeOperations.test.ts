@@ -873,12 +873,20 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
 
+        const refreshes = (commands: ReadonlyArray<TestCommand>) =>
+          commands.filter((command) => command.kind === "list-sessions").length;
+        const before = refreshes(yield* ctx.executions);
+        const refreshed = yield* ctx.executionChanges.pipe(
+          Stream.filter((commands) => refreshes(commands) > before),
+          Stream.runHead,
+          Effect.forkChild({ startImmediately: true }),
+        );
         yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
           sessionId: staleSessionId,
           notification: { op: "variables", variables: [] },
         });
-        yield* Effect.yieldNow;
+        yield* Fiber.join(refreshed);
         Vitest.expect(
           Option.isNone(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
@@ -971,17 +979,34 @@ Vitest.describe("NotebookRuntime state eviction", () => {
             ],
           },
         });
-        yield* Effect.yieldNow;
+
+        const marker = TestVsCode.makeNotebookEditor(
+          NodePath.join(process.cwd(), "analysis-marker_mo.py"),
+        );
+        const markerId = MarimoNotebookDocument.from(marker.notebook).id;
+        yield* ctx.open(marker);
+        yield* ctx.publishAnalysis({
+          notebookUri: markerId,
+          analysis: { op: "variables", variables: [] },
+        });
+        yield* variables.getVariables(markerId).pipe(
+          Effect.filterOrFail(
+            Option.isSome,
+            () => "analysis pipeline did not settle" as const,
+          ),
+          Effect.eventually,
+        );
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(false);
 
         // Reopening creates a distinct document session at the same URI.
-        const replacement = TestVsCode.createTestNotebookDocument(
-          ctx.editor.notebook.uri,
-          { notebookType: ctx.editor.notebook.notebookType },
+        const replacement = TestVsCode.createTestNotebookEditor(
+          TestVsCode.createTestNotebookDocument(ctx.editor.notebook.uri, {
+            notebookType: ctx.editor.notebook.notebookType,
+          }),
         );
-        yield* ctx.vscode.openNotebook(replacement);
+        yield* ctx.open(replacement);
         yield* Effect.gen(function* () {
           yield* ctx.publishAnalysis({
             notebookUri: ctx.notebookUri,
