@@ -1,7 +1,6 @@
 import * as Vitest from "@effect/vitest";
 import { Deferred, Effect, Fiber, Option, Scope, Stream } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   marimoConfigFixture,
@@ -223,8 +222,7 @@ Vitest.describe("NotebookConfiguration", () => {
           on_cell_change: "autorun",
           auto_reload: "autorun",
         },
-      }).pipe(Effect.forkChild);
-      yield* Effect.yieldNow;
+      }).pipe(Effect.forkChild({ startImmediately: true }));
       Vitest.expect(yield* requestCount("update-configuration")).toBe(1);
 
       yield* pause.release;
@@ -260,11 +258,7 @@ Vitest.describe("NotebookConfiguration", () => {
 
       yield* test.vscode.closeNotebook(document);
       yield* test.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
-      const replacement = TestVsCode.createTestNotebookDocument(
-        TestVsCode.Uri.parse(NOTEBOOK_URI),
-      );
-      yield* test.vscode.openNotebook(replacement);
-      yield* Effect.yieldNow;
+      yield* test.replaceDocument(NOTEBOOK_URI);
 
       Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
     }),
@@ -278,16 +272,11 @@ Vitest.describe("NotebookConfiguration", () => {
       Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
 
       yield* test.setConfig(NOTEBOOK_URI, LAZY_CONFIG);
-      const replacement = TestVsCode.createTestNotebookDocument(
-        TestVsCode.Uri.parse(NOTEBOOK_URI),
-      );
-      yield* test.vscode.openNotebook(replacement);
-      yield* Effect.yieldNow;
+      yield* test.replaceDocument(NOTEBOOK_URI);
       Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
 
       yield* test.setConfig(NOTEBOOK_URI, AUTORUN_CONFIG);
-      yield* test.vscode.closeNotebook(first);
-      yield* Effect.yieldNow;
+      yield* test.closeDocument(first);
       Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(LAZY_CONFIG);
     }),
   );
