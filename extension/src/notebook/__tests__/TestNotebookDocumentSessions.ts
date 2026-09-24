@@ -35,6 +35,10 @@ export interface Interface {
   readonly awaitActive: (
     sessionId: NotebookDocumentSessionId | null,
   ) => Effect.Effect<void>;
+  readonly awaitActiveDocument: (
+    document: vscode.NotebookDocument,
+  ) => Effect.Effect<NotebookDocumentSessions.Session>;
+  readonly awaitLifecycle: Effect.Effect<void>;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -58,6 +62,7 @@ export const layerWith = (options: Options) =>
       Effect.gen(function* () {
         const vscode = yield* TestVsCode.Service;
         const sessions = yield* NotebookDocumentSessions.Service;
+        let barrierId = 0;
         const active = yield* SubscriptionRef.make<
           ReadonlyArray<NotebookDocumentSessionId | null>
         >([]);
@@ -71,7 +76,7 @@ export const layerWith = (options: Options) =>
               }),
             ]),
           ),
-          Effect.forkScoped,
+          Effect.forkScoped({ startImmediately: true }),
         );
 
         const awaitActive = (sessionId: NotebookDocumentSessionId | null) =>
@@ -80,6 +85,28 @@ export const layerWith = (options: Options) =>
             Stream.runHead,
             Effect.asVoid,
           );
+
+        const awaitActiveDocument = (document: vscode.NotebookDocument) =>
+          sessions.active.pipe(
+            Stream.filter(
+              Option.exists((session) => session.document === document),
+            ),
+            Stream.runHead,
+            Effect.map((observed) =>
+              Option.getOrThrow(Option.flatten(observed)),
+            ),
+          );
+
+        const awaitLifecycle = Effect.gen(function* () {
+          const barrier = TestVsCode.createTestNotebookDocument(
+            `file:///test/lifecycle-barrier-${barrierId++}.py`,
+          );
+          yield* vscode.openNotebook(barrier);
+          yield* vscode.setActiveNotebookEditor(
+            Option.some(TestVsCode.createTestNotebookEditor(barrier)),
+          );
+          yield* awaitActiveDocument(barrier);
+        });
 
         return Service.of({
           first,
@@ -94,7 +121,7 @@ export const layerWith = (options: Options) =>
             .closeNotebook(first)
             .pipe(
               Effect.andThen(vscode.openNotebook(first)),
-              Effect.andThen(Effect.yieldNow),
+              Effect.andThen(awaitLifecycle),
             ),
           activateFirst: vscode.setActiveNotebookEditor(
             Option.some(TestVsCode.createTestNotebookEditor(first)),
@@ -103,6 +130,8 @@ export const layerWith = (options: Options) =>
             Option.some(TestVsCode.createTestNotebookEditor(replacement)),
           ),
           awaitActive,
+          awaitActiveDocument,
+          awaitLifecycle,
         });
       }),
     ).pipe(Layer.provide(environment));

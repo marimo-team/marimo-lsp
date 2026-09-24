@@ -40,7 +40,7 @@ it.effect(
     Vitest.expect(replacementSession.value).not.toBe(firstSession.value);
 
     yield* sessions.closeFirst;
-    yield* Effect.yieldNow;
+    yield* sessions.awaitLifecycle;
     Vitest.expect(
       Option.exists(
         yield* sessions.current,
@@ -66,7 +66,8 @@ initiallyClosedIt.effect(
     Vitest.expect(Option.isNone(yield* sessions.current)).toBe(true);
 
     yield* sessions.openReplacement;
-    yield* Effect.yieldNow;
+    yield* sessions.activateReplacement;
+    yield* sessions.awaitActiveDocument(sessions.replacement);
     Vitest.expect(
       Option.exists(
         yield* sessions.current,
@@ -127,15 +128,11 @@ it.effect(
     yield* sessions.awaitActive(firstSession.value.id);
 
     yield* sessions.openReplacement;
-    yield* Effect.yieldNow;
-    const replacementSession = yield* sessions.forDocument(
+    yield* sessions.activateReplacement;
+    const replacementSession = yield* sessions.awaitActiveDocument(
       sessions.replacement,
     );
-    Vitest.expect(Option.isSome(replacementSession)).toBe(true);
-    if (Option.isNone(replacementSession)) return;
-
-    yield* sessions.activateReplacement;
-    yield* sessions.awaitActive(replacementSession.value.id);
+    yield* sessions.awaitActive(replacementSession.id);
 
     yield* sessions.closeReplacement;
     yield* sessions.awaitActive(null);
