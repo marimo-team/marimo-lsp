@@ -162,18 +162,18 @@ rg -n --glob '*test.ts' \
 
 - [x] Record the runner, isolation, and partial-mock rules in
   `docs/effect-guide.md`.
-- [ ] Preserve every existing test case, test name, and behavioral assertion
+- [x] Preserve every existing test case, test name, and behavioral assertion
   during harness migration.
-- [ ] Use `it.effect` for deterministic Effect tests and `it.live` only for
+- [x] Use `it.effect` for deterministic Effect tests and `it.live` only for
   deliberate live clock, filesystem, process, watcher, or server behavior.
-- [ ] Use a suite-level `it.layer` only when sharing the layer's state and scope
+- [x] Use a suite-level `it.layer` only when sharing the layer's state and scope
   across that suite is safe and intentional.
-- [ ] Give stateful resources a fresh instance per test. Use a one-test
+- [x] Give stateful resources a fresh instance per test. Use a one-test
   `it.layer(Layer.fresh(...))` block or construct and provide the layer inside
   the test.
-- [ ] Compose replacement dependencies from open layers. Do not build a closed
+- [x] Compose replacement dependencies from open layers. Do not build a closed
   default layer and then attempt to override one of its internal services.
-- [ ] Keep special one-test dependency variants local instead of forcing every
+- [x] Keep special one-test dependency variants local instead of forcing every
   provider into a shared suite layer.
 - [ ] Prefer `Deferred`, queues, events, or observable state transitions over
   promises, sleeps, polling, and arbitrary timeouts.
@@ -316,7 +316,8 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] `kernel/__tests__/CellExecutions.test.ts`
 - [x] `kernel/__tests__/CellOutputProjection.test.ts`
 - [x] `kernel/__tests__/NotebookControllers.test.ts`
-- [x] `kernel/__tests__/NotebookRuntime.test.ts`
+- [x] `kernel/__tests__/NotebookRuntime.test.ts` — keeps its per-test scripted
+  transports local; each provision builds a fresh runtime graph.
 - [x] `kernel/__tests__/NotebookRuntimeOperations.test.ts`
 - [x] `kernel/__tests__/VsCodeCellDrive.test.ts`
 - [x] `kernel/__tests__/VsCodeNotebookOutputPresenter.test.ts`
@@ -389,8 +390,18 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] Migrate configuration, feature, and command suites.
 - [x] Migrate notebook, panel, and language-server suites.
 - [x] Migrate platform and library-boundary suites.
-- [ ] Re-run the inventory and review any remaining local `Effect.provide` calls
+- [x] Re-run the inventory and review any remaining local `Effect.provide` calls
   as intentional dependency variants.
+
+The remaining local provisions fall into three intentional groups:
+
+- assertion-local logger layers in logger, command, binary-resolution, and
+  language-client cleanup tests;
+- one-test behavior variants for configuration fallback, picker mutation,
+  detector initialization, command failure, session closure, and runtime
+  defects;
+- `NotebookRuntime.test.ts` transport scripts whose refs, latches, documents,
+  and server responses define the behavior of one test only.
 
 ### Validation
 
