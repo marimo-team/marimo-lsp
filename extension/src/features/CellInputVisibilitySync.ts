@@ -66,6 +66,11 @@ export function hiddenInputRanges(
 
 type HiddenCodeSnapshot = HashMap.HashMap<NotebookCellId, boolean>;
 
+interface NotebookSnapshot {
+  readonly document: vscode.NotebookDocument;
+  readonly hiddenCode: HiddenCodeSnapshot;
+}
+
 function snapshotHiddenCode(
   cells: readonly MarimoNotebookCell[],
 ): HiddenCodeSnapshot {
@@ -88,7 +93,7 @@ type Event = Data.TaggedEnum<{
     readonly notebook: MarimoNotebookDocument;
     readonly initialize: boolean;
   };
-  Close: { readonly notebookId: NotebookId };
+  Close: { readonly notebook: MarimoNotebookDocument };
 }>;
 const Event = Data.taggedEnum<Event>();
 
@@ -152,12 +157,20 @@ export const layer = Layer.effectDiscard(
     const code = yield* VsCode.Service;
 
     const snapshots = yield* Ref.make(
-      HashMap.empty<NotebookId, HiddenCodeSnapshot>(),
+      HashMap.empty<NotebookId, NotebookSnapshot>(),
     );
 
     const synchronize = Effect.fn("CellInputVisibilitySync.synchronize")(
       function* (notebook: MarimoNotebookDocument, initialize: boolean) {
-        const previous = HashMap.get(yield* Ref.get(snapshots), notebook.id);
+        const previous = HashMap.get(
+          yield* Ref.get(snapshots),
+          notebook.id,
+        ).pipe(
+          Option.filter(
+            (snapshot) => snapshot.document === notebook.rawNotebookDocument,
+          ),
+          Option.map((snapshot) => snapshot.hiddenCode),
+        );
         if (!initialize && Option.isNone(previous)) return;
 
         const cells = notebook.getCells();
@@ -185,7 +198,13 @@ export const layer = Layer.effectDiscard(
 
         yield* apply("notebook.cell.collapseCellInput", changes.collapse);
         yield* apply("notebook.cell.expandCellInput", changes.expand);
-        yield* Ref.update(snapshots, HashMap.set(notebook.id, next));
+        yield* Ref.update(
+          snapshots,
+          HashMap.set(notebook.id, {
+            document: notebook.rawNotebookDocument,
+            hiddenCode: next,
+          }),
+        );
       },
     );
 
@@ -249,7 +268,7 @@ export const layer = Layer.effectDiscard(
           MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
-      Stream.map((notebook): Event => Event.Close({ notebookId: notebook.id })),
+      Stream.map((notebook): Event => Event.Close({ notebook })),
     );
 
     // Each source has its own fiber that writes to one queue. A
@@ -260,6 +279,7 @@ export const layer = Layer.effectDiscard(
     for (const source of [activations, changes, closures]) {
       yield* Effect.forkScoped(
         source.pipe(Stream.runForEach((event) => Queue.offer(events, event))),
+        { startImmediately: true },
       );
     }
 
@@ -268,13 +288,20 @@ export const layer = Layer.effectDiscard(
       Stream.fromQueue(events).pipe(
         Stream.runForEach((event) =>
           Event.$match(event, {
-            Close: ({ notebookId }) =>
-              Ref.update(snapshots, HashMap.remove(notebookId)),
+            Close: ({ notebook }) =>
+              Ref.update(snapshots, (current) => {
+                const snapshot = HashMap.get(current, notebook.id);
+                return Option.isSome(snapshot) &&
+                  snapshot.value.document === notebook.rawNotebookDocument
+                  ? HashMap.remove(current, notebook.id)
+                  : current;
+              }),
             Synchronize: ({ notebook, initialize }) =>
               synchronizeSafely(notebook, initialize),
           }),
         ),
       ),
+      { startImmediately: true },
     );
   }).pipe(Effect.withSpan("CellInputVisibilitySync.layer")),
 );

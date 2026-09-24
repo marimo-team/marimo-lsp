@@ -92,18 +92,20 @@ interface CellState {
   readonly kind?: 1 | 2;
 }
 
+const cellData = ({ stableId, hideCode: hide_code, kind = 2 }: CellState) => ({
+  kind,
+  value: "",
+  languageId: kind === 1 ? "markdown" : "python",
+  metadata: MarimoNotebookCell.createMetadata({
+    marimo: { options: { hide_code } },
+    marimoRuntime: { stableId },
+  }),
+});
+
 const makeEditor = (cells: readonly CellState[]) =>
   TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
     data: {
-      cells: cells.map(({ stableId, hideCode: hide_code, kind = 2 }) => ({
-        kind,
-        value: "",
-        languageId: kind === 1 ? "markdown" : "python",
-        metadata: MarimoNotebookCell.createMetadata({
-          marimo: { options: { hide_code } },
-          marimoRuntime: { stableId },
-        }),
-      })),
+      cells: cells.map(cellData),
     },
   });
 
@@ -115,19 +117,19 @@ const states = (hideCode: ReadonlyArray<boolean>): CellState[] =>
 
 const changeNotebook = (
   vscode: TestVsCode.Interface,
-  before: readonly CellState[],
+  editor: ReturnType<typeof makeEditor>,
   after: readonly CellState[],
 ) => {
-  const previous = makeEditor(before);
-  const editor = makeEditor(after);
+  const removedCells = Array.from(editor.notebook.getCells());
+  TestVsCode.replaceTestNotebookCells(editor.notebook, after.map(cellData));
   return vscode.notebookChange({
     notebook: editor.notebook,
     metadata: undefined,
     cellChanges: [],
     contentChanges: [
       {
-        range: new TestVsCode.NotebookRange(0, before.length),
-        removedCells: Array.from(previous.notebook.getCells()),
+        range: new TestVsCode.NotebookRange(0, removedCells.length),
+        removedCells,
         addedCells: Array.from(editor.notebook.getCells()),
       },
     ],
@@ -251,7 +253,7 @@ Vitest.describe("CellInputVisibilitySync", () => {
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
-      yield* changeNotebook(vscode, states([false]), states([true]));
+      yield* changeNotebook(vscode, editor, states([true]));
       yield* Effect.yieldNow;
 
       Vitest.expect(
@@ -268,7 +270,7 @@ Vitest.describe("CellInputVisibilitySync", () => {
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
-      yield* changeNotebook(vscode, states([true]), states([false]));
+      yield* changeNotebook(vscode, editor, states([false]));
       yield* Effect.yieldNow;
 
       Vitest.expect(
@@ -285,7 +287,7 @@ Vitest.describe("CellInputVisibilitySync", () => {
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
-      yield* changeNotebook(vscode, states([false, true]), [
+      yield* changeNotebook(vscode, editor, [
         { stableId: "cell-1", hideCode: true },
         { stableId: "cell-0", hideCode: false },
       ]);
@@ -310,7 +312,7 @@ Vitest.describe("CellInputVisibilitySync", () => {
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* Effect.yieldNow;
-      yield* changeNotebook(vscode, before, after);
+      yield* changeNotebook(vscode, editor, after);
       yield* Effect.yieldNow;
 
       Vitest.expect(
@@ -345,9 +347,9 @@ Vitest.describe("CellInputVisibilitySync", () => {
         yield* vscode.openNotebook(editor.notebook);
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
         yield* Effect.yieldNow;
-        yield* changeNotebook(vscode, states([false]), states([true]));
+        yield* changeNotebook(vscode, editor, states([true]));
         yield* Effect.yieldNow;
-        yield* changeNotebook(vscode, states([true]), states([true]));
+        yield* changeNotebook(vscode, editor, states([true]));
         yield* Effect.yieldNow;
 
         Vitest.expect(yield* Ref.get(attempts)).toBe(2);

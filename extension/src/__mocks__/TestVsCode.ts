@@ -1085,14 +1085,21 @@ class NotebookCell implements vscode.NotebookCell {
 class NotebookDocument implements vscode.NotebookDocument {
   readonly uri: Uri;
   readonly notebookType: string;
-  readonly version: number;
   readonly isDirty: boolean;
   readonly isUntitled: boolean;
   readonly metadata: Record<string, unknown>;
-  readonly cellCount: number;
 
   #cells: vscode.NotebookCell[];
   #isClosed = false;
+  #version = 1;
+
+  get version(): number {
+    return this.#version;
+  }
+
+  get cellCount(): number {
+    return this.#cells.length;
+  }
 
   get isClosed(): boolean {
     return this.#isClosed;
@@ -1101,13 +1108,11 @@ class NotebookDocument implements vscode.NotebookDocument {
   constructor(notebookType: string, uri: Uri, content?: vscode.NotebookData) {
     this.uri = uri;
     this.notebookType = notebookType;
-    this.version = 1;
     this.isDirty = false;
     this.isUntitled = false;
     this.metadata = content?.metadata ?? {};
 
     const cellData = content?.cells ?? [];
-    this.cellCount = cellData.length;
     this.#cells = cellData.map(
       (data, index) => new NotebookCell(this, data, index),
     );
@@ -1134,6 +1139,13 @@ class NotebookDocument implements vscode.NotebookDocument {
   close() {
     this.#isClosed = true;
   }
+
+  replaceCells(cells: ReadonlyArray<vscode.NotebookCellData>) {
+    this.#cells = cells.map(
+      (data, index) => new NotebookCell(this, data, index),
+    );
+    this.#version += 1;
+  }
 }
 
 function closeNotebookDocument(document: vscode.NotebookDocument) {
@@ -1148,6 +1160,16 @@ export function createNotebookCell(
   index: number,
 ): vscode.NotebookCell {
   return new NotebookCell(notebook, data, index);
+}
+
+export function replaceTestNotebookCells(
+  notebook: vscode.NotebookDocument,
+  cells: ReadonlyArray<vscode.NotebookCellData>,
+): void {
+  if (!(notebook instanceof NotebookDocument)) {
+    throw new Error("Expected a TestVsCode NotebookDocument");
+  }
+  notebook.replaceCells(cells);
 }
 
 class NotebookEditor implements vscode.NotebookEditor {
