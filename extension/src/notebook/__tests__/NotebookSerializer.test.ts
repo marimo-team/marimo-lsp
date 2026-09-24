@@ -146,7 +146,7 @@ Vitest.describe("when registered source is not a marimo notebook", () => {
   );
 });
 
-Vitest.layer(liveLayer)("NotebookSerializer", (it) => {
+EffectTest.layer(liveLayer)("NotebookSerializer", (it) => {
   Vitest.it("NOTEBOOK_TYPE matches package.json notebook type", () => {
     const notebookConfig = packageJson.contributes.notebooks.find(
       (nb) => nb.type === NOTEBOOK_TYPE,

@@ -1,22 +1,25 @@
-import { it as vitestIt, type Vitest } from "@effect/vitest";
-import { Effect, Layer, Scope } from "effect";
+import * as Vitest from "@effect/vitest";
+import type { Vitest as EffectVitest } from "@effect/vitest";
+import { Effect, Layer, Logger, Scope } from "effect";
 
 export interface Interface<R> {
   readonly effect: Test<R | Scope.Scope>;
   readonly live: Test<R | Scope.Scope>;
 }
 
-export interface Test<R> extends Vitest.Test<R> {
-  readonly each: Vitest.Tester<R>["each"];
-  readonly skipIf: Vitest.Tester<R>["skipIf"];
+export interface Test<R> extends EffectVitest.Test<R> {
+  readonly each: EffectVitest.Tester<R>["each"];
+  readonly skipIf: EffectVitest.Tester<R>["skipIf"];
 }
 
 const bind = <R, E>(
-  test: Vitest.Tester<Scope.Scope>,
+  test: EffectVitest.Tester<Scope.Scope>,
   layer: Layer.Layer<R, E>,
 ): Test<R | Scope.Scope> => {
   const bindTest =
-    (target: Vitest.Test<Scope.Scope>): Vitest.Test<R | Scope.Scope> =>
+    (
+      target: EffectVitest.Test<Scope.Scope>,
+    ): EffectVitest.Test<R | Scope.Scope> =>
     (name, body, options) =>
       target(
         name,
@@ -38,6 +41,11 @@ const bind = <R, E>(
   return Object.assign(bound, { each, skipIf });
 };
 
+const quietLogging = Logger.layer([Logger.tracerLogger]);
+
+const configure = <R, E>(layer: Layer.Layer<R, E>) =>
+  layer.pipe(Layer.provideMerge(quietLogging));
+
 /**
  * Binds an Effect layer to a test runner.
  *
@@ -45,6 +53,15 @@ const bind = <R, E>(
  * isolated even when several tests use the same runner.
  */
 export const make = <R, E>(layer: Layer.Layer<R, E>): Interface<R> => ({
-  effect: bind(vitestIt.effect, layer),
-  live: bind(vitestIt.live, layer),
+  effect: bind(Vitest.it.effect, configure(layer)),
+  live: bind(Vitest.it.live, configure(layer)),
 });
+
+/**
+ * Shares an Effect layer across a test suite.
+ *
+ * Use this for expensive resources whose state may safely be shared by the
+ * tests in the suite. The layer is built once and released after the suite.
+ */
+export const layer = <R, E>(testLayer: Layer.Layer<R, E>) =>
+  Vitest.layer(configure(testLayer));
