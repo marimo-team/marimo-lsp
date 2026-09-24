@@ -1,4 +1,14 @@
-import { Context, Data, Effect, Latch, Layer, Option, Ref } from "effect";
+import {
+  Context,
+  Data,
+  Effect,
+  Fiber,
+  Latch,
+  Layer,
+  Option,
+  Ref,
+  Stream,
+} from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -29,7 +39,6 @@ export interface Interface {
   readonly defaultsWritten: Effect.Effect<void>;
   readonly firstConfigurationWritten: Effect.Effect<void>;
   readonly firstWriteStarted: Effect.Effect<void>;
-  readonly secondConfigurationLoaded: Effect.Effect<void>;
   readonly secondConfigurationWritten: Effect.Effect<void>;
   readonly releaseFirstWrite: Effect.Effect<void>;
   readonly activateFirst: Effect.Effect<void>;
@@ -54,7 +63,6 @@ export const layerWith = (scenario: Scenario) =>
       const firstConfigurationWritten = yield* Latch.make();
       const firstWriteStarted = yield* Latch.make();
       const releaseFirstWrite = yield* Latch.make();
-      const secondConfigurationLoaded = yield* Latch.make();
       const secondConfigurationWritten = yield* Latch.make();
 
       const vscodeLayer = TestVsCode.layerWith({
@@ -120,9 +128,6 @@ export const layerWith = (scenario: Scenario) =>
               `Missing configuration for ${request.notebookUri}`,
             );
           }
-          if (request.notebookUri === NOTEBOOK_URI_2) {
-            yield* secondConfigurationLoaded.open;
-          }
           return { config };
         }),
       });
@@ -142,20 +147,29 @@ export const layerWith = (scenario: Scenario) =>
         Service,
         Effect.gen(function* () {
           const vscode = yield* TestVsCode.Service;
+          const manager = yield* ConfigContextManager.Service;
+          const activate = (document: typeof firstDocument) =>
+            Effect.gen(function* () {
+              const expected = (yield* manager.desiredRevision) + 1;
+              const published = yield* manager.desiredChanges.pipe(
+                Stream.filter((revision) => revision >= expected),
+                Stream.runHead,
+                Effect.forkChild({ startImmediately: true }),
+              );
+              yield* vscode.setActiveNotebookEditor(
+                Option.some(TestVsCode.createTestNotebookEditor(document)),
+              );
+              yield* Fiber.join(published);
+            });
           return Service.of({
             writes: Ref.get(writes),
             defaultsWritten: defaultsWritten.await,
             firstConfigurationWritten: firstConfigurationWritten.await,
             firstWriteStarted: firstWriteStarted.await,
-            secondConfigurationLoaded: secondConfigurationLoaded.await,
             secondConfigurationWritten: secondConfigurationWritten.await,
             releaseFirstWrite: releaseFirstWrite.open.pipe(Effect.asVoid),
-            activateFirst: vscode.setActiveNotebookEditor(
-              Option.some(TestVsCode.createTestNotebookEditor(firstDocument)),
-            ),
-            activateSecond: vscode.setActiveNotebookEditor(
-              Option.some(TestVsCode.createTestNotebookEditor(secondDocument)),
-            ),
+            activateFirst: activate(firstDocument),
+            activateSecond: activate(secondDocument),
           });
         }),
       ).pipe(Layer.provide(environment));

@@ -53,8 +53,6 @@ Vitest.describe("ConfigContextManager", () => {
         yield* context.firstWriteStarted;
 
         yield* context.activateSecond;
-        yield* context.secondConfigurationLoaded;
-        yield* Effect.yieldNow;
         yield* context.releaseFirstWrite;
         yield* context.secondConfigurationWritten;
 
