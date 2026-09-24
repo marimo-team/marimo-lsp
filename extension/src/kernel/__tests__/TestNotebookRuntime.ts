@@ -24,6 +24,7 @@ import {
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
@@ -56,6 +57,8 @@ export interface Interface {
   readonly inputCancelled: Effect.Effect<void>;
   readonly workspaceEditStarted: Effect.Effect<void>;
   readonly activate: Effect.Effect<void>;
+  readonly open: (editor: vscode.NotebookEditor) => Effect.Effect<void>;
+  readonly close: (document: vscode.NotebookDocument) => Effect.Effect<void>;
   readonly provideInput: (
     value: Option.Option<string>,
   ) => Effect.Effect<boolean>;
@@ -169,6 +172,7 @@ export const layerWith = (options: Options) =>
       let revision = 0;
       const runtimeLayer = Layer.empty.pipe(
         Layer.provideMerge(NotebookRuntime.defaultLayer),
+        Layer.provideMerge(NotebookDocumentSessions.layer),
         Layer.provideMerge(NotebookEditorRegistry.layer),
         Layer.provideMerge(NotebookVariables.defaultLayer),
         Layer.provideMerge(NotebookDatasources.defaultLayer),
@@ -234,6 +238,7 @@ export const layerWith = (options: Options) =>
           const code = yield* VsCode.Service;
           const cellDrive = yield* VsCodeCellDrive.Service;
           const runtime = yield* NotebookRuntime.Service;
+          const sessions = yield* NotebookDocumentSessions.Service;
           const editors = yield* NotebookEditorRegistry.Service;
           const controller = yield* code.notebooks.createNotebookController(
             "test-controller",
@@ -258,15 +263,55 @@ export const layerWith = (options: Options) =>
           );
           yield* runtime.attachController(notebookUri, mockController);
 
-          const activate = Effect.gen(function* () {
-            const active = yield* editors.streamActiveNotebookChanges.pipe(
-              Stream.filter(Option.contains(notebookUri)),
-              Stream.runHead,
-              Effect.forkChild({ startImmediately: true }),
-            );
-            yield* vscode.setActiveNotebookEditor(Option.some(editor));
-            yield* Fiber.join(active);
-          });
+          const activateEditor = (target: vscode.NotebookEditor) =>
+            Effect.gen(function* () {
+              const targetId = MarimoNotebookDocument.from(target.notebook).id;
+              const activeSession = yield* sessions.active.pipe(
+                Stream.filter(
+                  Option.exists(
+                    (session) => session.document === target.notebook,
+                  ),
+                ),
+                Stream.runHead,
+                Effect.forkChild({ startImmediately: true }),
+              );
+              const activeEditor =
+                yield* editors.streamActiveNotebookChanges.pipe(
+                  Stream.filter(Option.contains(targetId)),
+                  Stream.runHead,
+                  Effect.forkChild({ startImmediately: true }),
+                );
+              yield* vscode.setActiveNotebookEditor(Option.some(target));
+              yield* Effect.all(
+                [Fiber.join(activeSession), Fiber.join(activeEditor)],
+                { discard: true },
+              );
+            });
+
+          const open: Interface["open"] = (target) =>
+            vscode
+              .openNotebook(target.notebook)
+              .pipe(Effect.andThen(activateEditor(target)));
+
+          const close: Interface["close"] = (document) =>
+            Effect.gen(function* () {
+              const marker = TestVsCode.makeNotebookEditor(
+                NodePath.join(process.cwd(), "lifecycle-marker_mo.py"),
+              );
+              const markerActive = yield* sessions.active.pipe(
+                Stream.filter(
+                  Option.exists(
+                    (session) => session.document === marker.notebook,
+                  ),
+                ),
+                Stream.runHead,
+                Effect.forkChild({ startImmediately: true }),
+              );
+              yield* vscode.closeNotebook(document);
+              yield* vscode.openNotebook(marker.notebook);
+              yield* vscode.setActiveNotebookEditor(Option.some(marker));
+              yield* Fiber.join(markerActive);
+            });
 
           return Service.of({
             vscode,
@@ -279,7 +324,9 @@ export const layerWith = (options: Options) =>
             inputRequested: inputRequested.await,
             inputCancelled: inputCancelled.await,
             workspaceEditStarted: workspaceEditStarted.await,
-            activate,
+            activate: activateEditor(editor),
+            open,
+            close,
             provideInput: (value) => Queue.offer(inputQueue, value),
             publishOperation: (notification) =>
               PubSub.publish(operations, notification),

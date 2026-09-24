@@ -36,20 +36,6 @@ const cancellationIt = EffectTest.make(
   TestNotebookRuntime.layerWith({ suspendWorkspaceEdits: true }),
 );
 
-const settle = <A, E, R>(
-  get: Effect.Effect<A, E, R>,
-  predicate: (value: A) => boolean,
-  failure: string,
-) =>
-  Effect.gen(function* () {
-    for (let attempt = 0; attempt <= 100; attempt++) {
-      const value = yield* get;
-      if (predicate(value)) return value;
-      if (attempt < 100) yield* Effect.yieldNow;
-    }
-    return yield* Effect.fail(failure);
-  });
-
 function makeIdleCellOperation(
   notebookUri: NotebookId,
   cid: string,
@@ -219,8 +205,7 @@ Vitest.describe("NotebookRuntime operation processing", () => {
         });
         yield* ctx.workspaceEditStarted;
 
-        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow;
+        yield* ctx.close(ctx.editor.notebook);
 
         Vitest.expect(yield* ctx.errors).toEqual([]);
       });
@@ -328,15 +313,16 @@ Vitest.describe("NotebookRuntime cell identity", () => {
             },
           ],
         });
-        const commands = yield* settle(
-          ctx.executions,
-          (calls) =>
+        const commands = yield* ctx.executionChanges.pipe(
+          Stream.filter((calls) =>
             calls.some(
               (command) =>
                 command.kind === "delete-cell" &&
                 command.cellId === "cell-move-marker",
             ),
-          "cell change pipeline did not settle",
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
         );
 
         Vitest.expect(
@@ -616,11 +602,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
-        // No drain needed before the open: the document-session service acquires its
-        // lifecycle subscription before its layer finishes building, so an
-        // open published this early is delivered rather than dropped.
-        yield* ctx.vscode.openNotebook(otherEditor.notebook);
-        yield* Effect.yieldNow;
+        yield* ctx.open(otherEditor);
         yield* ctx.attachController(otherNotebook.id);
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
@@ -920,7 +902,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
       const ctx = yield* TestNotebookRuntime.Service;
 
       yield* Effect.gen(function* () {
-        const runtime = yield* NotebookRuntime.Service;
+        yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
         const datasources = yield* NotebookDatasources.Service;
 
@@ -961,7 +943,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
           Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
         ).toBe(true);
 
-        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
+        yield* ctx.close(ctx.editor.notebook);
         yield* Effect.all([
           variables.getVariables(ctx.notebookUri),
           datasources.getDatasets(ctx.notebookUri),
@@ -1019,19 +1001,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
 
         // A delayed close from the old document must not clear replacement
         // session state.
-        yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        // Opening a marker document on the same sequential lifecycle stream
-        // gives the stale close an observable ordering barrier. Once the
-        // marker has a session, the preceding close has been handled.
-        const lifecycleMarker = TestVsCode.createTestNotebookDocument(
-          NodePath.join(process.cwd(), "lifecycle-marker_mo.py"),
-        );
-        yield* ctx.vscode.openNotebook(lifecycleMarker);
-        yield* settle(
-          runtime.forDocument(lifecycleMarker).pipe(Effect.option),
-          Option.isSome,
-          "notebook lifecycle pipeline did not settle",
-        );
+        yield* ctx.close(ctx.editor.notebook);
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
