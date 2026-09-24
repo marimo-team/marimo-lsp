@@ -177,6 +177,18 @@ rg -n --glob '*test.ts' \
   provider into a shared suite layer.
 - [ ] Prefer `Deferred`, queues, events, or observable state transitions over
   promises, sleeps, polling, and arbitrary timeouts.
+  The broad synchronization sweep is complete. Three deliberate scheduler
+  probes remain, each awaiting a named boundary that preserves its negative
+  concurrency assertion:
+  - [ ] Expose notebook-executor admission so
+    `NotebookRuntime.test.ts` can prove a kernel mutation is queued behind an
+    in-flight execution without a scheduler yield.
+  - [ ] Expose stdin-response completion so
+    `NotebookRuntimeOperations.test.ts` can prove a stale response was rejected
+    after kernel replacement.
+  - [ ] Expose scratchpad contender readiness so
+    `NotebookRuntimeOperations.test.ts` can prove the second stream reached the
+    per-notebook semaphore before asserting that only one command was sent.
 - [x] Add shared test helpers only after at least two migrated suites establish
   the same missing abstraction.
 - [x] Add `EffectTest.make(layer)` after the `TestVsCode` contract tests and
