@@ -421,16 +421,8 @@ Vitest.describe("EnvironmentValidator", () => {
         Vitest.expect(runCount(countFile)).toBe(1);
 
         yield* invalidation.invalidate("package-install");
-
-        // The cache clears in a background fiber; yield and re-validate
-        // until the subprocess is spawned again.
-        let count = runCount(countFile);
-        for (let i = 0; i < 100 && count < 2; i++) {
-          yield* Effect.yieldNow;
-          yield* validator.validate(env);
-          count = runCount(countFile);
-        }
-        Vitest.expect(count).toBe(2);
+        yield* validator.validate(env);
+        Vitest.expect(runCount(countFile)).toBe(2);
       }),
     );
 
