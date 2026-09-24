@@ -82,6 +82,7 @@ export const layer = Layer.effectDiscard(
         source.pipe(
           Stream.runForEach(() => Queue.offer(visibilityTriggers, void 0)),
         ),
+        { startImmediately: true },
       );
     }
 
@@ -90,6 +91,7 @@ export const layer = Layer.effectDiscard(
       Stream.fromQueue(visibilityTriggers).pipe(
         Stream.runForEach(() => updateVisibility(item)),
       ),
+      { startImmediately: true },
     );
 
     const handleEnvironmentChange = Effect.fn(
@@ -102,7 +104,7 @@ export const layer = Layer.effectDiscard(
     // Listen for environment changes and update the status bar
     yield* pythonExtension.activeEnvironmentPathChanges.pipe(
       Stream.runForEach(handleEnvironmentChange),
-      Effect.forkScoped,
+      Effect.forkScoped({ startImmediately: true }),
     );
 
     // Initialize with the current active environment
