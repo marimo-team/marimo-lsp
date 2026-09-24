@@ -386,9 +386,9 @@ recording, or reusable inspection controls are part of the test contract.
 - [x] Complete and review the pilot migrations.
 - [x] Migrate the kernel suites, starting with smaller fixtures before
   `CellExecutions.test.ts` and `NotebookRuntime.test.ts`.
-- [ ] Migrate configuration, feature, and command suites.
-- [ ] Migrate notebook, panel, and language-server suites.
-- [ ] Migrate platform and library-boundary suites.
+- [x] Migrate configuration, feature, and command suites.
+- [x] Migrate notebook, panel, and language-server suites.
+- [x] Migrate platform and library-boundary suites.
 - [ ] Re-run the inventory and review any remaining local `Effect.provide` calls
   as intentional dependency variants.
 
