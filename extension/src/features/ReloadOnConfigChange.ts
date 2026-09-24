@@ -42,6 +42,7 @@ export const watch = Effect.gen(function* () {
         ),
         Stream.runForEach(() => prompt),
       ),
+      { startImmediately: true },
     );
   });
 
@@ -101,12 +102,14 @@ export const watch = Effect.gen(function* () {
         }),
       ),
     ),
+    { startImmediately: true },
   );
 
   yield* Effect.forkScoped(
     code.window.activeNotebookEditorChanges.pipe(
       Stream.runForEach(() => promptForActiveAffectedSession),
     ),
+    { startImmediately: true },
   );
 }).pipe(Effect.withSpan("ReloadOnConfigChange.watch"));
 

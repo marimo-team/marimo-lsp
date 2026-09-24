@@ -53,7 +53,6 @@ it.effect(
       affectsConfiguration: (section) => section === "marimo.telemetry",
     };
     yield* ReloadOnConfigChange.watch;
-    yield* Effect.yieldNow;
     yield* vscode.selectInformationMessage("Reload Window");
 
     yield* vscode.configurationChange(configurationChange);
@@ -79,7 +78,6 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* TestVsCode.Service;
     yield* ReloadOnConfigChange.watch;
-    yield* Effect.yieldNow;
     yield* vscode.selectInformationMessage("Reload Window");
     yield* vscode.configurationChange({
       affectsConfiguration: (section) =>
@@ -120,7 +118,6 @@ affectedIt.effect(
       },
     };
     yield* ReloadOnConfigChange.watch;
-    yield* Effect.yieldNow;
 
     yield* vscode.configurationChange(configurationChange);
     yield* resourceChecked.await;
