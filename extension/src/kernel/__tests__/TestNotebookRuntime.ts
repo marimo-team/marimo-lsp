@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import {
   Context,
   Effect,
+  Fiber,
   Latch,
   Layer,
   Option,
@@ -23,6 +24,7 @@ import {
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import * as VsCode from "../../platform/VsCode.ts";
@@ -53,6 +55,7 @@ export interface Interface {
   readonly inputRequested: Effect.Effect<void>;
   readonly inputCancelled: Effect.Effect<void>;
   readonly workspaceEditStarted: Effect.Effect<void>;
+  readonly activate: Effect.Effect<void>;
   readonly provideInput: (
     value: Option.Option<string>,
   ) => Effect.Effect<boolean>;
@@ -166,6 +169,7 @@ export const layerWith = (options: Options) =>
       let revision = 0;
       const runtimeLayer = Layer.empty.pipe(
         Layer.provideMerge(NotebookRuntime.defaultLayer),
+        Layer.provideMerge(NotebookEditorRegistry.layer),
         Layer.provideMerge(NotebookVariables.defaultLayer),
         Layer.provideMerge(NotebookDatasources.defaultLayer),
         Layer.provide(
@@ -230,6 +234,7 @@ export const layerWith = (options: Options) =>
           const code = yield* VsCode.Service;
           const cellDrive = yield* VsCodeCellDrive.Service;
           const runtime = yield* NotebookRuntime.Service;
+          const editors = yield* NotebookEditorRegistry.Service;
           const controller = yield* code.notebooks.createNotebookController(
             "test-controller",
             NOTEBOOK_TYPE,
@@ -253,6 +258,16 @@ export const layerWith = (options: Options) =>
           );
           yield* runtime.attachController(notebookUri, mockController);
 
+          const activate = Effect.gen(function* () {
+            const active = yield* editors.streamActiveNotebookChanges.pipe(
+              Stream.filter(Option.contains(notebookUri)),
+              Stream.runHead,
+              Effect.forkChild({ startImmediately: true }),
+            );
+            yield* vscode.setActiveNotebookEditor(Option.some(editor));
+            yield* Fiber.join(active);
+          });
+
           return Service.of({
             vscode,
             editor,
@@ -264,6 +279,7 @@ export const layerWith = (options: Options) =>
             inputRequested: inputRequested.await,
             inputCancelled: inputCancelled.await,
             workspaceEditStarted: workspaceEditStarted.await,
+            activate,
             provideInput: (value) => Queue.offer(inputQueue, value),
             publishOperation: (notification) =>
               PubSub.publish(operations, notification),

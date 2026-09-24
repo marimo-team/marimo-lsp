@@ -197,8 +197,7 @@ Vitest.describe("NotebookRuntime operation processing", () => {
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* ctx.activate;
 
         yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
@@ -362,7 +361,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const cellId = Option.getOrThrow(cell.id);
 
         // Set active editor so NotebookEditorRegistry can find it
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* ctx.activate;
 
         // Push a cell-op with stdin console output
         yield* ctx.publishOperation(
@@ -411,7 +410,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const cell = ctx.notebook.cellAt(0);
         const cellId = Option.getOrThrow(cell.id);
 
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* ctx.activate;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -460,7 +459,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
 
       yield* Effect.gen(function* () {
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* ctx.activate;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -497,7 +496,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* ctx.activate;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -696,8 +695,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         const runtime = yield* NotebookRuntime.Service;
 
         // Route cell-op notifications through processSessionOperation.
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* ctx.activate;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -790,8 +788,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* ctx.activate;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -841,8 +838,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
+        yield* ctx.activate;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
