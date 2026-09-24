@@ -363,7 +363,6 @@ Vitest.describe("NotebookRuntime stdin", () => {
 
         // Set active editor so NotebookEditorRegistry can find it
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
 
         // Push a cell-op with stdin console output
         yield* ctx.publishOperation(
@@ -379,7 +378,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Effect.yieldNow;
+        yield* ctx.inputRequested;
 
         // Provide the input (unblocks showInputBox)
         yield* ctx.provideInput(Option.some("foo"));
@@ -413,7 +412,6 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const cellId = Option.getOrThrow(cell.id);
 
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -428,7 +426,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Effect.yieldNow;
+        yield* ctx.inputRequested;
 
         // User cancels the input box
         yield* ctx.provideInput(Option.none());
@@ -463,7 +461,6 @@ Vitest.describe("NotebookRuntime stdin", () => {
       yield* Effect.gen(function* () {
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -481,9 +478,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
         yield* ctx.inputRequested;
 
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
-        yield* Effect.yieldNow;
-        yield* ctx.provideInput(Option.some("stale response"));
-        yield* Effect.yieldNow;
+        yield* ctx.inputCancelled;
 
         Vitest.expect(
           (yield* ctx.executions).some(
@@ -503,7 +498,6 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const runtime = yield* NotebookRuntime.Service;
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
         yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* Effect.yieldNow;
 
         yield* ctx.publishOperation(
           makeIdleCellOperation(ctx.notebookUri, cellId, {

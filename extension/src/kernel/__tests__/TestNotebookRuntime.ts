@@ -51,6 +51,7 @@ export interface Interface {
   readonly executionChanges: Stream.Stream<ReadonlyArray<TestCommand>>;
   readonly errors: Effect.Effect<ReadonlyArray<string>>;
   readonly inputRequested: Effect.Effect<void>;
+  readonly inputCancelled: Effect.Effect<void>;
   readonly workspaceEditStarted: Effect.Effect<void>;
   readonly provideInput: (
     value: Option.Option<string>,
@@ -86,6 +87,7 @@ export const layerWith = (options: Options) =>
       const activeSessionId = options.activeSessionId ?? ACTIVE_SESSION_ID;
       const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
       const inputRequested = yield* Latch.make();
+      const inputCancelled = yield* Latch.make();
       const workspaceEditStarted = yield* Latch.make();
       const executions = yield* SubscriptionRef.make<
         ReadonlyArray<TestCommand>
@@ -141,7 +143,10 @@ export const layerWith = (options: Options) =>
         },
         window: {
           showInputBox: () =>
-            inputRequested.open.pipe(Effect.andThen(Queue.take(inputQueue))),
+            inputRequested.open.pipe(
+              Effect.andThen(Queue.take(inputQueue)),
+              Effect.onInterrupt(() => inputCancelled.open),
+            ),
           showErrorMessage: (message) =>
             Ref.update(errorMessages, (messages) => [
               ...messages,
@@ -257,6 +262,7 @@ export const layerWith = (options: Options) =>
             executionChanges: SubscriptionRef.changes(executions),
             errors: Ref.get(errorMessages),
             inputRequested: inputRequested.await,
+            inputCancelled: inputCancelled.await,
             workspaceEditStarted: workspaceEditStarted.await,
             provideInput: (value) => Queue.offer(inputQueue, value),
             publishOperation: (notification) =>
