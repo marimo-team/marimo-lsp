@@ -51,8 +51,11 @@ describe("OutputRoots", () => {
     const first = roots.acquire("out-1", stale);
     act(() => first.render(React.createElement(Probe, { label: "a" })));
 
-    const second = roots.acquire("out-1", fresh);
-    act(() => second.render(React.createElement(Probe, { label: "b" })));
+    act(() =>
+      roots
+        .acquire("out-1", fresh)
+        .render(React.createElement(Probe, { label: "b" })),
+    );
 
     // The stale element's tree was unmounted, not left dangling.
     expect(stale.querySelector("span")).toBeNull();

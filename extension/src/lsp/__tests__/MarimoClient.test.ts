@@ -3,7 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
-import { Effect, Exit, Fiber, Option, Ref, Stream } from "effect";
+import { Effect, Exit, Fiber, Layer, Option, Ref, Stream } from "effect";
 
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
@@ -15,6 +15,7 @@ import * as TestCustomLspFailure from "./TestCustomLspFailure.ts";
 import * as TestMarimoNotifications from "./TestMarimoNotifications.ts";
 
 const notebook = notebookId("notebook-a");
+const it = EffectTest.make(Layer.empty);
 
 Vitest.describe("custom language-server failures", () => {
   const it = EffectTest.make(
@@ -79,7 +80,7 @@ Vitest.describe("custom language-server failures", () => {
   });
 });
 
-Vitest.it.effect(
+it.effect(
   "does not fail scope cleanup when language-client disposal rejects",
   Effect.fn(function* () {
     let disposals = 0;
@@ -94,7 +95,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "constructs private commands through named methods",
   Effect.fn(function* () {
     const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
@@ -139,7 +140,7 @@ Vitest.it.effect(
 );
 
 Vitest.describe("generated command client", () => {
-  Vitest.it.effect(
+  it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
       const marimo = MarimoClient.makeCommands({
@@ -160,7 +161,7 @@ Vitest.describe("generated command client", () => {
     }),
   );
 
-  Vitest.it.effect(
+  it.effect(
     "fails with ParseError when the server response violates the contract",
     Effect.fn(function* () {
       const marimo = MarimoClient.makeCommands({
@@ -184,7 +185,7 @@ Vitest.describe("generated command client", () => {
     }),
   );
 
-  Vitest.it.effect(
+  it.effect(
     "rejects params the server would reject, before hitting the wire",
     Effect.fn(function* () {
       const marimo = MarimoClient.makeCommands({
@@ -207,7 +208,7 @@ Vitest.describe("generated command client", () => {
     }),
   );
 
-  Vitest.it.effect(
+  it.effect(
     "requires tagged-union discriminators before hitting the wire",
     Effect.fn(function* () {
       const marimo = MarimoClient.makeCommands({
@@ -232,7 +233,7 @@ Vitest.describe("generated command client", () => {
 });
 
 Vitest.describe("findMarimoLspExecutable", () => {
-  Vitest.it.live("uses a compatible Python range for the bundled LSP", () =>
+  it.live("uses a compatible Python range for the bundled LSP", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -281,7 +282,7 @@ Vitest.describe("findWasmMarimoLspExecutable", () => {
 });
 
 Vitest.describe("selectMarimoLspExecutable", () => {
-  Vitest.it.effect(
+  it.effect(
     "uses the command carried by the custom server variant",
     Effect.fn(function* () {
       const selection = yield* MarimoClient.selectMarimoLspExecutable({
@@ -299,7 +300,7 @@ Vitest.describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  Vitest.it.effect(
+  it.effect(
     "uses WASM without resolving uv",
     Effect.fn(function* () {
       const selection = yield* MarimoClient.selectMarimoLspExecutable({
@@ -315,7 +316,7 @@ Vitest.describe("selectMarimoLspExecutable", () => {
     }),
   );
 
-  Vitest.it.live("resolves uv only for the Python server variant", () =>
+  it.live("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -429,7 +430,7 @@ Vitest.describe("notification streams", () => {
   );
 });
 
-Vitest.it.effect(
+it.effect(
   "disposes the transport notification handler with its scope",
   Effect.fn(function* () {
     let disposals = 0;

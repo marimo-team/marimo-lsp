@@ -20,6 +20,7 @@ import {
 import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   makeTestMarimoClient,
   type TestCommand,
@@ -39,6 +40,7 @@ import * as NotebookRuntime from "../NotebookRuntime.ts";
 import * as TestNotebookRuntime from "./TestNotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
+const it = EffectTest.make(Layer.empty);
 
 const makeTestLayer = (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
@@ -129,7 +131,7 @@ const makeTestLayer = (
   };
 };
 
-Vitest.it.effect(
+it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
@@ -181,7 +183,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "continues handling renderer messages after a pre-kernel interaction",
   Effect.fn(function* () {
     const updateSent =
@@ -236,7 +238,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "does not report renderer request interruption as a message failure",
   Effect.fn(function* () {
     const updateStarted = yield* Deferred.make<void>();
@@ -281,7 +283,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "keeps captured kernel identity authoritative over request fields",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
@@ -360,7 +362,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect.each([false, true])(
+it.effect.each([false, true])(
   "binds execution before queued kernel mutations without session notifications (replacement=%s)",
   (replacement) =>
     Effect.gen(function* () {
@@ -437,7 +439,7 @@ Vitest.it.effect.each([false, true])(
     }),
 );
 
-Vitest.it.effect.each(["close", "move"] as const)(
+it.effect.each(["close", "move"] as const)(
   "reuses the snapshot from %s instead of querying again",
   (operation) =>
     Effect.gen(function* () {
@@ -484,7 +486,7 @@ Vitest.it.effect.each(["close", "move"] as const)(
     }),
 );
 
-Vitest.it.effect(
+it.effect(
   "does not let execution escape its document session",
   Effect.fn(function* () {
     const requestStarted = yield* Deferred.make<void>();
@@ -540,7 +542,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.live("tracks RuntimeSession until a successful kernel close", () =>
+it.live("tracks RuntimeSession until a successful kernel close", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       NodeFs.mkdtempDisposableSync(
@@ -643,7 +645,7 @@ Vitest.it.live("tracks RuntimeSession until a successful kernel close", () =>
   ),
 );
 
-Vitest.it.effect(
+it.effect(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
@@ -670,7 +672,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
     const { layer } = makeTestLayer();
@@ -695,7 +697,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
     const { layer } = makeTestLayer();
@@ -726,7 +728,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "restores notebook output without starting a kernel",
   Effect.fn(function* () {
     const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
@@ -810,7 +812,7 @@ const eventually = <A>(
     Effect.catch(() => get),
   );
 
-Vitest.it.effect(
+it.effect(
   "reports no kernel for an active notebook with no controller",
   Effect.fn(function* () {
     const { layer } = makeTestLayer();
@@ -830,7 +832,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "reports a live kernel from the server session snapshot",
   Effect.fn(function* () {
     const changes = yield* PubSub.unbounded<ListSessionsResponse>();
@@ -870,7 +872,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
     const { layer } = makeTestLayer();
@@ -907,7 +909,7 @@ Vitest.it.effect(
   }),
 );
 
-Vitest.it.effect(
+it.effect(
   "keeps processing session changes while another notebook is busy",
   Effect.fn(function* () {
     const changes = yield* PubSub.unbounded<ListSessionsResponse>();
