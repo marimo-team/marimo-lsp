@@ -270,7 +270,7 @@ Vitest.it.effect(
         params: { objectIds: ["slider"], values: [1] },
       });
       yield* Deferred.await(updateStarted);
-      yield* Effect.yieldNow;
+      yield* Deferred.await(updateCancelled);
     }).pipe(Effect.provide(layer.pipe(Layer.provide(Logger.layer([logger])))));
 
     Vitest.expect(yield* Deferred.isDone(updateCancelled)).toBe(true);
