@@ -237,13 +237,6 @@ Vitest.describe("NotebookRuntime cell identity", () => {
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
-        // One scheduler drain so NotebookRuntime's forked
-        // notebookDocumentChanges consumer subscribes to the mock PubSub
-        // before we publish the change event. In production this stream is a
-        // vscode event listener registered during activation, so the event
-        // cannot fire before the listener exists; the mock's PubSub has no
-        // replay, so a publish before the fork first runs is silently lost.
-        yield* Effect.yieldNow;
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -283,11 +276,6 @@ Vitest.describe("NotebookRuntime cell identity", () => {
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
-        // Drain so the change event below is actually delivered (see the
-        // deleted-cell test above); without it this test would pass vacuously
-        // because the mock PubSub drops events published before the forked
-        // consumer subscribes.
-        yield* Effect.yieldNow;
 
         const cell = ctx.editor.notebook.cellAt(0);
         yield* ctx.vscode.notebookChange({
@@ -912,7 +900,6 @@ Vitest.describe("NotebookRuntime state eviction", () => {
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
-        yield* Effect.yieldNow;
 
         yield* ctx.publishOperation({
           notebookUri: ctx.notebookUri,
@@ -946,14 +933,6 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         const runtime = yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
         const datasources = yield* NotebookDatasources.Service;
-
-        // One scheduler drain so NotebookRuntime's forked operations pipeline
-        // subscribes to the mock PubSub before we publish (forked fibers only
-        // start once the test fiber yields; a publish before that is silently
-        // dropped since the PubSub has no replay). In production, operations
-        // only flow for sessions started via this same runtime, so nothing
-        // can be published before the pipeline subscribes.
-        yield* Effect.yieldNow;
 
         yield* ctx.publishAnalysis({
           notebookUri: ctx.notebookUri,
