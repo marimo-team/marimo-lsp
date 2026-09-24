@@ -3,12 +3,13 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-import { assert, describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Result } from "effect";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
+import * as TestTelemetry from "../../__mocks__/TestTelemetry.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as EnvironmentValidator from "../../python/EnvironmentValidator.ts";
 import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
 import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
@@ -34,28 +35,29 @@ class TempDir extends Context.Service<TempDir>()("TempDir", {
   static readonly layer = Layer.effect(this, this.make);
 }
 
-const EnvironmentValidatorLive = Layer.empty.pipe(
+const layer = Layer.empty.pipe(
   Layer.provideMerge(TempDir.layer),
   Layer.provideMerge(Uv.layer),
   Layer.provideMerge(EnvironmentValidator.layer),
   Layer.provideMerge(PythonEnvInvalidation.layer),
   Layer.provide(TestPythonExtension.layer),
-  Layer.provide(TestTelemetryLive),
+  Layer.provide(TestTelemetry.TestTelemetryLive),
   Layer.provide(TestVsCode.layer),
 );
 
-it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
+Vitest.describe("EnvironmentValidator", () => {
+  const it = EffectTest.make(layer);
   const python = "3.13";
 
-  it.effect(
+  it.live(
     "should build",
     Effect.fn(function* () {
       const api = yield* EnvironmentValidator.Service;
-      expect(api).toBeDefined();
+      Vitest.expect(api).toBeDefined();
     }),
   );
 
-  it.effect(
+  it.live(
     "should fail with missing marimo",
     Effect.fn(function* () {
       const uv = yield* Uv.Service;
@@ -73,12 +75,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Result.isFailure(result), "Expected validation to fail");
-      assert(
+      Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+      Vitest.assert(
         result.failure._tag === "EnvironmentValidator.RequirementError",
         `Expected RequirementError, got ${result.failure._tag}`,
       );
-      expect(result.failure.diagnostics).toMatchInlineSnapshot(`
+      Vitest.expect(result.failure.diagnostics).toMatchInlineSnapshot(`
         [
           {
             "kind": "missing",
@@ -93,7 +95,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   // Skipped on Windows: pygls intermittently hits OSError [Errno 22] on
   // stdout flush while shutting down the server subprocess, which causes
   // the test to hang past the 30s timeout. The non-Windows runs cover this.
-  it.effect.skipIf(isWindows)(
+  it.live.skipIf(isWindows)(
     "Should fail with outdated marimo",
     Effect.fn(function* () {
       const uv = yield* Uv.Service;
@@ -110,12 +112,12 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Result.isFailure(result), "Expected validation to fail");
-      assert(
+      Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+      Vitest.assert(
         result.failure._tag === "EnvironmentValidator.RequirementError",
         `Expected RequirementError, got ${result.failure._tag}`,
       );
-      expect(result.failure.diagnostics).toMatchInlineSnapshot(`
+      Vitest.expect(result.failure.diagnostics).toMatchInlineSnapshot(`
         [
           {
             "currentVersion": Version {
@@ -133,7 +135,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
     { timeout: 30_000 },
   );
 
-  it.effect(
+  it.live(
     "should succeed with marimo installed",
     Effect.fn(function* () {
       const uv = yield* Uv.Service;
@@ -150,13 +152,13 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         ),
       );
 
-      assert(Result.isSuccess(result), "Expected validation to succeed");
-      assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
+      Vitest.assert(Result.isSuccess(result), "Expected validation to succeed");
+      Vitest.assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
     }),
     { timeout: 60_000 },
   );
 
-  it.effect(
+  it.live(
     "should fail for no python interpreter",
     Effect.fn(function* () {
       const validator = yield* EnvironmentValidator.Service;
@@ -170,8 +172,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
         ),
       );
-      assert(Result.isFailure(result), "Expected validation to fail");
-      assert.strictEqual(
+      Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+      Vitest.assert.strictEqual(
         result.failure._tag,
         "EnvironmentValidator.InspectionError",
       );
@@ -182,8 +184,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
   // These tests use bash scripts as fake executables.
   // On Windows, child_process.spawn can only execute PE (.exe) files
   // directly, so we skip these tests there.
-  describe.skipIf(isWindows)("subprocess output parsing", () => {
-    it.effect(
+  Vitest.describe.skipIf(isWindows)("subprocess output parsing", () => {
+    it.live(
       "should fail with InspectionError when stdout is empty",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -197,15 +199,15 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert.strictEqual(
           result.failure._tag,
           "EnvironmentValidator.InspectionError",
         );
       }),
     );
 
-    it.effect(
+    it.live(
       "should fail with InspectionError when stdout is not JSON",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -219,16 +221,16 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert(
           result.failure._tag === "EnvironmentValidator.InspectionError",
           `Expected InspectionError, got ${result.failure._tag}`,
         );
-        expect(result.failure.stdout).toContain("WARNING");
+        Vitest.expect(result.failure.stdout).toContain("WARNING");
       }),
     );
 
-    it.effect(
+    it.live(
       "should fail with InspectionError on non-zero exit code",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -243,16 +245,16 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert(
           result.failure._tag === "EnvironmentValidator.InspectionError",
           `Expected InspectionError, got ${result.failure._tag}`,
         );
-        expect(result.failure.stderr).toContain("SyntaxError");
+        Vitest.expect(result.failure.stderr).toContain("SyntaxError");
       }),
     );
 
-    it.effect(
+    it.live(
       "should fail with InspectionError on truncated JSON",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -266,15 +268,15 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert.strictEqual(
           result.failure._tag,
           "EnvironmentValidator.InspectionError",
         );
       }),
     );
 
-    it.effect(
+    it.live(
       "should fail with InspectionError on wrong JSON shape",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -288,15 +290,15 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert.strictEqual(
           result.failure._tag,
           "EnvironmentValidator.InspectionError",
         );
       }),
     );
 
-    it.effect(
+    it.live(
       "should handle JSON with extra whitespace/newlines",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -311,12 +313,18 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isSuccess(result), "Expected validation to succeed");
-        assert.strictEqual(result.success._tag, "ValidPythonEnvironment");
+        Vitest.assert(
+          Result.isSuccess(result),
+          "Expected validation to succeed",
+        );
+        Vitest.assert.strictEqual(
+          result.success._tag,
+          "ValidPythonEnvironment",
+        );
       }),
     );
 
-    it.effect(
+    it.live(
       "should treat null versions as missing packages",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -331,18 +339,18 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert(
           result.failure._tag === "EnvironmentValidator.RequirementError",
           `Expected RequirementError, got ${result.failure._tag}`,
         );
-        expect(result.failure.diagnostics).toEqual([
+        Vitest.expect(result.failure.diagnostics).toEqual([
           { kind: "missing", package: "marimo" },
         ]);
       }),
     );
 
-    it.effect(
+    it.live(
       "should cache successful validation per environment",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -359,13 +367,13 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         const first = yield* validator.validate(env);
         const second = yield* validator.validate(env);
 
-        assert.strictEqual(first._tag, "ValidPythonEnvironment");
-        assert.strictEqual(second._tag, "ValidPythonEnvironment");
-        expect(runCount(countFile)).toBe(1);
+        Vitest.assert.strictEqual(first._tag, "ValidPythonEnvironment");
+        Vitest.assert.strictEqual(second._tag, "ValidPythonEnvironment");
+        Vitest.expect(runCount(countFile)).toBe(1);
       }),
     );
 
-    it.effect(
+    it.live(
       "should not cache failed validation",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -382,13 +390,19 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         const first = yield* Effect.result(validator.validate(env));
         const second = yield* Effect.result(validator.validate(env));
 
-        assert(Result.isFailure(first), "Expected first validation to fail");
-        assert(Result.isFailure(second), "Expected second validation to fail");
-        expect(runCount(countFile)).toBe(2);
+        Vitest.assert(
+          Result.isFailure(first),
+          "Expected first validation to fail",
+        );
+        Vitest.assert(
+          Result.isFailure(second),
+          "Expected second validation to fail",
+        );
+        Vitest.expect(runCount(countFile)).toBe(2);
       }),
     );
 
-    it.effect(
+    it.live(
       "should re-validate after a PythonEnvInvalidation event",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -404,7 +418,7 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
         const env = TestPythonExtension.makeGlobalEnv(script);
 
         yield* validator.validate(env);
-        expect(runCount(countFile)).toBe(1);
+        Vitest.expect(runCount(countFile)).toBe(1);
 
         yield* invalidation.invalidate("package-install");
 
@@ -416,11 +430,11 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           yield* validator.validate(env);
           count = runCount(countFile);
         }
-        expect(count).toBe(2);
+        Vitest.expect(count).toBe(2);
       }),
     );
 
-    it.effect(
+    it.live(
       "should fail with InspectionError when stderr has content but exit code 0 and empty stdout",
       Effect.fn(function* () {
         const validator = yield* EnvironmentValidator.Service;
@@ -435,8 +449,8 @@ it.layer(EnvironmentValidatorLive)("EnvironmentValidator", (it) => {
           validator.validate(TestPythonExtension.makeGlobalEnv(script)),
         );
 
-        assert(Result.isFailure(result), "Expected validation to fail");
-        assert.strictEqual(
+        Vitest.assert(Result.isFailure(result), "Expected validation to fail");
+        Vitest.assert.strictEqual(
           result.failure._tag,
           "EnvironmentValidator.InspectionError",
         );

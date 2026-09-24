@@ -8,19 +8,23 @@ export interface Interface<R> {
 
 export interface Test<R> extends Vitest.Test<R> {
   readonly each: Vitest.Tester<R>["each"];
+  readonly skipIf: Vitest.Tester<R>["skipIf"];
 }
 
 const bind = <R, E>(
   test: Vitest.Tester<Scope.Scope>,
   layer: Layer.Layer<R, E>,
 ): Test<R | Scope.Scope> => {
-  const bound: Vitest.Test<R | Scope.Scope> = (name, body, options) =>
-    test(
-      name,
-      (context) =>
-        Effect.suspend(() => body(context)).pipe(Effect.provide(layer)),
-      options,
-    );
+  const bindTest =
+    (target: Vitest.Test<Scope.Scope>): Vitest.Test<R | Scope.Scope> =>
+    (name, body, options) =>
+      target(
+        name,
+        (context) =>
+          Effect.suspend(() => body(context)).pipe(Effect.provide(layer)),
+        options,
+      );
+  const bound = bindTest(test);
   const each: Test<R | Scope.Scope>["each"] =
     (cases) => (name, body, options) =>
       test.each(cases)(
@@ -29,7 +33,9 @@ const bind = <R, E>(
           Effect.suspend(() => body(...args)).pipe(Effect.provide(layer)),
         options,
       );
-  return Object.assign(bound, { each });
+  const skipIf: Test<R | Scope.Scope>["skipIf"] = (condition) =>
+    bindTest(test.skipIf(condition));
+  return Object.assign(bound, { each, skipIf });
 };
 
 /**

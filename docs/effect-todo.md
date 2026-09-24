@@ -182,7 +182,7 @@ rg -n --glob '*test.ts' \
 - [x] Add `EffectTest.make(layer)` after the `TestVsCode` contract tests and
   `NotebookEditorRegistry` pilot both needed a fresh layer for each test.
 - [x] Extend `EffectTest.make` with `each` when a migrated suite first needs it.
-- [ ] Add other runner modifiers such as `skipIf` only when a migrated suite
+- [x] Add other runner modifiers such as `skipIf` only when a migrated suite
   first needs them.
 
 ### `TestVsCode` model and test service
@@ -361,7 +361,7 @@ recording, or reusable inspection controls are part of the test contract.
 
 #### Python
 
-- [ ] `python/__tests__/EnvironmentValidator.test.ts`
+- [x] `python/__tests__/EnvironmentValidator.test.ts`
 - [x] `python/__tests__/Uv.test.ts`
 
 #### Platform
