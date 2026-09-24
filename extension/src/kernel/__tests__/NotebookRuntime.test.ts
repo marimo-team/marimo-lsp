@@ -470,7 +470,6 @@ Vitest.it.effect.each(["close", "move"] as const)(
             yield* runtime.moveSession(id, notebookId(`${id}-renamed.py`));
             break;
         }
-        yield* Effect.yieldNow;
         Vitest.expect(queries - before).toBe(0);
         Vitest.expect((yield* Effect.flip(notebook.interrupt))._tag).toBe(
           "NoActiveKernelError",
