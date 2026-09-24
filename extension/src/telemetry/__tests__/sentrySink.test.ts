@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Redacted } from "effect";
 
 import * as MarimoClient from "../../lsp/MarimoClient.ts";
@@ -34,7 +34,7 @@ function deserializeErrorData(error: MarimoClient.CommandError) {
   };
 }
 
-it("fingerprints command errors by their nested Python failure", () => {
+Vitest.it("fingerprints command errors by their nested Python failure", () => {
   const kernelError = rpcCommandError(
     new Error(
       "marimo_lsp.kernels.KernelOpenError: Kernel bridge exited unexpectedly (code=1, signal=jsnull)",
@@ -61,7 +61,7 @@ it("fingerprints command errors by their nested Python failure", () => {
     deserializeErrorData(duplicateStableIdError),
   );
 
-  expect(kernelExit).toEqual({
+  Vitest.expect(kernelExit).toEqual({
     tags: {
       "error.domain": "notebook.deserialize",
       "error.exception_class": "KernelOpenError",
@@ -72,32 +72,39 @@ it("fingerprints command errors by their nested Python failure", () => {
     },
     fingerprint: ["marimo command error", "kernel-bridge-exit"],
   });
-  expect(duplicateCell.fingerprint).toEqual([
+  Vitest.expect(duplicateCell.fingerprint).toEqual([
     "marimo command error",
     "duplicate-cell-id",
   ]);
-  expect(duplicateStableId.fingerprint).toEqual(duplicateCell.fingerprint);
-  expect(duplicateStableId.tags["error.exception_class"]).toBe(
+  Vitest.expect(duplicateStableId.fingerprint).toEqual(
+    duplicateCell.fingerprint,
+  );
+  Vitest.expect(duplicateStableId.tags["error.exception_class"]).toBe(
     "DuplicateCellIdError",
   );
-  expect(kernelExit.fingerprint).not.toEqual(duplicateCell.fingerprint);
+  Vitest.expect(kernelExit.fingerprint).not.toEqual(duplicateCell.fingerprint);
 });
 
-it("preserves specific transport classifications for command failures", () => {
-  const error = commandError(new Error("Client is not running"));
+Vitest.it(
+  "preserves specific transport classifications for command failures",
+  () => {
+    const error = commandError(new Error("Client is not running"));
 
-  expect(classifySentryError(error, deserializeErrorData(error))).toEqual({
-    tags: {
-      "error.domain": "notebook.deserialize",
-      "error.exception_class": "Error",
-      "error.kind": "transport.client-not-running",
-      "rpc.method": "parse-notebook",
-      "lsp.mode": "wasm",
-    },
-    fingerprint: [
-      "notebook.deserialize",
-      "transport.client-not-running",
-      "Error",
-    ],
-  });
-});
+    Vitest.expect(
+      classifySentryError(error, deserializeErrorData(error)),
+    ).toEqual({
+      tags: {
+        "error.domain": "notebook.deserialize",
+        "error.exception_class": "Error",
+        "error.kind": "transport.client-not-running",
+        "rpc.method": "parse-notebook",
+        "lsp.mode": "wasm",
+      },
+      fingerprint: [
+        "notebook.deserialize",
+        "transport.client-not-running",
+        "Error",
+      ],
+    });
+  },
+);

@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Ref } from "effect";
 
 import * as EffectTest from "./__utils__/EffectTest.ts";
@@ -26,15 +26,15 @@ const it = EffectTest.make(counterLayer);
 it.effect("provides the bound layer", () =>
   Effect.gen(function* () {
     const counter = yield* Counter;
-    expect(yield* counter.getAndIncrement).toBe(0);
-    expect(yield* counter.getAndIncrement).toBe(1);
+    Vitest.expect(yield* counter.getAndIncrement).toBe(0);
+    Vitest.expect(yield* counter.getAndIncrement).toBe(1);
   }),
 );
 
 it.effect("builds stateful layers separately for every test", () =>
   Effect.gen(function* () {
     const counter = yield* Counter;
-    expect(yield* counter.getAndIncrement).toBe(0);
+    Vitest.expect(yield* counter.getAndIncrement).toBe(0);
   }),
 );
 
@@ -43,6 +43,6 @@ it.effect.each([{ expected: 0 }, { expected: 0 }])(
   ({ expected }) =>
     Effect.gen(function* () {
       const counter = yield* Counter;
-      expect(yield* counter.getAndIncrement).toBe(expected);
+      Vitest.expect(yield* counter.getAndIncrement).toBe(expected);
     }),
 );

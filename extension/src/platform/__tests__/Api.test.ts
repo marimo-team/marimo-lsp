@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
@@ -22,16 +22,16 @@ const it = EffectTest.make(
   ),
 );
 
-describe("Api", () => {
+Vitest.describe("Api", () => {
   it.effect(
     "has experimental.kernels namespace",
     Effect.fn(function* () {
       const api = yield* Api.Service;
 
-      expect(api).toBeDefined();
-      expect(api.experimental).toBeDefined();
-      expect(api.experimental.kernels).toBeDefined();
-      expect(typeof api.experimental.kernels.getKernel).toBe("function");
+      Vitest.expect(api).toBeDefined();
+      Vitest.expect(api.experimental).toBeDefined();
+      Vitest.expect(api.experimental.kernels).toBeDefined();
+      Vitest.expect(typeof api.experimental.kernels.getKernel).toBe("function");
     }),
   );
 
@@ -47,7 +47,7 @@ describe("Api", () => {
         api.experimental.kernels.getKernel(fakeUri),
       );
 
-      expect(kernel).toBeUndefined();
+      Vitest.expect(kernel).toBeUndefined();
     }),
   );
 
@@ -83,7 +83,7 @@ describe("Api", () => {
         api.experimental.kernels.getKernel(uri),
       );
 
-      expect(kernel).toBeUndefined();
+      Vitest.expect(kernel).toBeUndefined();
     }),
   );
 });

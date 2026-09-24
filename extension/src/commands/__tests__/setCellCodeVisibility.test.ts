@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -52,8 +52,8 @@ it.effect.each([
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
-    expect(metadata.marimo.options.hide_code).toBe(hidden);
-    expect(snapshot.executions).toEqual([
+    Vitest.expect(metadata.marimo.options.hide_code).toBe(hidden);
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command,
         args: [
@@ -102,8 +102,8 @@ it.effect.each([
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
-    expect(metadata.marimo.options.hide_code).toBe(test.hidden);
-    expect(snapshot.executions).toEqual([
+    Vitest.expect(metadata.marimo.options.hide_code).toBe(test.hidden);
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command: "notebook.cell.expandCellInput",
         args: [

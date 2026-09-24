@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
@@ -88,13 +88,15 @@ it.effect(
       [savedReplay],
     );
 
-    expect(events).toEqual(["start", "replace", "end:undefined"]);
+    Vitest.expect(events).toEqual(["start", "replace", "end:undefined"]);
     const rich = rendered
       .flat()
       .flatMap((output) => output.items)
       .find((item) => item.mime === "application/vnd.marimo.ui+json");
-    expect(rich).toBeDefined();
-    expect(JSON.parse(new TextDecoder().decode(rich?.data))).toMatchObject({
+    Vitest.expect(rich).toBeDefined();
+    Vitest.expect(
+      JSON.parse(new TextDecoder().decode(rich?.data)),
+    ).toMatchObject({
       state: { staleInputs: true },
     });
   }),
@@ -129,7 +131,7 @@ it.effect(
       [savedReplay],
     );
 
-    expect(executions).toBe(0);
+    Vitest.expect(executions).toBe(0);
 
     const api = yield* VsCode.Service;
     const events: string[] = [];
@@ -172,8 +174,8 @@ it.effect(
       .forCell(notebookEditor.notebook, NotebookCellId("cell-1"))
       .project(execution, [updated]);
 
-    expect(events).toEqual(["replace"]);
-    expect(new TextDecoder().decode(displayed[0].items[0].data)).toBe(
+    Vitest.expect(events).toEqual(["replace"]);
+    Vitest.expect(new TextDecoder().decode(displayed[0].items[0].data)).toBe(
       "updated",
     );
   }),

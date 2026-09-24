@@ -2,7 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Option, Ref } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -139,7 +139,7 @@ enabledIt.effect("prompts to install missing packages when uv is enabled", () =>
 
     yield* handleMissingPackageAlert(alert, state.notebook, controller);
 
-    expect(yield* state.promptCount).toBe(1);
+    Vitest.expect(yield* state.promptCount).toBe(1);
   }),
 );
 
@@ -151,7 +151,7 @@ disabledIt.effect(
 
       yield* handleMissingPackageAlert(alert, state.notebook, controller);
 
-      expect(yield* state.promptCount).toBe(0);
+      Vitest.expect(yield* state.promptCount).toBe(0);
     }),
 );
 
@@ -182,6 +182,6 @@ dev = ["polars"]
         executable: NodePath.join(venv, "bin", "python"),
       });
 
-      expect(yield* state.invalidationCount).toBe(0);
+      Vitest.expect(yield* state.invalidationCount).toBe(0);
     }),
 );

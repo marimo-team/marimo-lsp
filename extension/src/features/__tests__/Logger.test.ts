@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Logger, References, Tracer } from "effect";
 
 import { withSpanAnnotations } from "../Logger.ts";
@@ -11,8 +11,8 @@ const captureAnnotations = (into: Array<Record<string, unknown>>) =>
     }),
   );
 
-describe("withSpanAnnotations", () => {
-  it.effect(
+Vitest.describe("withSpanAnnotations", () => {
+  Vitest.it.effect(
     "annotates span identity even when the span has no attributes",
     Effect.fn(function* () {
       const seen: Array<Record<string, unknown>> = [];
@@ -22,14 +22,20 @@ describe("withSpanAnnotations", () => {
         Effect.provide(Logger.layer([captureAnnotations(seen)])),
       );
 
-      expect(seen).toHaveLength(1);
-      expect(seen[0]).toMatchObject({ "effect.spanName": "kernel.restart" });
-      expect(seen[0]?.["effect.traceId"]).toEqual(expect.any(String));
-      expect(seen[0]?.["effect.spanId"]).toEqual(expect.any(String));
+      Vitest.expect(seen).toHaveLength(1);
+      Vitest.expect(seen[0]).toMatchObject({
+        "effect.spanName": "kernel.restart",
+      });
+      Vitest.expect(seen[0]?.["effect.traceId"]).toEqual(
+        Vitest.expect.any(String),
+      );
+      Vitest.expect(seen[0]?.["effect.spanId"]).toEqual(
+        Vitest.expect.any(String),
+      );
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "keeps span attributes alongside identity",
     Effect.fn(function* () {
       const seen: Array<Record<string, unknown>> = [];
@@ -42,14 +48,14 @@ describe("withSpanAnnotations", () => {
         Effect.provide(Logger.layer([captureAnnotations(seen)])),
       );
 
-      expect(seen[0]).toMatchObject({
+      Vitest.expect(seen[0]).toMatchObject({
         "notebook.uri": "file:///nb.py",
         "effect.spanName": "kernel.restart",
       });
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "annotates ids but no name for an external parent span",
     Effect.fn(function* () {
       const seen: Array<Record<string, unknown>> = [];
@@ -61,15 +67,15 @@ describe("withSpanAnnotations", () => {
         Effect.provide(Logger.layer([captureAnnotations(seen)])),
       );
 
-      expect(seen[0]).toMatchObject({
+      Vitest.expect(seen[0]).toMatchObject({
         "effect.traceId": "trace-1",
         "effect.spanId": "span-1",
       });
-      expect(seen[0]).not.toHaveProperty("effect.spanName");
+      Vitest.expect(seen[0]).not.toHaveProperty("effect.spanName");
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "leaves annotations untouched with no span",
     Effect.fn(function* () {
       const seen: Array<Record<string, unknown>> = [];
@@ -79,7 +85,7 @@ describe("withSpanAnnotations", () => {
         Effect.provide(Logger.layer([captureAnnotations(seen)])),
       );
 
-      expect(seen[0]).toEqual({ "cell.id": "cell-1" });
+      Vitest.expect(seen[0]).toEqual({ "cell.id": "cell-1" });
     }),
   );
 });

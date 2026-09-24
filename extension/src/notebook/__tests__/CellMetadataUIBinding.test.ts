@@ -1,4 +1,4 @@
-import { assert, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
@@ -58,7 +58,7 @@ it.effect("should register a binding and create status bar provider", () =>
     yield* service.registerBinding(binding);
 
     const providers = yield* vscode.statusBarProviders;
-    expect(providers.length).toBeGreaterThan(0);
+    Vitest.expect(providers.length).toBeGreaterThan(0);
   }),
 );
 
@@ -87,19 +87,19 @@ it.effect(
 
     const providers = yield* vscode.statusBarProviders;
     const provider = providers[0];
-    assert(provider !== undefined);
+    Vitest.assert(provider !== undefined);
 
     const sqlItems = yield* provider.provideCellStatusBarItems(sqlCell);
-    expect(sqlItems.length).toBe(1);
-    expect(sqlItems[0]?.text).toContain("$(database) df");
-    expect(sqlItems[0]?.command).toEqual({
+    Vitest.expect(sqlItems.length).toBe(1);
+    Vitest.expect(sqlItems[0]?.text).toContain("$(database) df");
+    Vitest.expect(sqlItems[0]?.command).toEqual({
       command: commandId(MarimoCommands.updateCellMetadata),
       title: "Update cell metadata",
       arguments: [sqlCell, "test.sql"],
     });
 
     const pythonItems = yield* provider.provideCellStatusBarItems(pythonCell);
-    expect(pythonItems.length).toBe(0);
+    Vitest.expect(pythonItems.length).toBe(0);
   }),
 );
 
@@ -139,8 +139,8 @@ it.effect("should display value from cell metadata", () =>
 
     const providers = yield* vscode.statusBarProviders;
     const provider = providers[0];
-    assert(provider !== undefined);
+    Vitest.assert(provider !== undefined);
     const items = yield* provider.provideCellStatusBarItems(cell);
-    expect(items[0]?.text).toContain("$(database) my_results");
+    Vitest.expect(items[0]?.text).toContain("$(database) my_results");
   }),
 );

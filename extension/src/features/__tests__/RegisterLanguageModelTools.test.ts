@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -23,30 +23,37 @@ const makeOp = (
 const out = (channel: "stdout" | "stderr" | "stdin", data: string) =>
   ({ channel, data, mimetype: "text/plain", timestamp: 0 }) as const;
 
-describe("consoleText", () => {
-  it("concatenates stdout/stderr data in order", () => {
+Vitest.describe("consoleText", () => {
+  Vitest.it("concatenates stdout/stderr data in order", () => {
     const op = makeOp([out("stdout", "70"), out("stderr", "warn")]);
-    expect(RegisterLanguageModelTools.consoleText(op)).toBe("70warn");
+    Vitest.expect(RegisterLanguageModelTools.consoleText(op)).toBe("70warn");
   });
 
-  it("accepts a single (non-array) console output", () => {
-    expect(
+  Vitest.it("accepts a single (non-array) console output", () => {
+    Vitest.expect(
       RegisterLanguageModelTools.consoleText(makeOp(out("stdout", "hi"))),
     ).toBe("hi");
   });
 
-  it("skips non-stdout/stderr channels, matching SSE _format_console", () => {
-    const op = makeOp([out("stdin", "Enter: "), out("stdout", "value")]);
-    expect(RegisterLanguageModelTools.consoleText(op)).toBe("value");
-  });
+  Vitest.it(
+    "skips non-stdout/stderr channels, matching SSE _format_console",
+    () => {
+      const op = makeOp([out("stdin", "Enter: "), out("stdout", "value")]);
+      Vitest.expect(RegisterLanguageModelTools.consoleText(op)).toBe("value");
+    },
+  );
 
-  it("returns empty string when there is no console", () => {
-    expect(RegisterLanguageModelTools.consoleText(makeOp(null))).toBe("");
-    expect(RegisterLanguageModelTools.consoleText(makeOp(undefined))).toBe("");
+  Vitest.it("returns empty string when there is no console", () => {
+    Vitest.expect(RegisterLanguageModelTools.consoleText(makeOp(null))).toBe(
+      "",
+    );
+    Vitest.expect(
+      RegisterLanguageModelTools.consoleText(makeOp(undefined)),
+    ).toBe("");
   });
 });
 
-describe("scratchpadResultText", () => {
+Vitest.describe("scratchpadResultText", () => {
   const scratchOp = (
     console: CellOperationNotification["console"],
     output?: CellOperationNotification["output"],
@@ -83,12 +90,12 @@ describe("scratchpadResultText", () => {
       );
 
       // The scratch cell gives its rendered value and its console.
-      expect(text).toContain("SCRATCH");
-      expect(text).toContain("scratch-stdout");
+      Vitest.expect(text).toContain("SCRATCH");
+      Vitest.expect(text).toContain("scratch-stdout");
       // A cascade cell gives only its console. It does not give its
       // rendered value.
-      expect(text).toContain("cascade-stdout");
-      expect(text).not.toContain("CASCADE");
+      Vitest.expect(text).toContain("cascade-stdout");
+      Vitest.expect(text).not.toContain("CASCADE");
     }),
   );
 });

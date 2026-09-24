@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -8,7 +8,7 @@ import restartKernel from "../restartKernel.ts";
 
 const test = EffectTest.make(TestVsCode.layer);
 
-describe("restartKernel invocation", () => {
+Vitest.describe("restartKernel invocation", () => {
   test.effect("resolves the notebook referenced by toolbar context", () =>
     Effect.gen(function* () {
       const target = TestVsCode.makeNotebookEditor("/test/target.py");
@@ -23,7 +23,7 @@ describe("restartKernel invocation", () => {
         { notebookEditor: { notebookUri: target.notebook.uri } },
       ]);
 
-      expect(Option.getOrThrow(resolved).editor).toBe(target);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(target);
     }),
   );
 
@@ -39,7 +39,7 @@ describe("restartKernel invocation", () => {
         [],
       );
 
-      expect(Option.getOrThrow(resolved).editor).toBe(active);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(active);
     }),
   );
 
@@ -58,7 +58,7 @@ describe("restartKernel invocation", () => {
         },
       ]);
 
-      expect(Option.getOrThrow(resolved).editor).toBe(active);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(active);
     }),
   );
 
@@ -69,7 +69,7 @@ describe("restartKernel invocation", () => {
           { ui: true, source: "editorToolbar", notebookEditor: {} },
         ]),
       );
-      expect(result._tag).toBe("Failure");
+      Vitest.expect(result._tag).toBe("Failure");
     }),
   );
 
@@ -83,7 +83,7 @@ describe("restartKernel invocation", () => {
       const result = yield* Effect.result(
         decodeCommandArguments(restartKernel.command, [cell]),
       );
-      expect(result._tag).toBe("Failure");
+      Vitest.expect(result._tag).toBe("Failure");
     }),
   );
 });

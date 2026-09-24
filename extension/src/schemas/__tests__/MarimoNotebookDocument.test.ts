@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option, Result } from "effect";
 
 import {
@@ -19,8 +19,8 @@ type MarimoUpdate = Parameters<
 const partialUpdate: MarimoUpdate = { name: "renamed" };
 void partialUpdate;
 
-describe("MarimoNotebookCell metadata updates", () => {
-  it.each([
+Vitest.describe("MarimoNotebookCell metadata updates", () => {
+  Vitest.it.each([
     { kind: 1 as const, hideCode: undefined, expected: true },
     { kind: 1 as const, hideCode: false, expected: false },
     { kind: 2 as const, hideCode: undefined, expected: false },
@@ -41,54 +41,59 @@ describe("MarimoNotebookCell metadata updates", () => {
         0,
       );
 
-      expect(MarimoNotebookCell.from(rawCell).isCodeHidden).toBe(expected);
+      Vitest.expect(MarimoNotebookCell.from(rawCell).isCodeHidden).toBe(
+        expected,
+      );
     },
   );
 
-  it("replaces complete persisted metadata while preserving runtime and foreign fields", () => {
-    const metadata = {
-      ...MarimoNotebookCell.createMetadata({
-        marimo: {
-          name: "original",
-          options: { disabled: true },
-          sourceProjections: {
-            markdown: { quotePrefix: "rf" },
-            sql: null,
+  Vitest.it(
+    "replaces complete persisted metadata while preserving runtime and foreign fields",
+    () => {
+      const metadata = {
+        ...MarimoNotebookCell.createMetadata({
+          marimo: {
+            name: "original",
+            options: { disabled: true },
+            sourceProjections: {
+              markdown: { quotePrefix: "rf" },
+              sql: null,
+            },
           },
-        },
-        marimoRuntime: { stableId: "cell-1", state: "stale" },
-      }),
-      foreign: { ownedBy: "another-extension" },
-    };
-    const rawCell = createNotebookCell(
-      createTestNotebookDocument(
-        createNotebookUri("file:///test/notebook_mo.py"),
-      ),
-      { kind: 2, value: "x = 1", languageId: "python", metadata },
-      0,
-    );
-    const cell = MarimoNotebookCell.from(rawCell);
-    const current = Option.getOrThrow(cell.metadata);
+          marimoRuntime: { stableId: "cell-1", state: "stale" },
+        }),
+        foreign: { ownedBy: "another-extension" },
+      };
+      const rawCell = createNotebookCell(
+        createTestNotebookDocument(
+          createNotebookUri("file:///test/notebook_mo.py"),
+        ),
+        { kind: 2, value: "x = 1", languageId: "python", metadata },
+        0,
+      );
+      const cell = MarimoNotebookCell.from(rawCell);
+      const current = Option.getOrThrow(cell.metadata);
 
-    const updated = cell.buildMarimoMetadataUpdate({
-      ...current.marimo,
-      name: "renamed",
-    });
-    const decoded = Option.getOrThrow(
-      MarimoNotebookCell.decodeMetadata(updated),
-    );
+      const updated = cell.buildMarimoMetadataUpdate({
+        ...current.marimo,
+        name: "renamed",
+      });
+      const decoded = Option.getOrThrow(
+        MarimoNotebookCell.decodeMetadata(updated),
+      );
 
-    expect(decoded.marimo).toEqual({
-      ...current.marimo,
-      name: "renamed",
-    });
-    expect(decoded.marimoRuntime).toEqual(current.marimoRuntime);
-    expect(updated).toMatchObject({
-      foreign: { ownedBy: "another-extension" },
-    });
-  });
+      Vitest.expect(decoded.marimo).toEqual({
+        ...current.marimo,
+        name: "renamed",
+      });
+      Vitest.expect(decoded.marimoRuntime).toEqual(current.marimoRuntime);
+      Vitest.expect(updated).toMatchObject({
+        foreign: { ownedBy: "another-extension" },
+      });
+    },
+  );
 
-  it.each([{ misspelled: true }, null])(
+  Vitest.it.each([{ misspelled: true }, null])(
     "surfaces invalid notebook metadata to persistence operations",
     (marimo) => {
       const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
@@ -99,7 +104,7 @@ describe("MarimoNotebookCell metadata updates", () => {
       });
       const notebook = MarimoNotebookDocument.from(raw);
 
-      expect(
+      Vitest.expect(
         Result.isFailure(
           Effect.runSync(Effect.result(notebook.parseMetadata())),
         ),
@@ -108,29 +113,31 @@ describe("MarimoNotebookCell metadata updates", () => {
   );
 });
 
-describe("MarimoNotebookDocument app options", () => {
-  it("validates managed options and preserves passthrough options", () => {
-    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-      data: {
-        cells: [],
-        metadata: {
-          marimo: {
-            appOptions: {
-              managed: { autoDownload: ["html", "future-format"] },
-              passthrough: {
-                width: "wide",
-                future_setting: { answer: 42 },
+Vitest.describe("MarimoNotebookDocument app options", () => {
+  Vitest.it(
+    "validates managed options and preserves passthrough options",
+    () => {
+      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+        data: {
+          cells: [],
+          metadata: {
+            marimo: {
+              appOptions: {
+                managed: { autoDownload: ["html", "future-format"] },
+                passthrough: {
+                  width: "wide",
+                  future_setting: { answer: 42 },
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    const parsed = Effect.runSync(
-      MarimoNotebookDocument.from(raw).parseMetadata(),
-    );
-    expect(parsed.appOptions).toMatchInlineSnapshot(`
+      const parsed = Effect.runSync(
+        MarimoNotebookDocument.from(raw).parseMetadata(),
+      );
+      Vitest.expect(parsed.appOptions).toMatchInlineSnapshot(`
       {
         "managed": {
           "autoDownload": [
@@ -146,23 +153,27 @@ describe("MarimoNotebookDocument app options", () => {
         },
       }
     `);
-  });
+    },
+  );
 
-  it("rejects invalid values for the option owned by the extension", () => {
-    const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-      data: {
-        cells: [],
-        metadata: {
-          marimo: {
-            appOptions: { managed: { autoDownload: [42] }, passthrough: {} },
+  Vitest.it(
+    "rejects invalid values for the option owned by the extension",
+    () => {
+      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
+        data: {
+          cells: [],
+          metadata: {
+            marimo: {
+              appOptions: { managed: { autoDownload: [42] }, passthrough: {} },
+            },
           },
         },
-      },
-    });
+      });
 
-    const result = Effect.runSync(
-      Effect.result(MarimoNotebookDocument.from(raw).parseMetadata()),
-    );
-    expect(Result.isFailure(result)).toBe(true);
-  });
+      const result = Effect.runSync(
+        Effect.result(MarimoNotebookDocument.from(raw).parseMetadata()),
+      );
+      Vitest.expect(Result.isFailure(result)).toBe(true);
+    },
+  );
 });

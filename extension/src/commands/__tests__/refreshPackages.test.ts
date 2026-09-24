@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Option, Ref } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -94,6 +94,6 @@ it.effect("refreshes dependencies for the active document session", () =>
 
     yield* refreshPackages.invoke();
 
-    expect(yield* requests.count).toBe(1);
+    Vitest.expect(yield* requests.count).toBe(1);
   }),
 );

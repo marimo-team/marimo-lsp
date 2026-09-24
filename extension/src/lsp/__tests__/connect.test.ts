@@ -10,7 +10,7 @@
  * edits never reached ty.
  */
 
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -20,14 +20,14 @@ import { toVsCodeGlobPattern } from "../connect.ts";
 
 const it = EffectTest.make(TestVsCode.layer);
 
-describe("toVsCodeGlobPattern", () => {
+Vitest.describe("toVsCodeGlobPattern", () => {
   it.effect("passes string globs through unchanged", () =>
     Effect.gen(function* () {
       const code = yield* VsCode.Service;
 
       const result = toVsCodeGlobPattern(code, "**/*.py");
 
-      expect(Option.getOrThrow(result)).toBe("**/*.py");
+      Vitest.expect(Option.getOrThrow(result)).toBe("**/*.py");
     }),
   );
 
@@ -50,8 +50,10 @@ describe("toVsCodeGlobPattern", () => {
         if (typeof pattern === "string") {
           throw new Error("expected a RelativePattern, got a string glob");
         }
-        expect(pattern.pattern).toBe("**");
-        expect(pattern.baseUri.toString()).toBe("file:///home/me/project");
+        Vitest.expect(pattern.pattern).toBe("**");
+        Vitest.expect(pattern.baseUri.toString()).toBe(
+          "file:///home/me/project",
+        );
       }),
   );
 
@@ -62,7 +64,7 @@ describe("toVsCodeGlobPattern", () => {
       // A workspace-folder baseUri (object, not string) — ty never emits
       // this, and we can't resolve it here, so it must be skipped rather
       // than crashing the watcher loop.
-      expect(
+      Vitest.expect(
         Option.isNone(
           toVsCodeGlobPattern(code, {
             baseUri: { uri: "file:///x", name: "x", index: 0 },
@@ -70,8 +72,10 @@ describe("toVsCodeGlobPattern", () => {
           }),
         ),
       ).toBe(true);
-      expect(Option.isNone(toVsCodeGlobPattern(code, undefined))).toBe(true);
-      expect(Option.isNone(toVsCodeGlobPattern(code, 42))).toBe(true);
+      Vitest.expect(Option.isNone(toVsCodeGlobPattern(code, undefined))).toBe(
+        true,
+      );
+      Vitest.expect(Option.isNone(toVsCodeGlobPattern(code, 42))).toBe(true);
     }),
   );
 
@@ -81,7 +85,7 @@ describe("toVsCodeGlobPattern", () => {
 
       // Uri.parse rejects a scheme-less baseUri by throwing; the converter
       // must swallow that and skip the watcher, not abort registration.
-      expect(
+      Vitest.expect(
         Option.isNone(
           toVsCodeGlobPattern(code, {
             baseUri: "not-a-valid-uri",

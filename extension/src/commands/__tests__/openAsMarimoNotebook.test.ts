@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 import { vi } from "vitest";
 
@@ -27,7 +27,7 @@ fileIt.effect(
 
     yield* openAsMarimoNotebook.invoke(uri);
 
-    expect((yield* vscode.snapshot).executions).toEqual([
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       {
         command: "vscode.openWith",
         args: [uri, NOTEBOOK_TYPE],
@@ -44,10 +44,12 @@ fileIt.effect(
     yield* openAsMarimoNotebook.invoke("file:///test/notebook.py");
 
     const { executions } = yield* vscode.snapshot;
-    expect(executions).toHaveLength(1);
-    expect(executions[0]?.command).toBe("vscode.openWith");
-    expect(executions[0]?.args[0]?.toString()).toBe("file:///test/notebook.py");
-    expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
+    Vitest.expect(executions).toHaveLength(1);
+    Vitest.expect(executions[0]?.command).toBe("vscode.openWith");
+    Vitest.expect(executions[0]?.args[0]?.toString()).toBe(
+      "file:///test/notebook.py",
+    );
+    Vitest.expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
   }),
 );
 
@@ -66,7 +68,7 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke();
 
-    expect((yield* vscode.snapshot).executions).toEqual([
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       {
         command: "vscode.openWith",
         args: [document.uri, NOTEBOOK_TYPE],
@@ -92,8 +94,8 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke(document.uri.toString());
 
-    expect(save).toHaveBeenCalledOnce();
-    expect((yield* vscode.snapshot).executions).toEqual([
+    Vitest.expect(save).toHaveBeenCalledOnce();
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       {
         command: "vscode.openWith",
         args: [document.uri, NOTEBOOK_TYPE],
@@ -118,7 +120,7 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke();
 
-    expect(save).not.toHaveBeenCalled();
+    Vitest.expect(save).not.toHaveBeenCalled();
   }),
 );
 
@@ -139,7 +141,7 @@ it.effect(
 
     yield* openAsMarimoNotebook.invoke();
 
-    expect(save).toHaveBeenCalledOnce();
-    expect((yield* vscode.snapshot).executions).toEqual([]);
+    Vitest.expect(save).toHaveBeenCalledOnce();
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
   }),
 );

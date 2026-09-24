@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 import type * as vscode from "vscode";
 
@@ -31,7 +31,7 @@ function createRawCell(
   );
 }
 
-describe("extractExecuteCodeRequest", () => {
+Vitest.describe("extractExecuteCodeRequest", () => {
   effectIt.effect("includes enabled cells with stable ids", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
@@ -49,8 +49,8 @@ describe("extractExecuteCodeRequest", () => {
 
       const request = extractExecuteCodeRequest([cellA, cellB], LanguageId);
 
-      expect(Option.isSome(request)).toBe(true);
-      expect(Option.getOrThrow(request).cells).toEqual([
+      Vitest.expect(Option.isSome(request)).toBe(true);
+      Vitest.expect(Option.getOrThrow(request).cells).toEqual([
         { cellId: "cell-a", code: "x = 1" },
         { cellId: "cell-b", code: "y = x + 1" },
       ]);
@@ -73,8 +73,8 @@ describe("extractExecuteCodeRequest", () => {
         LanguageId,
       );
 
-      expect(Option.isSome(request)).toBe(true);
-      expect(
+      Vitest.expect(Option.isSome(request)).toBe(true);
+      Vitest.expect(
         Option.getOrThrow(request).cells.map((cell) => cell.cellId),
       ).toEqual(["cell-a"]);
     }),
@@ -105,7 +105,7 @@ describe("extractExecuteCodeRequest", () => {
         LanguageId,
       );
 
-      expect(Option.getOrThrow(request)).toEqual({
+      Vitest.expect(Option.getOrThrow(request)).toEqual({
         cells: [
           { cellId: "cell-enabled", code: "x = 1" },
           { cellId: "cell-disabled", code: 'print("RAN")' },
@@ -129,7 +129,7 @@ describe("extractExecuteCodeRequest", () => {
 
       const request = extractExecuteCodeRequest([disabled], LanguageId);
 
-      expect(Option.getOrThrow(request)).toEqual({
+      Vitest.expect(Option.getOrThrow(request)).toEqual({
         cells: [{ cellId: "cell-disabled", code: 'print("RAN")' }],
       });
     }),

@@ -1,4 +1,4 @@
-import { assert, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
@@ -47,7 +47,7 @@ it.effect("should register SQL dataframeName binding", () =>
   Effect.gen(function* () {
     const vscode = yield* TestVsCode.Service;
     const providers = yield* vscode.statusBarProviders;
-    expect(providers.length).toBeGreaterThan(0);
+    Vitest.expect(providers.length).toBeGreaterThan(0);
   }),
 );
 
@@ -58,13 +58,13 @@ it.effect("should only show SQL dataframeName binding for SQL cells", () =>
     const pythonCell = createMockCell(notebookUri, "python", {});
     const providers = yield* vscode.statusBarProviders;
     const provider = providers[0];
-    assert(provider !== undefined);
+    Vitest.assert(provider !== undefined);
 
     const sqlItems = yield* provider.provideCellStatusBarItems(sqlCell);
-    expect(sqlItems.length).toBeGreaterThan(0);
+    Vitest.expect(sqlItems.length).toBeGreaterThan(0);
 
     const pythonItems = yield* provider.provideCellStatusBarItems(pythonCell);
-    expect(pythonItems.length).toBe(0);
+    Vitest.expect(pythonItems.length).toBe(0);
   }),
 );
 
@@ -88,12 +88,12 @@ it.effect("should display dataframeName from SQL metadata", () =>
 
     const providers = yield* vscode.statusBarProviders;
     const provider = providers[0];
-    assert(provider !== undefined);
+    Vitest.assert(provider !== undefined);
     const items = yield* provider.provideCellStatusBarItems(cell);
 
-    expect(items.length).toBe(1);
-    expect(items[0]?.text).toContain("$(table)");
-    expect(items[0]?.text).toContain("my_results");
+    Vitest.expect(items.length).toBe(1);
+    Vitest.expect(items[0]?.text).toContain("$(table)");
+    Vitest.expect(items[0]?.text).toContain("my_results");
   }),
 );
 
@@ -104,11 +104,11 @@ it.effect("should show 'unnamed' for SQL cells without dataframeName", () =>
 
     const providers = yield* vscode.statusBarProviders;
     const provider = providers[0];
-    assert(provider !== undefined);
+    Vitest.assert(provider !== undefined);
     const items = yield* provider.provideCellStatusBarItems(cell);
 
-    expect(items.length).toBe(1);
-    expect(items[0]?.text).toContain("$(table)");
-    expect(items[0]?.text).toContain("unnamed");
+    Vitest.expect(items.length).toBe(1);
+    Vitest.expect(items[0]?.text).toContain("$(table)");
+    Vitest.expect(items[0]?.text).toContain("unnamed");
   }),
 );

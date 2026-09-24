@@ -2,7 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -34,7 +34,7 @@ notebooks = ["marimo>=0.10"]
       project.path,
     );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
         target: { _tag: "Group", name: "notebooks" },
@@ -58,7 +58,7 @@ dev = ["marimo>=0.10"]
       project.path,
     );
 
-    expect(requests).toBeNull();
+    Vitest.expect(requests).toBeNull();
   }),
 );
 
@@ -80,7 +80,7 @@ dev-dependencies = ["marimo<0.20"]
       project.path,
     );
 
-    expect(requests).toBeNull();
+    Vitest.expect(requests).toBeNull();
   }),
 );
 
@@ -93,7 +93,7 @@ it.live(
       project.path,
     );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
         target: { _tag: "Production" },
@@ -117,7 +117,7 @@ dev = ["marimo", "pytest"]
       project.path,
     );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20", "pytest"],
         target: { _tag: "Group", name: "dev" },

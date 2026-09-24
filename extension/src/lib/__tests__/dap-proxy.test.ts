@@ -1,6 +1,6 @@
 import * as NodeNet from "node:net";
 
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import {
   Cause,
   Deferred,
@@ -115,7 +115,7 @@ function takeFirstMessage(conn: Connection) {
   );
 }
 
-describe("makeDapProxy", () => {
+Vitest.describe("makeDapProxy", () => {
   it.live(
     "rewrites source.path in setBreakpoints (cell URI -> temp file)",
     Effect.fn(function* () {
@@ -133,7 +133,7 @@ describe("makeDapProxy", () => {
         },
       });
 
-      expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+      Vitest.expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
             "arguments": {
               "breakpoints": [
@@ -165,7 +165,7 @@ describe("makeDapProxy", () => {
       });
 
       yield* proxy.ready;
-      expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+      Vitest.expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
             "command": "configurationDone",
             "seq": 2,
@@ -199,7 +199,7 @@ describe("makeDapProxy", () => {
         },
       });
 
-      expect(yield* Deferred.await(received)).toMatchInlineSnapshot(`
+      Vitest.expect(yield* Deferred.await(received)).toMatchInlineSnapshot(`
           {
             "body": {
               "reason": "breakpoint",
@@ -229,7 +229,7 @@ describe("makeDapProxy", () => {
         arguments: { threadId: 1 },
       });
 
-      expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
+      Vitest.expect(yield* takeFirstMessage(conn)).toMatchInlineSnapshot(`
           {
             "arguments": {
               "threadId": 1,

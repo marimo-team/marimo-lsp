@@ -1,4 +1,4 @@
-import { assert, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option, Result, Schema } from "effect";
 
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
@@ -47,7 +47,7 @@ it.effect(
   Effect.fn(function* () {
     const storage = yield* Storage.Service;
     const value = yield* storage.workspace.get(key);
-    assert(Option.isOption(value));
+    Vitest.assert(Option.isOption(value));
   }),
 );
 
@@ -58,10 +58,10 @@ it.effect(
     const defaultValue = { value: 1 };
 
     const value = yield* storage.workspace.getWithDefault(key, defaultValue);
-    expect(value).toEqual(defaultValue);
+    Vitest.expect(value).toEqual(defaultValue);
 
     const context = yield* ExtensionContext.Service;
-    expect(context).toMatchInlineSnapshot(`
+    Vitest.expect(context).toMatchInlineSnapshot(`
         {
           "extensionUri": {
             "authority": "",
@@ -91,7 +91,7 @@ it.effect(
     yield* storage.workspace.set(key, { value: 2 });
 
     const context = yield* ExtensionContext.Service;
-    expect(context).toMatchInlineSnapshot(`
+    Vitest.expect(context).toMatchInlineSnapshot(`
         {
           "extensionUri": {
             "authority": "",
@@ -125,7 +125,7 @@ existingValueIt.effect(
     yield* storage.workspace.set(key, { value: 3 });
 
     const context = yield* ExtensionContext.Service;
-    expect(context).toMatchInlineSnapshot(`
+    Vitest.expect(context).toMatchInlineSnapshot(`
         {
           "extensionUri": {
             "authority": "",
@@ -158,7 +158,7 @@ badlyEncodedIt.effect(
     const storage = yield* Storage.Service;
     const result = yield* Effect.result(storage.workspace.get(key));
 
-    assert(Result.isFailure(result), "Expected to fail decoding");
-    assert(result.failure._tag === "Storage.DecodeError");
+    Vitest.assert(Result.isFailure(result), "Expected to fail decoding");
+    Vitest.assert(result.failure._tag === "Storage.DecodeError");
   }),
 );

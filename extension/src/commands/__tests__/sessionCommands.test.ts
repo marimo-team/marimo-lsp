@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -21,7 +21,7 @@ it.effect(
 
     yield* openSession.invoke({ notebookUri: NOTEBOOK_URI });
 
-    expect((yield* vscode.snapshot).executions).toEqual([]);
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
   }),
 );
 
@@ -33,10 +33,12 @@ it.effect(
     yield* openSession.invoke({ notebookUri: NOTEBOOK_URI });
 
     const { executions } = yield* vscode.snapshot;
-    expect(executions).toHaveLength(1);
-    expect(executions[0]?.command).toBe("vscode.openWith");
-    expect(executions[0]?.args[0]).toEqual(TestVsCode.Uri.parse(NOTEBOOK_URI));
-    expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
+    Vitest.expect(executions).toHaveLength(1);
+    Vitest.expect(executions[0]?.command).toBe("vscode.openWith");
+    Vitest.expect(executions[0]?.args[0]).toEqual(
+      TestVsCode.Uri.parse(NOTEBOOK_URI),
+    );
+    Vitest.expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
   }),
 );
 
@@ -52,6 +54,6 @@ it.effect(
 
     yield* openSession.invoke({ notebookUri: rawUri });
 
-    expect((yield* vscode.snapshot).executions).toEqual([]);
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
   }),
 );

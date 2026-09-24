@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
@@ -32,7 +32,7 @@ function createMockCell(
   return MarimoNotebookCell.from(rawCell);
 }
 
-describe("getCellExecutableCode", () => {
+Vitest.describe("getCellExecutableCode", () => {
   effectIt.effect("should transform SQL cell with custom dataframe name", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
@@ -56,9 +56,9 @@ describe("getCellExecutableCode", () => {
       const code = getCellExecutableCode(cell, LanguageId);
 
       // Should contain the custom dataframe name
-      expect(code).toContain("my_results = mo.sql(");
+      Vitest.expect(code).toContain("my_results = mo.sql(");
       // Should not use default _df
-      expect(code).not.toContain("_df = mo.sql(");
+      Vitest.expect(code).not.toContain("_df = mo.sql(");
     }),
   );
 
@@ -76,7 +76,7 @@ describe("getCellExecutableCode", () => {
         const code = getCellExecutableCode(cell, LanguageId);
 
         // Should use default _df when no metadata
-        expect(code).toContain("_df = mo.sql(");
+        Vitest.expect(code).toContain("_df = mo.sql(");
       }),
   );
 
@@ -91,7 +91,7 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toBe(pythonCode);
+      Vitest.expect(code).toBe(pythonCode);
     }),
   );
 
@@ -117,8 +117,8 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toContain("result = mo.sql(");
-      expect(code).toContain("output=False");
+      Vitest.expect(code).toContain("result = mo.sql(");
+      Vitest.expect(code).toContain("output=False");
     }),
   );
 
@@ -144,8 +144,8 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toContain("df = mo.sql(");
-      expect(code).toContain("engine=postgres_conn");
+      Vitest.expect(code).toContain("df = mo.sql(");
+      Vitest.expect(code).toContain("engine=postgres_conn");
     }),
   );
 });

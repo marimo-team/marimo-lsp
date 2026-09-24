@@ -1,13 +1,13 @@
 import * as NodeEvents from "node:events";
 import * as NodeStream from "node:stream";
 
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import { vi } from "vite-plus/test";
 
 import { Processes } from "../Processes.ts";
 
-it.live(
+Vitest.it.live(
   "reports a selected-Python spawn failure",
   Effect.fn(function* () {
     yield* Effect.acquireRelease(
@@ -43,16 +43,16 @@ it.live(
       );
     });
 
-    expect(result.code).not.toBe(0);
-    expect(result.signal).toBeNull();
-    expect(result.stderr).toContain("definitely-not-a-marimo-python");
-    expect(() => result.processes.write("kernel", new Uint8Array())).toThrow(
-      "No process with id kernel",
-    );
+    Vitest.expect(result.code).not.toBe(0);
+    Vitest.expect(result.signal).toBeNull();
+    Vitest.expect(result.stderr).toContain("definitely-not-a-marimo-python");
+    Vitest.expect(() =>
+      result.processes.write("kernel", new Uint8Array()),
+    ).toThrow("No process with id kernel");
   }),
 );
 
-it("drains stdout before reporting process exit", () => {
+Vitest.it("drains stdout before reporting process exit", () => {
   const child = Object.assign(new NodeEvents.EventEmitter(), {
     stdin: new NodeStream.PassThrough(),
     stdout: new NodeStream.PassThrough(),
@@ -73,13 +73,13 @@ it("drains stdout before reporting process exit", () => {
   child.emit("exit", 0, null);
   child.stdout.write("final output");
 
-  expect(events).toEqual(["final output"]);
+  Vitest.expect(events).toEqual(["final output"]);
 
   child.emit("close", 0, null);
-  expect(events).toEqual(["final output", "exited"]);
+  Vitest.expect(events).toEqual(["final output", "exited"]);
 });
 
-it("includes captured stderr when reporting process exit", () => {
+Vitest.it("includes captured stderr when reporting process exit", () => {
   const child = Object.assign(new NodeEvents.EventEmitter(), {
     stdin: new NodeStream.PassThrough(),
     stdout: new NodeStream.PassThrough(),
@@ -102,6 +102,6 @@ it("includes captured stderr when reporting process exit", () => {
   child.stderr.write("Traceback: missing dependency\n");
   child.emit("close", 1, null);
 
-  expect(captured).toEqual(["Traceback: missing dependency"]);
+  Vitest.expect(captured).toEqual(["Traceback: missing dependency"]);
   stderr.mockRestore();
 });

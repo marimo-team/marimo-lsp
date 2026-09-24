@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -14,7 +14,7 @@ test.effect(
 
     yield* openOutlineView.invoke();
 
-    expect((yield* vscode.snapshot).executions).toEqual([
+    Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       { command: "outline.focus", args: [] },
     ]);
   }),

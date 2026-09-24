@@ -1,4 +1,4 @@
-import { assert, describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import {
   Cause,
   Deferred,
@@ -44,7 +44,7 @@ const openDocument = Effect.fn(function* () {
   return { document, vscode };
 });
 
-describe("NotebookSessionResources", () => {
+Vitest.describe("NotebookSessionResources", () => {
   it.effect("interrupts a running program when its session ends", () =>
     Effect.gen(function* () {
       const { document, vscode } = yield* openDocument();
@@ -54,7 +54,7 @@ describe("NotebookSessionResources", () => {
       const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
       const current = sessions.current(NOTEBOOK_URI);
-      assert(Option.isSome(current));
+      Vitest.assert(Option.isSome(current));
       const session = current.value;
 
       const running = yield* resources
@@ -75,9 +75,12 @@ describe("NotebookSessionResources", () => {
       yield* vscode.closeNotebook(document);
       yield* Deferred.await(stopped);
       const exit = yield* Fiber.await(running);
-      assert(Exit.isFailure(exit));
+      Vitest.assert(Exit.isFailure(exit));
       const failure = exit.cause.reasons.find(Cause.isFailReason);
-      assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
+      Vitest.assert.instanceOf(
+        failure?.error,
+        NotebookDocumentSessions.EndedError,
+      );
     }),
   );
 
@@ -89,7 +92,7 @@ describe("NotebookSessionResources", () => {
       const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
       const current = sessions.current(NOTEBOOK_URI);
-      assert(Option.isSome(current));
+      Vitest.assert(Option.isSome(current));
       const session = current.value;
       const ended = yield* Deferred.make<void>();
       yield* Effect.addFinalizer(() => Deferred.succeed(ended, undefined)).pipe(
@@ -101,10 +104,13 @@ describe("NotebookSessionResources", () => {
       const exit = yield* resources
         .runScoped(session, Ref.set(ran, true))
         .pipe(Scope.provide(session.scope), Effect.exit);
-      assert(Exit.isFailure(exit));
+      Vitest.assert(Exit.isFailure(exit));
       const failure = exit.cause.reasons.find(Cause.isFailReason);
-      assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
-      expect(yield* Ref.get(ran)).toBe(false);
+      Vitest.assert.instanceOf(
+        failure?.error,
+        NotebookDocumentSessions.EndedError,
+      );
+      Vitest.expect(yield* Ref.get(ran)).toBe(false);
     }),
   );
 
@@ -116,13 +122,13 @@ describe("NotebookSessionResources", () => {
       const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
       const current = sessions.current(NOTEBOOK_URI);
-      assert(Option.isSome(current));
+      Vitest.assert(Option.isSome(current));
       const session = current.value;
 
       const providedScope = yield* resources
         .runScoped(session, Effect.scope)
         .pipe(Scope.provide(session.scope));
-      expect(providedScope).toBe(session.scope);
+      Vitest.expect(providedScope).toBe(session.scope);
 
       for (let index = 0; index < 100; index++) {
         yield* resources
@@ -130,7 +136,7 @@ describe("NotebookSessionResources", () => {
           .pipe(Scope.provide(session.scope));
       }
 
-      expect(yield* tracked.counts).toEqual({
+      Vitest.expect(yield* tracked.counts).toEqual({
         acquired: 100,
         released: 100,
         active: 0,

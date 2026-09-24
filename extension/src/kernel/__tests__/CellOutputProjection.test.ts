@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
@@ -60,7 +60,10 @@ class FakeExecution implements OutputExecution {
     output: vscode.NotebookCellOutput,
   ): Thenable<void> {
     const index = this.cell.outputs.indexOf(output);
-    expect(index, "replaceOutputItems must target a live output").not.toBe(-1);
+    Vitest.expect(
+      index,
+      "replaceOutputItems must target a live output",
+    ).not.toBe(-1);
     this.cell.log.push(`replace(${decodeItems(items)})`);
     // VS Code hands back a fresh object for the edited output.
     this.cell.outputs[index] = { items: [...items], metadata: output.metadata };
@@ -91,7 +94,7 @@ const withBuilders = <A, E>(
 
 const it = EffectTest.make(TestVsCode.layer);
 
-describe("CellOutputProjection", () => {
+Vitest.describe("CellOutputProjection", () => {
   it.effect(
     "appends as outputs arrive; commit measures each appended slot",
     Effect.fn(function* () {
@@ -105,7 +108,7 @@ describe("CellOutputProjection", () => {
           yield* p.project(exec, [stdout("10"), main("trace")]);
           yield* p.commit(exec, [stdout("10"), main("trace")]);
 
-          expect(cell.take()).toEqual([
+          Vitest.expect(cell.take()).toEqual([
             "append(10)",
             // stdout unchanged → skipped; only the new slot appends
             "append(trace)",
@@ -113,7 +116,7 @@ describe("CellOutputProjection", () => {
             "replace(10)",
             "replace(trace)",
           ]);
-          expect(cell.shown).toEqual(["10", "trace"]);
+          Vitest.expect(cell.shown).toEqual(["10", "trace"]);
         }),
       );
     }),
@@ -134,7 +137,7 @@ describe("CellOutputProjection", () => {
           yield* p.commit(exec, [stdout("10\n20")]);
 
           // The in-place edit already measured the slot; commit adds nothing.
-          expect(cell.take()).toEqual(["append(10)", "replace(10\n20)"]);
+          Vitest.expect(cell.take()).toEqual(["append(10)", "replace(10\n20)"]);
         }),
       );
     }),
@@ -170,13 +173,13 @@ describe("CellOutputProjection", () => {
             main("v2"),
           ]);
 
-          expect(cell.take()).toEqual([
+          Vitest.expect(cell.take()).toEqual([
             "replace(20)",
             "clear",
             "append(20)",
             "append(v2)",
           ]);
-          expect(cell.shown).toEqual(["20", "v2"]);
+          Vitest.expect(cell.shown).toEqual(["20", "v2"]);
         }),
       );
     }),
@@ -194,9 +197,9 @@ describe("CellOutputProjection", () => {
           .pipe(Effect.flip);
       });
 
-      expect(failure).toBeInstanceOf(CellOutputOperationError);
-      expect(failure.operation).toBe("appendOutput");
-      expect(failure.cause).toEqual(new Error("append rejected"));
+      Vitest.expect(failure).toBeInstanceOf(CellOutputOperationError);
+      Vitest.expect(failure.operation).toBe("appendOutput");
+      Vitest.expect(failure.cause).toEqual(new Error("append rejected"));
     }),
   );
 
@@ -215,7 +218,7 @@ describe("CellOutputProjection", () => {
           // Canonical order is stdout-first: commit re-clears and re-appends.
           yield* p.commit(exec, [stdout("10"), main("trace")]);
 
-          expect(cell.take()).toEqual([
+          Vitest.expect(cell.take()).toEqual([
             "append(trace)",
             "append(10)",
             // order mismatch → clean rebuild, then measure
@@ -225,7 +228,7 @@ describe("CellOutputProjection", () => {
             "replace(10)",
             "replace(trace)",
           ]);
-          expect(cell.shown).toEqual(["10", "trace"]);
+          Vitest.expect(cell.shown).toEqual(["10", "trace"]);
         }),
       );
     }),
@@ -248,15 +251,15 @@ describe("CellOutputProjection", () => {
           const second = new FakeExecution(cell);
           // Queued/running with nothing new yet: the previous output stays.
           yield* p.project(second, []);
-          expect(cell.take()).toEqual([]);
-          expect(cell.shown).toEqual(["10", "v1"]);
+          Vitest.expect(cell.take()).toEqual([]);
+          Vitest.expect(cell.shown).toEqual(["10", "v1"]);
 
           yield* p.project(second, [stdout("10"), main("v2")]);
           yield* p.commit(second, [stdout("10"), main("v2")]);
 
           // No clear, no append: the on-screen outputs keep their identity.
-          expect(cell.take()).toEqual(["replace(v2)"]);
-          expect(cell.shown).toEqual(["10", "v2"]);
+          Vitest.expect(cell.take()).toEqual(["replace(v2)"]);
+          Vitest.expect(cell.shown).toEqual(["10", "v2"]);
         }),
       );
     }),
@@ -278,12 +281,16 @@ describe("CellOutputProjection", () => {
           // stdout lingers; VS Code can't drop one output, so commit rebuilds.
           const second = new FakeExecution(cell);
           yield* p.project(second, [main("v2")]);
-          expect(cell.take()).toEqual(["replace(v2)"]);
-          expect(cell.shown).toEqual(["10", "v2"]);
+          Vitest.expect(cell.take()).toEqual(["replace(v2)"]);
+          Vitest.expect(cell.shown).toEqual(["10", "v2"]);
 
           yield* p.commit(second, [main("v2")]);
-          expect(cell.take()).toEqual(["clear", "append(v2)", "replace(v2)"]);
-          expect(cell.shown).toEqual(["v2"]);
+          Vitest.expect(cell.take()).toEqual([
+            "clear",
+            "append(v2)",
+            "replace(v2)",
+          ]);
+          Vitest.expect(cell.shown).toEqual(["v2"]);
         }),
       );
     }),
@@ -302,13 +309,13 @@ describe("CellOutputProjection", () => {
           // "Clear All Outputs" emptied the cell behind our back.
           cell.outputs.length = 0;
           yield* p.project(new FakeExecution(cell), [main("v2")]);
-          expect(cell.take()).toEqual(["append(v2)"]);
+          Vitest.expect(cell.take()).toEqual(["append(v2)"]);
 
           // Same count, but not the slot we appended.
           cell.outputs[0] = stdout("other").output;
           yield* p.project(new FakeExecution(cell), [main("v3")]);
-          expect(cell.take()).toEqual(["clear", "append(v3)"]);
-          expect(cell.shown).toEqual(["v3"]);
+          Vitest.expect(cell.take()).toEqual(["clear", "append(v3)"]);
+          Vitest.expect(cell.shown).toEqual(["v3"]);
         }),
       );
     }),
@@ -327,12 +334,12 @@ describe("CellOutputProjection", () => {
           const second = new FakeExecution(cell);
           yield* p.project(second, []);
           yield* p.commit(second, []);
-          expect(cell.take()).toEqual(["clear"]);
-          expect(cell.shown).toEqual([]);
+          Vitest.expect(cell.take()).toEqual(["clear"]);
+          Vitest.expect(cell.shown).toEqual([]);
 
           // And a later empty commit on an empty cell is a no-op.
           yield* p.commit(new FakeExecution(cell), []);
-          expect(cell.take()).toEqual([]);
+          Vitest.expect(cell.take()).toEqual([]);
         }),
       );
     }),

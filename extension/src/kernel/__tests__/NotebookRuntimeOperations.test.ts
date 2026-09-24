@@ -1,6 +1,6 @@
 import * as NodePath from "node:path";
 
-import { assert, describe, expect, it as test } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Fiber, Latch, Option, Ref, Stream } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -67,8 +67,8 @@ function makeIdleCellOperation(
   };
 }
 
-describe("NotebookRuntime operation processing", () => {
-  test.effect(
+Vitest.describe("NotebookRuntime operation processing", () => {
+  Vitest.it.effect(
     "processes every queued notebook operation in order",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -98,7 +98,7 @@ describe("NotebookRuntime operation processing", () => {
       yield* releaseFirst.open;
       yield* latestProcessed.await;
 
-      assert.deepStrictEqual(yield* Ref.get(processed), [
+      Vitest.assert.deepStrictEqual(yield* Ref.get(processed), [
         "one",
         "two",
         "three",
@@ -106,7 +106,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  test.effect(
+  Vitest.it.effect(
     "processes a state-only cell operation after its terminal output",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -140,7 +140,7 @@ describe("NotebookRuntime operation processing", () => {
       yield* releaseBlocker.open;
       yield* trailerProcessed.await;
 
-      assert.deepStrictEqual(yield* Ref.get(processed), [
+      Vitest.assert.deepStrictEqual(yield* Ref.get(processed), [
         "blocker",
         "settle",
         "serialization",
@@ -148,7 +148,7 @@ describe("NotebookRuntime operation processing", () => {
     }),
   );
 
-  test.effect(
+  Vitest.it.effect(
     "processes separate notebooks independently",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -177,12 +177,16 @@ describe("NotebookRuntime operation processing", () => {
       yield* executor.post(notebookB, process("b-1"));
 
       yield* otherProcessed.await;
-      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1"]);
+      Vitest.assert.deepStrictEqual(yield* Ref.get(processed), ["b-1"]);
 
       yield* releaseFirst.open;
       yield* secondProcessed.await;
 
-      assert.deepStrictEqual(yield* Ref.get(processed), ["b-1", "a-1", "a-2"]);
+      Vitest.assert.deepStrictEqual(yield* Ref.get(processed), [
+        "b-1",
+        "a-1",
+        "a-2",
+      ]);
     }),
   );
 
@@ -219,13 +223,13 @@ describe("NotebookRuntime operation processing", () => {
         yield* ctx.vscode.closeNotebook(ctx.editor.notebook);
         yield* Effect.yieldNow;
 
-        expect(yield* ctx.errors).toEqual([]);
+        Vitest.expect(yield* ctx.errors).toEqual([]);
       });
     }),
   );
 });
 
-describe("NotebookRuntime cell identity", () => {
+Vitest.describe("NotebookRuntime cell identity", () => {
   it.effect(
     "notifies marimo when a cell is deleted",
     Effect.fn(function* () {
@@ -262,7 +266,7 @@ describe("NotebookRuntime cell identity", () => {
           Effect.map(Option.getOrThrow),
         );
 
-        expect(executions).toContainEqual({
+        Vitest.expect(executions).toContainEqual({
           kind: "delete-cell",
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
@@ -348,7 +352,7 @@ describe("NotebookRuntime cell identity", () => {
           "cell change pipeline did not settle",
         );
 
-        expect(
+        Vitest.expect(
           commands.some(
             (command) =>
               command.kind === "delete-cell" && command.cellId === "cell-1",
@@ -359,7 +363,7 @@ describe("NotebookRuntime cell identity", () => {
   );
 });
 
-describe("NotebookRuntime stdin", () => {
+Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
     "prompts for input on stdin cell-op and sends response",
     Effect.fn(function* () {
@@ -401,7 +405,7 @@ describe("NotebookRuntime stdin", () => {
           Effect.eventually,
         );
         const stdinCmd = cmds.find((c) => c.kind === "send-stdin");
-        expect(stdinCmd).toMatchObject({
+        Vitest.expect(stdinCmd).toMatchObject({
           kind: "send-stdin",
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
@@ -450,11 +454,11 @@ describe("NotebookRuntime stdin", () => {
 
         // No send-stdin command should have been sent
         const stdinCmd = cmds.find((c) => c.kind === "send-stdin");
-        expect(stdinCmd).toBeUndefined();
+        Vitest.expect(stdinCmd).toBeUndefined();
 
         // An interrupt should have been sent instead
         const interruptCmd = cmds.find((c) => c.kind === "interrupt");
-        expect(interruptCmd).toMatchObject({
+        Vitest.expect(interruptCmd).toMatchObject({
           kind: "interrupt",
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
@@ -493,7 +497,7 @@ describe("NotebookRuntime stdin", () => {
         yield* ctx.provideInput(Option.some("stale response"));
         yield* Effect.yieldNow;
 
-        expect(
+        Vitest.expect(
           (yield* ctx.executions).some(
             (command) => command.kind === "send-stdin",
           ),
@@ -533,7 +537,7 @@ describe("NotebookRuntime stdin", () => {
         yield* ctx.provideInput(Option.some("stale response"));
         yield* Effect.yieldNow;
 
-        expect(
+        Vitest.expect(
           (yield* ctx.executions).some(
             (command) => command.kind === "send-stdin",
           ),
@@ -543,7 +547,7 @@ describe("NotebookRuntime stdin", () => {
   );
 });
 
-describe("NotebookRuntime scratch stream", () => {
+Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "runs one scratchpad at a time within a notebook",
     Effect.fn(function* () {
@@ -574,9 +578,9 @@ describe("NotebookRuntime scratch stream", () => {
         yield* Effect.yieldNow;
 
         const first_ = scratchpadCalls(yield* ctx.executions);
-        expect(first_).toHaveLength(1);
+        Vitest.expect(first_).toHaveLength(1);
         const firstCommand = first_[0];
-        assert(
+        Vitest.assert(
           firstCommand !== undefined && typeof firstCommand.runId === "string",
         );
 
@@ -598,9 +602,9 @@ describe("NotebookRuntime scratch stream", () => {
             Effect.map(Option.getOrThrow),
           ),
         );
-        expect(commands).toHaveLength(2);
+        Vitest.expect(commands).toHaveLength(2);
         const secondCommand = commands[1];
-        assert(
+        Vitest.assert(
           secondCommand !== undefined &&
             typeof secondCommand.runId === "string",
         );
@@ -667,14 +671,14 @@ describe("NotebookRuntime scratch stream", () => {
         }> = [];
         for (const command of executions) {
           if (command.kind === "execute-scratchpad") {
-            assert(typeof command.runId === "string");
+            Vitest.assert(typeof command.runId === "string");
             commands.push({
               notebookUri: notebookId(command.notebookUri),
               runId: command.runId,
             });
           }
         }
-        expect(
+        Vitest.expect(
           commands
             .map((command) => command.notebookUri)
             .toSorted((a, b) => a.localeCompare(b)),
@@ -731,9 +735,9 @@ describe("NotebookRuntime scratch stream", () => {
           (c) => c.kind === "execute-scratchpad",
         );
 
-        assert(executeCmd !== undefined);
+        Vitest.assert(executeCmd !== undefined);
         const { runId } = executeCmd;
-        expect(runId).toBeDefined();
+        Vitest.expect(runId).toBeDefined();
 
         const cell = ctx.notebook.cellAt(0);
         const realCellId = Option.getOrThrow(cell.id);
@@ -789,9 +793,9 @@ describe("NotebookRuntime scratch stream", () => {
 
         const ops = yield* Fiber.join(streamFiber);
         const cellIds = ops.map((op) => op.cell_id);
-        expect(ops).toHaveLength(2);
-        expect(cellIds).toContain(SCRATCH_CELL_ID);
-        expect(cellIds).toContain(realCellId);
+        Vitest.expect(ops).toHaveLength(2);
+        Vitest.expect(cellIds).toContain(SCRATCH_CELL_ID);
+        Vitest.expect(cellIds).toContain(realCellId);
       });
     }),
   );
@@ -831,14 +835,14 @@ describe("NotebookRuntime scratch stream", () => {
         const executeCmd = executions.find(
           (c) => c.kind === "execute-scratchpad",
         );
-        assert(executeCmd !== undefined);
+        Vitest.assert(executeCmd !== undefined);
         const { runId } = executeCmd;
 
         // The finalizer should have sent a run-correlated interrupt. The
         // server uses the id to remember cancellation during kernel startup.
         const interruptCmd = executions.find((c) => c.kind === "interrupt");
 
-        expect(interruptCmd).toMatchObject({
+        Vitest.expect(interruptCmd).toMatchObject({
           kind: "interrupt",
           runId,
           notebookUri: ctx.notebookUri,
@@ -874,7 +878,7 @@ describe("NotebookRuntime scratch stream", () => {
           Effect.map(Option.getOrThrow),
         );
         const executeCmd = calls.find((c) => c.kind === "execute-scratchpad");
-        assert(executeCmd !== undefined);
+        Vitest.assert(executeCmd !== undefined);
         const { runId } = executeCmd;
 
         // Our completed-run ends the stream normally.
@@ -889,13 +893,13 @@ describe("NotebookRuntime scratch stream", () => {
         const interruptCmd = (yield* ctx.executions).find(
           (c) => c.kind === "interrupt",
         );
-        expect(interruptCmd).toBeUndefined();
+        Vitest.expect(interruptCmd).toBeUndefined();
       });
     }),
   );
 });
 
-describe("NotebookRuntime state eviction", () => {
+Vitest.describe("NotebookRuntime state eviction", () => {
   it.effect(
     "ignores operations from a replaced kernel session",
     Effect.fn(function* () {
@@ -916,7 +920,7 @@ describe("NotebookRuntime state eviction", () => {
           notification: { op: "variables", variables: [] },
         });
         yield* Effect.yieldNow;
-        expect(
+        Vitest.expect(
           Option.isNone(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
 
@@ -981,10 +985,10 @@ describe("NotebookRuntime state eviction", () => {
           Effect.eventually,
         );
 
-        expect(
+        Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
-        expect(
+        Vitest.expect(
           Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
         ).toBe(true);
 
@@ -1017,7 +1021,7 @@ describe("NotebookRuntime state eviction", () => {
           },
         });
         yield* Effect.yieldNow;
-        expect(
+        Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(false);
 
@@ -1040,7 +1044,7 @@ describe("NotebookRuntime state eviction", () => {
           ),
           Effect.eventually,
         );
-        expect(
+        Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
 
@@ -1059,7 +1063,7 @@ describe("NotebookRuntime state eviction", () => {
           Option.isSome,
           "notebook lifecycle pipeline did not settle",
         );
-        expect(
+        Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);
       });

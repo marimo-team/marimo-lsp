@@ -9,7 +9,7 @@
  * between upstream ty releases.
  */
 
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option, Stream } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
@@ -32,7 +32,7 @@ const variablesLayer = NotebookVariables.layer.pipe(
 );
 const it = EffectTest.make(Layer.merge(variablesLayer, TestVsCode.layer));
 
-describe("makeNotebookLspClient against uv run ty server", () => {
+Vitest.describe("makeNotebookLspClient against uv run ty server", () => {
   it.live(
     "initialize → openNotebook → hover → textChange → close",
     () =>
@@ -49,9 +49,9 @@ describe("makeNotebookLspClient against uv run ty server", () => {
         });
 
         // --- 1. Server handshake -------------------------------------------
-        expect(client.serverInfo.name).toBe("ty");
-        expect(typeof client.serverInfo.version).toBe("string");
-        expect(Object.keys(client.serverInfo.capabilities).sort())
+        Vitest.expect(client.serverInfo.name).toBe("ty");
+        Vitest.expect(typeof client.serverInfo.version).toBe("string");
+        Vitest.expect(Object.keys(client.serverInfo.capabilities).sort())
           .toMatchInlineSnapshot(`
             [
               "callHierarchyProvider",
@@ -83,7 +83,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
 
         // --- 2. Build a notebook with one Python cell ---------------------
         // `x` is declared at the start of the line so hover at (0,0) lands
-        // on a symbol ty can describe.
+        // on a symbol ty can Vitest.describe.
         const notebook = TestVsCode.createTestNotebookDocument("/nb.py", {
           data: {
             cells: [
@@ -108,7 +108,7 @@ describe("makeNotebookLspClient against uv run ty server", () => {
           textDocument: { uri: cell.document.uri.toString() },
           position: { line: 0, character: 0 },
         });
-        expect(hover).toMatchInlineSnapshot(`
+        Vitest.expect(hover).toMatchInlineSnapshot(`
       	{
       	  "contents": {
       	    "kind": "markdown",

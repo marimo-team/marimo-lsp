@@ -1,4 +1,4 @@
-import { expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -44,7 +44,7 @@ it.effect.each([
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
-    expect(metadata.marimo.options).toMatchObject({
+    Vitest.expect(metadata.marimo.options).toMatchObject({
       disabled: expected,
       hide_code: true,
     });
@@ -75,6 +75,6 @@ it.effect.each([
       Option.some(MarimoNotebookCell.from(document.cellAt(0))),
     );
 
-    expect((yield* vscode.snapshot).workspaceEdits).toEqual([]);
+    Vitest.expect((yield* vscode.snapshot).workspaceEdits).toEqual([]);
   }),
 );

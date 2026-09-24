@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { Effect, Layer, Option } from "effect";
 import type * as vscode from "vscode";
@@ -35,7 +35,7 @@ const errorState = (): CellRuntimeState => ({
   },
 });
 
-describe("VsCodeCellDrive", () => {
+Vitest.describe("VsCodeCellDrive", () => {
   it.effect(
     "does not update outputs before the execution starts",
     Effect.fn(function* () {
@@ -98,7 +98,7 @@ describe("VsCodeCellDrive", () => {
           final: false,
         }),
       );
-      expect(events).toEqual([]);
+      Vitest.expect(events).toEqual([]);
 
       yield* drive(cell, CellCommand.StartRun({ runId, at: Option.none() }));
       yield* drive(
@@ -109,7 +109,7 @@ describe("VsCodeCellDrive", () => {
           final: false,
         }),
       );
-      expect(events).toEqual(["start", "append"]);
+      Vitest.expect(events).toEqual(["start", "append"]);
     }),
   );
 
@@ -180,7 +180,12 @@ describe("VsCodeCellDrive", () => {
       );
 
       // The cell had no outputs, so there is nothing to clear first.
-      expect(events).toEqual(["start", "append", "finalize", "end:false"]);
+      Vitest.expect(events).toEqual([
+        "start",
+        "append",
+        "finalize",
+        "end:false",
+      ]);
     }),
   );
 });

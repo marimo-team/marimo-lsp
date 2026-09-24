@@ -1,4 +1,4 @@
-import { describe, assert, expect, it as vitestIt } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 
 import * as pkg from "../../package.json";
@@ -37,7 +37,7 @@ const withTestCtx = Effect.fn(function* (
 
 const it = EffectTest.make(TestVsCode.layer);
 
-describe("extension.activate", () => {
+Vitest.describe("extension.activate", () => {
   it.effect(
     "should return the public API",
     Effect.fn(function* () {
@@ -46,7 +46,7 @@ describe("extension.activate", () => {
       const context = yield* getTestExtensionContext;
       const api = yield* Effect.promise(() => extension.activate(context));
 
-      expect(api).toMatchInlineSnapshot(`
+      Vitest.expect(api).toMatchInlineSnapshot(`
         {
           "experimental": {
             "kernels": {
@@ -74,26 +74,29 @@ describe("extension.activate", () => {
 
       const snapshot = yield* vscode.snapshot;
 
-      expect(snapshot.controllers).toEqual([SANDBOX_CONTROLLER_ID]);
-      expect(snapshot.serializers).toEqual([NOTEBOOK_TYPE]);
+      Vitest.expect(snapshot.controllers).toEqual([SANDBOX_CONTROLLER_ID]);
+      Vitest.expect(snapshot.serializers).toEqual([NOTEBOOK_TYPE]);
       // We don't need to snapshot all commands and views, since we
       // check them against package.json below.
 
-      expect(new Set(pkg.contributes.commands.map((c) => c.command))).toEqual(
-        new Set(snapshot.commands),
-      );
-      expect(
+      Vitest.expect(
+        new Set(pkg.contributes.commands.map((c) => c.command)),
+      ).toEqual(new Set(snapshot.commands));
+      Vitest.expect(
         new Set(
           pkg.contributes.views["marimo-explorer"].map((view) => view.id),
         ),
       ).toEqual(new Set(snapshot.views));
 
-      assert.strictEqual(pkg.contributes.notebooks.length, 1);
-      assert.strictEqual(pkg.contributes.notebooks[0].type, NOTEBOOK_TYPE);
+      Vitest.assert.strictEqual(pkg.contributes.notebooks.length, 1);
+      Vitest.assert.strictEqual(
+        pkg.contributes.notebooks[0].type,
+        NOTEBOOK_TYPE,
+      );
 
       yield* Effect.promise(() => extension.deactivate());
       const afterDeactivation = yield* vscode.snapshot;
-      expect({
+      Vitest.expect({
         views: afterDeactivation.views,
         commands: afterDeactivation.commands,
         serializers: afterDeactivation.serializers,
@@ -122,14 +125,14 @@ describe("extension.activate", () => {
       yield* Effect.promise(() => extension.deactivate());
       yield* Effect.promise(() => extension.deactivate());
 
-      expect(yield* Ref.get(disposals)).toBe(1);
+      Vitest.expect(yield* Ref.get(disposals)).toBe(1);
     }),
     20_000,
   );
 });
 
-describe("package.json validation", () => {
-  vitestIt(
+Vitest.describe("package.json validation", () => {
+  Vitest.it(
     "all commands in commandPalette menu should exist in main commands list",
     () => {
       const commandIds = new Set(
@@ -139,7 +142,7 @@ describe("package.json validation", () => {
         pkg.contributes.menus.commandPalette?.map((item) => item.command) || [];
 
       for (const commandId of commandPaletteIds) {
-        expect(
+        Vitest.expect(
           commandIds.has(commandId),
           `Command "${commandId}" in menus.commandPalette does not exist in contributes.commands`,
         ).toBe(true);
@@ -147,10 +150,10 @@ describe("package.json validation", () => {
     },
   );
 
-  vitestIt(
+  Vitest.it(
     "shows the cell visibility action matching the target cell state",
     () => {
-      expect(pkg.contributes.menus["notebook/cell/title"]).toEqual([
+      Vitest.expect(pkg.contributes.menus["notebook/cell/title"]).toEqual([
         {
           command: commandId(hideCellCode.command),
           when: "notebookType == 'marimo-notebook' && notebookCellType == 'code' && !notebookCellInputIsCollapsed",

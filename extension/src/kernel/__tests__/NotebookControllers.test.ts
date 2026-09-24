@@ -2,7 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { assert, expect, it as vitestIt } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
@@ -68,7 +68,7 @@ knownEnvironmentsIt.effect(
     const vscode = yield* TestVsCode.Service;
     yield* NotebookRuntime.Service;
 
-    expect((yield* vscode.snapshot).controllers).toEqual([
+    Vitest.expect((yield* vscode.snapshot).controllers).toEqual([
       "marimo-/home/user/.venv/bin/python",
       "marimo-/usr/local/bin/python3.11",
       "marimo-sandbox",
@@ -76,20 +76,23 @@ knownEnvironmentsIt.effect(
   }),
 );
 
-vitestIt("distinguishes uv cache descendants from shared path prefixes", () => {
-  expect(
-    NotebookControllers.isPathInside(
-      "/home/user/.cache/uv/archive-v0/env/bin/python",
-      "/home/user/.cache/uv",
-    ),
-  ).toBe(true);
-  expect(
-    NotebookControllers.isPathInside(
-      "/home/user/.cache/uv-other/bin/python",
-      "/home/user/.cache/uv",
-    ),
-  ).toBe(false);
-});
+Vitest.it(
+  "distinguishes uv cache descendants from shared path prefixes",
+  () => {
+    Vitest.expect(
+      NotebookControllers.isPathInside(
+        "/home/user/.cache/uv/archive-v0/env/bin/python",
+        "/home/user/.cache/uv",
+      ),
+    ).toBe(true);
+    Vitest.expect(
+      NotebookControllers.isPathInside(
+        "/home/user/.cache/uv-other/bin/python",
+        "/home/user/.cache/uv",
+      ),
+    ).toBe(false);
+  },
+);
 
 globalEnvironmentIt.effect(
   "attaches VS Code controller selections to the notebook runtime",
@@ -101,7 +104,7 @@ globalEnvironmentIt.effect(
     const initial = yield* notebooks.forNotebook(
       notebookId(editor.notebook.uri.toString()),
     );
-    expect(Option.isNone(yield* initial.getController)).toBe(true);
+    Vitest.expect(Option.isNone(yield* initial.getController)).toBe(true);
 
     // No drain before selecting: the controller's selection listener is
     // acquired in the same fiber turn as its creation, so an event fired
@@ -118,8 +121,8 @@ globalEnvironmentIt.effect(
       notebookId(editor.notebook.uri.toString()),
     );
     const selected = yield* selectedNotebook.getController;
-    assert(Option.isSome(selected));
-    expect(selected.value.id).toBe(`marimo-${globalExecutable}`);
+    Vitest.assert(Option.isSome(selected));
+    Vitest.expect(selected.value.id).toBe(`marimo-${globalExecutable}`);
   }),
 );
 
@@ -154,8 +157,8 @@ it.effect(
     emit?.({ notebook: editor.notebook, selected: true });
     yield* Fiber.join(consumer);
 
-    expect(disposals).toBe(1);
-    expect(emit).toBeUndefined();
+    Vitest.expect(disposals).toBe(1);
+    Vitest.expect(emit).toBeUndefined();
   }),
 );
 
@@ -174,7 +177,7 @@ homeEnvironmentIt.effect(
 
     yield* python.addEnvironment(secondEnvironment);
     yield* Effect.yieldNow;
-    expect((yield* vscode.snapshot).controllers).toEqual([
+    Vitest.expect((yield* vscode.snapshot).controllers).toEqual([
       "marimo-/home/user/.venv/bin/python",
       "marimo-/usr/local/bin/python3.11",
       "marimo-sandbox",
@@ -182,7 +185,7 @@ homeEnvironmentIt.effect(
 
     yield* python.removeEnvironment(firstEnvironment);
     yield* Effect.yieldNow;
-    expect((yield* vscode.snapshot).controllers).toEqual([
+    Vitest.expect((yield* vscode.snapshot).controllers).toEqual([
       "marimo-/usr/local/bin/python3.11",
       "marimo-sandbox",
     ]);
@@ -211,7 +214,7 @@ homeEnvironmentIt.effect(
     yield* python.removeEnvironment(firstEnvironment);
     yield* Effect.yieldNow;
 
-    expect((yield* vscode.snapshot).controllers).toContain(
+    Vitest.expect((yield* vscode.snapshot).controllers).toContain(
       `marimo-${homeExecutable}`,
     );
   }),
@@ -229,8 +232,8 @@ globalEnvironmentIt.effect(
     yield* Effect.yieldNow;
 
     const { affinityUpdates } = yield* vscode.snapshot;
-    expect(affinityUpdates).toHaveLength(2);
-    expect(affinityMap(affinityUpdates)).toEqual({
+    Vitest.expect(affinityUpdates).toHaveLength(2);
+    Vitest.expect(affinityMap(affinityUpdates)).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Default,
       [`marimo-${globalExecutable}`]: code.NotebookControllerAffinity.Default,
     });
@@ -255,12 +258,12 @@ globalEnvironmentIt.effect(
     yield* Effect.yieldNow;
 
     const { affinityUpdates } = yield* vscode.snapshot;
-    expect(affinityUpdates).toHaveLength(4);
-    expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
+    Vitest.expect(affinityUpdates).toHaveLength(4);
+    Vitest.expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Preferred,
       [`marimo-${globalExecutable}`]: code.NotebookControllerAffinity.Default,
     });
-    expect(affinityMap(affinityUpdates.slice(2))).toEqual({
+    Vitest.expect(affinityMap(affinityUpdates.slice(2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Default,
       [`marimo-${globalExecutable}`]: code.NotebookControllerAffinity.Default,
     });
@@ -299,12 +302,12 @@ it.live(
     yield* Effect.yieldNow;
 
     const { affinityUpdates } = yield* vscode.snapshot;
-    expect(affinityUpdates).toHaveLength(4);
-    expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
+    Vitest.expect(affinityUpdates).toHaveLength(4);
+    Vitest.expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Default,
       [`marimo-${executable}`]: code.NotebookControllerAffinity.Preferred,
     });
-    expect(affinityMap(affinityUpdates.slice(2))).toEqual({
+    Vitest.expect(affinityMap(affinityUpdates.slice(2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Default,
       [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
     });
@@ -341,12 +344,12 @@ it.live(
     yield* Effect.yieldNow;
 
     const { affinityUpdates } = yield* vscode.snapshot;
-    expect(affinityUpdates).toHaveLength(4);
-    expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
+    Vitest.expect(affinityUpdates).toHaveLength(4);
+    Vitest.expect(affinityMap(affinityUpdates.slice(0, 2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Preferred,
       [`marimo-${executable}`]: code.NotebookControllerAffinity.Default,
     });
-    expect(affinityMap(affinityUpdates.slice(2))).toEqual({
+    Vitest.expect(affinityMap(affinityUpdates.slice(2))).toEqual({
       "marimo-sandbox": code.NotebookControllerAffinity.Default,
       [`marimo-${executable}`]: code.NotebookControllerAffinity.Preferred,
     });

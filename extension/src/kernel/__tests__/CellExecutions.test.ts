@@ -1,4 +1,4 @@
-import { describe, expect } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   Context,
@@ -71,7 +71,7 @@ function normalizeOutputsForSnapshot(
   }));
 }
 
-describe("buildCellOutputs", () => {
+Vitest.describe("buildCellOutputs", () => {
   it.effect(
     "handles stdout output",
 
@@ -92,7 +92,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -116,7 +116,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -152,7 +152,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -179,7 +179,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -201,7 +201,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -222,7 +222,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -258,7 +258,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -282,7 +282,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -296,7 +296,7 @@ describe("buildCellOutputs", () => {
       });
 
       // Should still have the marimo UI output
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -328,7 +328,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -364,7 +364,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -406,7 +406,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -427,7 +427,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -451,7 +451,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -475,7 +475,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -510,7 +510,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -546,7 +546,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -582,7 +582,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -617,7 +617,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -667,16 +667,16 @@ describe("buildCellOutputs", () => {
           (i) => typeof i.data === "string" && i.data.includes("some message"),
         ),
       );
-      expect(hasLog, "stderr log should be rendered").toBe(true);
+      Vitest.expect(hasLog, "stderr log should be rendered").toBe(true);
 
       const errorOutput = normalized.find((o) =>
         o.items.some((i) => i.mime === "application/vnd.code.notebook.error"),
       );
-      expect(
+      Vitest.expect(
         errorOutput,
         "traceback should render as a structured error output",
       ).toBeDefined();
-      expect(
+      Vitest.expect(
         errorOutput?.items.every(
           (i) => i.mime === "application/vnd.code.notebook.error",
         ),
@@ -702,7 +702,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -723,7 +723,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -744,7 +744,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -786,7 +786,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -803,7 +803,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -825,7 +825,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -849,7 +849,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -871,7 +871,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -893,7 +893,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -917,7 +917,7 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -960,7 +960,7 @@ describe("buildCellOutputs", () => {
       });
 
       // Should only have stdout output, the other channels should be ignored
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -991,7 +991,7 @@ describe("buildCellOutputs", () => {
       });
 
       // Both outputs should be present but in separate channels
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -1021,27 +1021,27 @@ describe("buildCellOutputs", () => {
         return buildCellOutputs(CELL_ID, state, code);
       });
 
-      expect(outputs).toHaveLength(1);
+      Vitest.expect(outputs).toHaveLength(1);
       const output = outputs.at(0);
       if (output === undefined) throw new Error("Expected stdout output");
-      expect(output.metadata).toEqual({ channel: "stdout" });
-      expect(output.items.map((item) => item.mime)).toEqual([
+      Vitest.expect(output.metadata).toEqual({ channel: "stdout" });
+      Vitest.expect(output.items.map((item) => item.mime)).toEqual([
         "application/vnd.code.notebook.stdout",
         "application/vnd.marimo.ui+json",
       ]);
 
       const richItem = output.items.at(1);
       if (richItem === undefined) throw new Error("Expected rich MIME item");
-      expect(JSON.parse(new TextDecoder().decode(richItem.data))).toMatchObject(
-        {
-          state: { consoleOutputs: state.consoleOutputs },
-        },
-      );
+      Vitest.expect(
+        JSON.parse(new TextDecoder().decode(richItem.data)),
+      ).toMatchObject({
+        state: { consoleOutputs: state.consoleOutputs },
+      });
     }),
   );
 });
 
-describe("NotebookExecutions", () => {
+Vitest.describe("NotebookExecutions", () => {
   const openNotebook = Effect.fn(function* (
     executions: Context.Service.Shape<typeof CellExecutions>,
     document: vscode.NotebookDocument,
@@ -1148,7 +1148,7 @@ describe("NotebookExecutions", () => {
         });
         yield* presented.await;
 
-        expect(events).toEqual([
+        Vitest.expect(events).toEqual([
           "first:OpenRun:run-1",
           "first:CloseRun:run-1",
           "second:OpenRun:run-2",
@@ -1293,7 +1293,7 @@ describe("NotebookExecutions", () => {
         yield* releaseProjection.open;
         yield* latestClosed.await;
 
-        expect(events.map((event) => event.label)).toEqual([
+        Vitest.expect(events.map((event) => event.label)).toEqual([
           "SetDiagnostic",
           "OpenRun:run-1",
           "StartRun:run-1",
@@ -1307,7 +1307,7 @@ describe("NotebookExecutions", () => {
           "SetDiagnostic",
           "CloseRun:run-2",
         ]);
-        expect(
+        Vitest.expect(
           events.filter((event) => event.label.startsWith("RenderOutputs")),
         ).toEqual([
           { label: "RenderOutputs:run-1", console: ["first"] },
@@ -1401,7 +1401,7 @@ describe("NotebookExecutions", () => {
         yield* releaseProjection.open;
         yield* runClosed.await;
 
-        expect(rendered).toEqual([undefined, "42"]);
+        Vitest.expect(rendered).toEqual([undefined, "42"]);
       });
     }),
   );
@@ -1462,7 +1462,7 @@ describe("NotebookExecutions", () => {
         yield* notebook.remove(id);
         yield* removed.await;
 
-        expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
+        Vitest.expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
         yield* notebook.apply({
           op: "cell-op",
           cell_id: id,
@@ -1490,7 +1490,7 @@ describe("NotebookExecutions", () => {
         });
         yield* restored.await;
 
-        expect(events).toEqual([
+        Vitest.expect(events).toEqual([
           "OpenRun:run-1",
           "CloseRun:run-1",
           "OpenRun:restored-run",
@@ -1535,7 +1535,9 @@ describe("NotebookExecutions", () => {
         );
         yield* Effect.yieldNow;
         cellData.value = "x = 2";
-        expect(editor.notebook.cellAt(0).document.getText()).toBe("x = 2");
+        Vitest.expect(editor.notebook.cellAt(0).document.getText()).toBe(
+          "x = 2",
+        );
         yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
@@ -1557,7 +1559,9 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
       });
     }),
   );
@@ -1613,7 +1617,9 @@ describe("NotebookExecutions", () => {
           stale_inputs: true,
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
       });
     }),
   );
@@ -1651,7 +1657,9 @@ describe("NotebookExecutions", () => {
           run_id: "run-2",
         });
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -1696,7 +1704,9 @@ describe("NotebookExecutions", () => {
           });
 
         yield* Effect.yieldNow;
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
         const becomesStale = yield* notebook.staleCells.changes.pipe(
@@ -1707,7 +1717,9 @@ describe("NotebookExecutions", () => {
         yield* Effect.yieldNow;
         cellData.value = "x = 2";
         yield* notifyChange();
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
 
         const becomesCurrent = yield* notebook.staleCells.changes.pipe(
           Stream.filter((cells) => !HashSet.has(cells, id)),
@@ -1717,7 +1729,9 @@ describe("NotebookExecutions", () => {
         yield* Effect.yieldNow;
         cellData.value = "x = 1";
         yield* notifyChange();
-        expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(
+          true,
+        );
       });
     }),
   );
@@ -1779,10 +1793,12 @@ describe("NotebookExecutions", () => {
           ],
           contentChanges: [],
         });
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
 
-        expect(reads[0]).toBe(1);
-        expect(reads.slice(1).every((count) => count === 0)).toBe(true);
+        Vitest.expect(reads[0]).toBe(1);
+        Vitest.expect(reads.slice(1).every((count) => count === 0)).toBe(true);
       });
     }),
   );
@@ -1821,10 +1837,14 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
           stale_inputs: true,
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-2");
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -1879,8 +1899,10 @@ describe("NotebookExecutions", () => {
 
         yield* notebook.restoreOutput(replay);
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
-        expect(commands).toEqual([]);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
+        Vitest.expect(commands).toEqual([]);
       });
     }),
   );
@@ -1924,7 +1946,9 @@ describe("NotebookExecutions", () => {
             stale_inputs: false,
           },
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
 
         const becomesStale = yield* notebook.staleCells.changes.pipe(
           Stream.filter((stale) => HashSet.has(stale, id)),
@@ -1948,7 +1972,9 @@ describe("NotebookExecutions", () => {
           contentChanges: [],
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
       });
     }),
   );
@@ -1991,13 +2017,17 @@ describe("NotebookExecutions", () => {
         const id = Option.getOrThrow(document.cellAt(0).id);
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
 
         yield* executions.invalidate(document.id);
         yield* invalidated.await;
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
-        expect(commands.at(-1)).toEqual(
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
+        Vitest.expect(commands.at(-1)).toEqual(
           CellCommand.CloseRun({
             runId: runId("run-1"),
             success: false,
@@ -2038,7 +2068,9 @@ describe("NotebookExecutions", () => {
         yield* notebook.remove(id);
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -2074,7 +2106,9 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.ignore);
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -2130,7 +2164,9 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-1",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2138,7 +2174,9 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-2",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
 
         yield* release.open;
         yield* Fiber.join(first);
@@ -2193,7 +2231,9 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-1",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         cellData.value = "x = 2";
         yield* vscode.notebookChange({
@@ -2210,7 +2250,9 @@ describe("NotebookExecutions", () => {
           ],
           contentChanges: [],
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -2246,7 +2288,9 @@ describe("NotebookExecutions", () => {
         yield* notebook.interrupt;
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -2293,7 +2337,9 @@ describe("NotebookExecutions", () => {
         );
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
       });
     }),
   );
@@ -2340,9 +2386,9 @@ describe("NotebookExecutions", () => {
         });
 
         const values = Array.from(yield* Fiber.join(snapshots));
-        expect(values).toHaveLength(2);
-        expect(HashSet.size(values[0])).toBe(0);
-        expect(HashSet.has(values[1], id)).toBe(true);
+        Vitest.expect(values).toHaveLength(2);
+        Vitest.expect(HashSet.size(values[0])).toBe(0);
+        Vitest.expect(HashSet.has(values[1], id)).toBe(true);
       });
     }),
   );
@@ -2396,10 +2442,10 @@ describe("NotebookExecutions", () => {
           })
           .pipe(Effect.flip);
 
-        expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
-        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
-        expect(error.reason).toBe("superseded-run");
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
+        Vitest.expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
+        Vitest.expect(error.reason).toBe("superseded-run");
       });
     }),
   );
@@ -2465,7 +2511,7 @@ describe("NotebookExecutions", () => {
             },
           })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2479,8 +2525,8 @@ describe("NotebookExecutions", () => {
         });
         yield* rendered.await;
 
-        expect(finalRenders).toHaveLength(1);
-        expect(
+        Vitest.expect(finalRenders).toHaveLength(1);
+        Vitest.expect(
           finalRenders[0]?.consoleOutputs.map((output) => output.data),
         ).toContain("late line");
       });
@@ -2551,7 +2597,7 @@ describe("NotebookExecutions", () => {
           stale_inputs: true,
         });
 
-        expect(
+        Vitest.expect(
           HashSet.has(yield* notebook.staleCells.current, descendantId),
         ).toBe(true);
       });
@@ -2611,7 +2657,7 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
         });
         yield* runOpened.await;
-        expect(opened).toBe(1);
+        Vitest.expect(opened).toBe(1);
 
         const error = yield* notebook
           .apply({
@@ -2627,10 +2673,10 @@ describe("NotebookExecutions", () => {
           })
           .pipe(Effect.flip);
 
-        expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toEqual(Option.none());
-        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
-        expect(opened).toBe(1);
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error.expectedRunId).toEqual(Option.none());
+        Vitest.expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
+        Vitest.expect(opened).toBe(1);
       });
     }),
   );
@@ -2682,7 +2728,7 @@ describe("NotebookExecutions", () => {
         const error = yield* executions
           .open(first.session, { getDrive: Effect.succeed(Option.none()) })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
+        Vitest.expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
         yield* vscode.closeNotebook(editor.notebook);
         yield* Effect.yieldNow;
@@ -2694,7 +2740,7 @@ describe("NotebookExecutions", () => {
           run_id: "replacement-run",
         });
 
-        expect(executions.find(replacement.notebook)).toEqual(
+        Vitest.expect(executions.find(replacement.notebook)).toEqual(
           Option.some(second.notebook),
         );
       });

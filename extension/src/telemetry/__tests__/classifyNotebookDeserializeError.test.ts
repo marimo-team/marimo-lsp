@@ -1,11 +1,11 @@
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Cause, Redacted } from "effect";
 
 import * as MarimoClient from "../../lsp/MarimoClient.ts";
 import { NotebookSourceError } from "../../notebook/NotebookSourceError.ts";
 import { classifyNotebookDeserializeError } from "../classifyNotebookDeserializeError.ts";
 
-it("does not report known notebook source failures", () => {
+Vitest.it("does not report known notebook source failures", () => {
   const syntax = classifyNotebookDeserializeError(
     new NotebookSourceError({
       failure: {
@@ -23,20 +23,20 @@ it("does not report known notebook source failures", () => {
     }),
   );
 
-  expect(syntax).toMatchObject({
+  Vitest.expect(syntax).toMatchObject({
     report: false,
     domain: "notebook.deserialize",
     kind: "source.invalid-syntax",
     safeContext: {},
   });
-  expect(convertible).toMatchObject({
+  Vitest.expect(convertible).toMatchObject({
     report: false,
     kind: "source.convertible",
     safeContext: {},
   });
 });
 
-it("separates LSP startup failures", () => {
+Vitest.it("separates LSP startup failures", () => {
   const result = classifyNotebookDeserializeError(
     new MarimoClient.StartError({
       exec: { command: "uv", args: ["run", "marimo-lsp"] },
@@ -45,7 +45,7 @@ it("separates LSP startup failures", () => {
     }),
   );
 
-  expect(result).toEqual({
+  Vitest.expect(result).toEqual({
     report: true,
     domain: "notebook.deserialize",
     kind: "transport.lsp-start",
@@ -56,10 +56,10 @@ it("separates LSP startup failures", () => {
   });
 });
 
-it("separates deserialize timeouts from internal RPC failures", () => {
+Vitest.it("separates deserialize timeouts from internal RPC failures", () => {
   const result = classifyNotebookDeserializeError(new Cause.TimeoutError());
 
-  expect(result).toEqual({
+  Vitest.expect(result).toEqual({
     report: true,
     domain: "notebook.deserialize",
     kind: "transport.timeout",
@@ -67,45 +67,51 @@ it("separates deserialize timeouts from internal RPC failures", () => {
   });
 });
 
-it("groups internal RPC failures by method, code, and exception class", () => {
-  const secret = "DO_NOT_UPLOAD_CLASSIFIER_SOURCE";
-  const result = classifyNotebookDeserializeError(
-    commandError({
-      name: "ResponseError",
-      code: -32603,
-      message: secret,
-    }),
-  );
+Vitest.it(
+  "groups internal RPC failures by method, code, and exception class",
+  () => {
+    const secret = "DO_NOT_UPLOAD_CLASSIFIER_SOURCE";
+    const result = classifyNotebookDeserializeError(
+      commandError({
+        name: "ResponseError",
+        code: -32603,
+        message: secret,
+      }),
+    );
 
-  expect(result).toEqual({
-    report: true,
-    domain: "notebook.deserialize",
-    kind: "rpc.internal",
-    safeContext: {
+    Vitest.expect(result).toEqual({
+      report: true,
+      domain: "notebook.deserialize",
+      kind: "rpc.internal",
+      safeContext: {
+        "rpc.method": "parse-notebook",
+        "rpc.code": -32603,
+        "error.exception_class": "ResponseError",
+        "lsp.mode": "wasm",
+      },
+    });
+    Vitest.expect(JSON.stringify(result)).not.toContain(secret);
+  },
+);
+
+Vitest.it(
+  "separates client lifecycle failures from internal RPC errors",
+  () => {
+    const result = classifyNotebookDeserializeError(
+      commandError({
+        name: "Error",
+        message: "Client is not running",
+      }),
+    );
+
+    Vitest.expect(result.kind).toBe("transport.client-not-running");
+    Vitest.expect(result.safeContext).toEqual({
       "rpc.method": "parse-notebook",
-      "rpc.code": -32603,
-      "error.exception_class": "ResponseError",
+      "error.exception_class": "Error",
       "lsp.mode": "wasm",
-    },
-  });
-  expect(JSON.stringify(result)).not.toContain(secret);
-});
-
-it("separates client lifecycle failures from internal RPC errors", () => {
-  const result = classifyNotebookDeserializeError(
-    commandError({
-      name: "Error",
-      message: "Client is not running",
-    }),
-  );
-
-  expect(result.kind).toBe("transport.client-not-running");
-  expect(result.safeContext).toEqual({
-    "rpc.method": "parse-notebook",
-    "error.exception_class": "Error",
-    "lsp.mode": "wasm",
-  });
-});
+    });
+  },
+);
 
 function commandError(cause: unknown) {
   return new MarimoClient.CommandError({
