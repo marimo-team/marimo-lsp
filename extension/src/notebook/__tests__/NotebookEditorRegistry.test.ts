@@ -1,5 +1,5 @@
-import { expect } from "@effect/vitest";
-import { Effect, Fiber, Layer, Option, Stream } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -26,16 +26,31 @@ const initiallyActiveIt = EffectTest.make(
   ),
 );
 
+const awaitActive = (
+  registry: NotebookEditorRegistry.Interface,
+  expected: Option.Option<string>,
+) =>
+  registry.streamActiveNotebookChanges.pipe(
+    Stream.filter((actual) =>
+      Option.match(expected, {
+        onNone: () => Option.isNone(actual),
+        onSome: (id) => Option.isSome(actual) && actual.value === id,
+      }),
+    ),
+    Stream.runHead,
+    Effect.asVoid,
+  );
+
 it.effect(
   "should return None when no active notebook editor",
   Effect.fn(function* () {
     const registry = yield* NotebookEditorRegistry.Service;
 
     const activeUri = yield* registry.getActiveNotebookUri;
-    expect(Option.isNone(activeUri)).toBe(true);
+    Vitest.expect(Option.isNone(activeUri)).toBe(true);
 
     const activeEditor = yield* registry.getActiveNotebookEditor;
-    expect(Option.isNone(activeEditor)).toBe(true);
+    Vitest.expect(Option.isNone(activeEditor)).toBe(true);
   }),
 );
 
@@ -43,12 +58,11 @@ initiallyActiveIt.effect(
   "should seed an already-active notebook editor",
   Effect.fn(function* () {
     const registry = yield* NotebookEditorRegistry.Service;
-    yield* Effect.yieldNow;
 
-    expect(yield* registry.getActiveNotebookUri).toEqual(
+    Vitest.expect(yield* registry.getActiveNotebookUri).toEqual(
       Option.some(initiallyActiveEditor.notebook.uri.toString()),
     );
-    expect(yield* registry.getActiveNotebookEditor).toEqual(
+    Vitest.expect(yield* registry.getActiveNotebookEditor).toEqual(
       Option.some(initiallyActiveEditor),
     );
   }),
@@ -66,30 +80,30 @@ it.effect(
     const mockEditor = TestVsCode.createTestNotebookEditor(notebook);
 
     const initialActive = yield* registry.getActiveNotebookUri;
-    expect(Option.isNone(initialActive)).toBe(true);
+    Vitest.expect(Option.isNone(initialActive)).toBe(true);
 
     yield* vscode.setActiveNotebookEditor(Option.some(mockEditor));
-    yield* Effect.yieldNow;
+    yield* awaitActive(registry, Option.some(notebook.uri.toString()));
 
     const activeUri = yield* registry.getActiveNotebookUri;
-    expect(Option.isSome(activeUri)).toBe(true);
+    Vitest.expect(Option.isSome(activeUri)).toBe(true);
     if (Option.isSome(activeUri)) {
-      expect(activeUri.value).toBe(notebook.uri.toString());
+      Vitest.expect(activeUri.value).toBe(notebook.uri.toString());
     }
 
     const editor = yield* registry.getActiveNotebookEditor;
-    expect(Option.isSome(editor)).toBe(true);
+    Vitest.expect(Option.isSome(editor)).toBe(true);
     if (Option.isSome(editor)) {
-      expect(editor.value.notebook.uri.toString()).toBe(
+      Vitest.expect(editor.value.notebook.uri.toString()).toBe(
         notebook.uri.toString(),
       );
     }
 
     yield* vscode.setActiveNotebookEditor(Option.none());
-    yield* Effect.yieldNow;
+    yield* awaitActive(registry, Option.none());
 
     const clearedActive = yield* registry.getActiveNotebookUri;
-    expect(Option.isNone(clearedActive)).toBe(true);
+    Vitest.expect(Option.isNone(clearedActive)).toBe(true);
   }),
 );
 
@@ -111,9 +125,16 @@ it.effect(
       ),
     );
 
+    const subscriptionReady = yield* Deferred.make<void>();
     const streamResult = yield* Effect.forkChild(
-      stream.pipe(Stream.take(4)).pipe(Stream.runCollect),
+      stream.pipe(
+        Stream.tap(() => Deferred.succeed(subscriptionReady, undefined)),
+        Stream.drop(1),
+        Stream.take(4),
+        Stream.runCollect,
+      ),
     );
+    yield* Deferred.await(subscriptionReady);
 
     const changes = [
       Option.some(mockEditor),
@@ -125,11 +146,10 @@ it.effect(
 
     for (const change of changes) {
       yield* vscode.setActiveNotebookEditor(change);
-      yield* Effect.yieldNow;
     }
 
     const collected = yield* Fiber.join(streamResult);
-    expect(collected).toMatchInlineSnapshot(`
+    Vitest.expect(collected).toMatchInlineSnapshot(`
           [
             {
               "_id": "Option",
