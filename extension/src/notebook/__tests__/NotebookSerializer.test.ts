@@ -68,20 +68,26 @@ Vitest.describe("when a registered deserializer stalls", () => {
       const registration = registrations[0];
       Vitest.assert.isDefined(registration);
 
-      const pending = registration.serializer.deserializeNotebook(
-        new TextEncoder().encode("app = marimo.App()"),
-        {
-          isCancellationRequested: false,
-          onCancellationRequested: () => ({ dispose() {} }),
-        },
-      );
-      const settled = Promise.resolve(pending).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      yield* Effect.yieldNow;
+      const deserialize = yield* Effect.tryPromise({
+        try: () =>
+          Promise.resolve(
+            registration.serializer.deserializeNotebook(
+              new TextEncoder().encode("app = marimo.App()"),
+              {
+                isCancellationRequested: false,
+                onCancellationRequested: () => ({ dispose() {} }),
+              },
+            ),
+          ),
+        catch: (error) =>
+          error instanceof NotebookSerializer.OperationError
+            ? error
+            : new NotebookSerializer.OperationError({
+                message: String(error),
+              }),
+      }).pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
       yield* TestClock.adjust(Duration.seconds(120));
-      const error = yield* Effect.promise(() => settled);
+      const error = yield* Fiber.join(deserialize);
 
       Vitest.assert(error instanceof Error);
       Vitest.expect(error.message).toBe(
