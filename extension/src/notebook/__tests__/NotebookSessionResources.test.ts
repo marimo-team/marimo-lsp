@@ -9,6 +9,7 @@ import {
   Option,
   Ref,
   Scope,
+  Stream,
 } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
@@ -40,22 +41,26 @@ const openDocument = Effect.fn(function* () {
     TestVsCode.Uri.parse(NOTEBOOK_URI),
   );
   yield* vscode.openNotebook(document);
-  yield* Effect.yieldNow;
-  return { document, vscode };
+  yield* vscode.setActiveNotebookEditor(
+    Option.some(TestVsCode.createTestNotebookEditor(document)),
+  );
+  const sessions = yield* NotebookDocumentSessions.Service;
+  const session = yield* sessions.active.pipe(
+    Stream.filter(Option.exists((active) => active.document === document)),
+    Stream.runHead,
+    Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+  );
+  return { document, session, vscode };
 });
 
 Vitest.describe("NotebookSessionResources", () => {
   it.effect("interrupts a running program when its session ends", () =>
     Effect.gen(function* () {
-      const { document, vscode } = yield* openDocument();
+      const { document, session, vscode } = yield* openDocument();
       const started = yield* Deferred.make<void>();
       const stopped = yield* Deferred.make<void>();
 
-      const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
-      const current = sessions.current(NOTEBOOK_URI);
-      Vitest.assert(Option.isSome(current));
-      const session = current.value;
 
       const running = yield* resources
         .runScoped(
@@ -86,14 +91,10 @@ Vitest.describe("NotebookSessionResources", () => {
 
   it.effect("rejects work admitted after its session ends", () =>
     Effect.gen(function* () {
-      const { document, vscode } = yield* openDocument();
+      const { document, session, vscode } = yield* openDocument();
       const ran = yield* Ref.make(false);
 
-      const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
-      const current = sessions.current(NOTEBOOK_URI);
-      Vitest.assert(Option.isSome(current));
-      const session = current.value;
       const ended = yield* Deferred.make<void>();
       yield* Effect.addFinalizer(() => Deferred.succeed(ended, undefined)).pipe(
         Scope.provide(session.scope),
@@ -116,14 +117,10 @@ Vitest.describe("NotebookSessionResources", () => {
 
   it.effect("releases scoped resources after programs finish", () =>
     Effect.gen(function* () {
-      yield* openDocument();
+      const { session } = yield* openDocument();
       const tracked = yield* makeScopedResourceCounter();
 
-      const sessions = yield* NotebookDocumentSessions.Service;
       const resources = yield* NotebookSessionResources.Service;
-      const current = sessions.current(NOTEBOOK_URI);
-      Vitest.assert(Option.isSome(current));
-      const session = current.value;
 
       const providedScope = yield* resources
         .runScoped(session, Effect.scope)
