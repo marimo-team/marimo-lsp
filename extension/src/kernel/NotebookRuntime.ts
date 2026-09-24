@@ -645,6 +645,7 @@ export const layer = Layer.effect(
       code.window.activeNotebookEditorChanges.pipe(
         Stream.runForEach(updateKernelContext),
       ),
+      { startImmediately: true },
     );
     const makeState = (notebookId: NotebookId): NotebookState => {
       const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
@@ -737,6 +738,7 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      { startImmediately: true },
     );
     yield* Effect.forkScoped(
       marimo.kernelNotifications.pipe(
@@ -833,6 +835,7 @@ export const layer = Layer.effect(
           );
         }),
       ),
+      { startImmediately: true },
     );
     yield* Effect.forkScoped(
       marimo.documentAnalysis.pipe(
@@ -851,6 +854,7 @@ export const layer = Layer.effect(
           );
         }),
       ),
+      { startImmediately: true },
     );
 
     yield* Effect.forkScoped(
@@ -947,6 +951,7 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      { startImmediately: true },
     );
 
     yield* Effect.forkScoped(
@@ -971,6 +976,7 @@ export const layer = Layer.effect(
           }),
         ),
       ),
+      { startImmediately: true },
     );
 
     const attachController = Effect.fn("NotebookRuntime.attachController")(
