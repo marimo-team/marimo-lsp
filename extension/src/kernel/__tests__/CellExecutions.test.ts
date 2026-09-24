@@ -1047,19 +1047,39 @@ Vitest.describe("NotebookExecutions", () => {
     document: vscode.NotebookDocument,
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
-    yield* Effect.yieldNow;
+    const vscode = yield* TestVsCode.Service;
     const sessions = yield* NotebookDocumentSessions.Service;
-    const session = sessions.forDocument(document);
-    if (Option.isNone(session)) {
-      return yield* Effect.die("Expected an open notebook document session");
-    }
+    yield* vscode.setActiveNotebookEditor(
+      Option.some(TestVsCode.createTestNotebookEditor(document)),
+    );
+    const session = yield* sessions.active.pipe(
+      Stream.filter(Option.exists((active) => active.document === document)),
+      Stream.runHead,
+      Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+    );
     const notebook = yield* executions
-      .open(session.value, {
+      .open(session, {
         getDrive,
       })
       .pipe(Effect.orDie);
-    return { notebook, session: session.value };
+    return { notebook, session };
   });
+
+  const observeWhen = <A, E, R>(
+    stream: Stream.Stream<A, E, R>,
+    predicate: (value: A) => boolean,
+  ) =>
+    Effect.gen(function* () {
+      const ready = yield* Latch.make();
+      const observed = yield* stream.pipe(
+        Stream.tap(() => ready.open),
+        Stream.filter(predicate),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* ready.await;
+      return observed;
+    });
 
   const acknowledgeSubmission = Effect.fn(function* (
     notebook: NotebookExecutions,
@@ -1528,12 +1548,10 @@ Vitest.describe("NotebookExecutions", () => {
         );
 
         // The editor moves ahead before the kernel acknowledges the submission.
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 2";
         Vitest.expect(editor.notebook.cellAt(0).document.getText()).toBe(
           "x = 2",
@@ -1589,12 +1607,10 @@ Vitest.describe("NotebookExecutions", () => {
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const { notebook } = yield* openNotebook(executions, editor.notebook);
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
 
         yield* vscode.notebookChange({
           notebook: editor.notebook,
@@ -1703,30 +1719,25 @@ Vitest.describe("NotebookExecutions", () => {
             contentChanges: [],
           });
 
-        yield* Effect.yieldNow;
         Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
           false,
         );
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((cells) => HashSet.has(cells, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (cells) => HashSet.has(cells, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 2";
         yield* notifyChange();
         Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
           true,
         );
 
-        const becomesCurrent = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((cells) => !HashSet.has(cells, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesCurrent = yield* observeWhen(
+          notebook.staleCells.changes,
+          (cells) => !HashSet.has(cells, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 1";
         yield* notifyChange();
         Vitest.expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(
@@ -1772,12 +1783,10 @@ Vitest.describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 0", "run-1");
         reads.fill(0);
 
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
         sources[0] = "x = 100";
         yield* vscode.notebookChange({
           notebook: editor.notebook,
@@ -1950,12 +1959,10 @@ Vitest.describe("NotebookExecutions", () => {
           false,
         );
 
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 2";
         yield* vscode.notebookChange({
           notebook: editor.notebook,
@@ -2371,12 +2378,14 @@ Vitest.describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
+        const ready = yield* Latch.make();
         const snapshots = yield* notebook.staleCells.changes.pipe(
+          Stream.tap(() => ready.open),
           Stream.take(2),
           Stream.runCollect,
           Effect.forkChild,
         );
-        yield* Effect.yieldNow;
+        yield* ready.await;
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2719,7 +2728,6 @@ Vitest.describe("NotebookExecutions", () => {
           },
         });
         yield* vscode.openNotebook(replacement.notebook);
-        yield* Effect.yieldNow;
         const second = yield* openNotebook(executions, replacement.notebook);
         const id = Option.getOrThrow(
           MarimoNotebookDocument.from(replacement.notebook).cellAt(0).id,
@@ -2731,7 +2739,11 @@ Vitest.describe("NotebookExecutions", () => {
         Vitest.expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
         yield* vscode.closeNotebook(editor.notebook);
-        yield* Effect.yieldNow;
+        const barrier = TestVsCode.makeNotebookEditor(
+          "/test/lifecycle-barrier.py",
+        );
+        yield* vscode.openNotebook(barrier.notebook);
+        yield* openNotebook(executions, barrier.notebook);
 
         yield* second.notebook.apply({
           op: "cell-op",
