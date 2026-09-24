@@ -1,469 +1,204 @@
-import { assert, expect, it } from "@effect/vitest";
-import { Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Fiber, Option } from "effect";
 
-import {
-  createTestNotebookDocument,
-  Uri,
-} from "../../../__mocks__/TestVsCode.ts";
-import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
-import { NOTEBOOK_TYPE } from "../../../constants.ts";
-import { notebookId } from "../../../lib/__tests__/branded.ts";
-import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
-import type { NotebookId } from "../../../schemas/MarimoNotebookDocument.ts";
-import type {
-  VariablesNotification,
-  VariableValuesNotification,
-} from "../../../types.ts";
-import * as NotebookVariables from "../NotebookVariables.ts";
+import * as EffectTest from "../../../__tests__/__utils__/EffectTest.ts";
+import * as TestNotebookVariables from "./TestNotebookVariables.ts";
 
-const withTestCtx = () =>
-  Effect.sync(() => {
-    sessions.clear();
-    const documentSessions = Layer.succeed(NotebookDocumentSessions.Service, {
-      current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
-      forDocument: (document) =>
-        Option.fromNullishOr(
-          Array.from(sessions.values()).find(
-            (session) => session.document === document,
-          ),
-        ),
-      active: Stream.empty,
-    });
-    const layer = NotebookVariables.layer.pipe(Layer.provide(documentSessions));
-    return { layer };
-  });
+Vitest.describe("NotebookVariables", () => {
+  const it = EffectTest.make(TestNotebookVariables.layer);
 
-const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
-const sessions = new Map<NotebookId, NotebookDocumentSessions.Session>();
+  it.effect(
+    "returns None when no variables exist for a notebook",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      const current = yield* variables.current();
 
-const sessionFor = (id: NotebookId) => {
-  const existing = sessions.get(id);
-  if (existing !== undefined) return existing;
-  const session = makeTestNotebookDocumentSession(
-    createTestNotebookDocument(Uri.parse(id), {
-      notebookType: NOTEBOOK_TYPE,
+      Vitest.expect(Option.isNone(current.variables)).toBe(true);
+      Vitest.expect(Option.isNone(current.values)).toBe(true);
     }),
   );
-  sessions.set(id, session);
-  return session;
-};
 
-const replaceSessionFor = (id: NotebookId) => {
-  const session = makeTestNotebookDocumentSession(
-    createTestNotebookDocument(Uri.parse(id), {
-      notebookType: NOTEBOOK_TYPE,
-    }),
-  );
-  sessions.set(id, session);
-  return session;
-};
-
-// Mock data factories. SAFETY: the inputs are plain-string variants of the
-// branded variables shape; tests don't need to construct real CellId/VariableName
-// brands, and re-shaping here is an authorized test escape hatch.
-function createMockVariablesOp(
-  variables: Array<{ name: string; declared_by: string[]; used_by: string[] }>,
-): VariablesNotification {
-  return {
-    op: "variables",
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    variables: variables as VariablesNotification["variables"],
-  };
-}
-
-function createMockVariableValuesOp(
-  variables: Array<{
-    name: string;
-    value: string | number | null;
-    datatype: string | null;
-  }>,
-): VariableValuesNotification {
-  return {
-    op: "variable-values",
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-    variables: variables as VariableValuesNotification["variables"],
-  };
-}
-
-it.effect(
-  "should return None when no variables exist for a notebook",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      return {
-        values: yield* service.getVariableValues(notebookUri),
-        variables: yield* service.getVariables(notebookUri),
-      };
-    }).pipe(Effect.provide(layer));
-
-    expect(Option.isNone(result.variables)).toBe(true);
-    expect(Option.isNone(result.values)).toBe(true);
-  }),
-);
-
-it.effect(
-  "should update and retrieve variable declarations",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const variables = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const mockOp = createMockVariablesOp([
+  it.effect(
+    "updates and retrieves variable declarations",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateDeclarations([
         { name: "x", declared_by: ["cell1"], used_by: ["cell2"] },
         { name: "y", declared_by: ["cell2"], used_by: [] },
       ]);
 
-      // Update variables
-      yield* service.updateVariables(sessionFor(notebookUri), mockOp);
+      const declarations = Option.getOrThrow(
+        (yield* variables.current()).variables,
+      );
+      Vitest.expect(declarations.map(({ name }) => name)).toEqual(["x", "y"]);
+    }),
+  );
 
-      // Retrieve variables
-      return yield* service.getVariables(notebookUri);
-    }).pipe(Effect.provide(layer));
-
-    assert(Option.isSome(variables), "Expected variables");
-    expect(variables.value.length).toBe(2);
-    expect(variables.value[0].name).toBe("x");
-    expect(variables.value[1].name).toBe("y");
-  }),
-);
-
-it.effect(
-  "should update and retrieve variable values",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const values = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const mockOp = createMockVariableValuesOp([
+  it.effect(
+    "updates and retrieves variable values",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateValues([
         { name: "x", value: 42, datatype: "int" },
         { name: "y", value: "hello", datatype: "str" },
       ]);
 
-      // Update values
-      yield* service.updateVariableValues(sessionFor(notebookUri), mockOp);
+      const values = Option.getOrThrow((yield* variables.current()).values);
+      Vitest.expect(values).toHaveLength(2);
+      Vitest.expect(values[0]).toMatchObject({ name: "x", value: 42 });
+    }),
+  );
 
-      // Retrieve values
-      return yield* service.getVariableValues(notebookUri);
-    }).pipe(Effect.provide(layer));
-
-    assert(Option.isSome(values), "Expected values");
-    expect(values.value.length).toBe(2);
-    expect(values.value[0].name).toBe("x");
-    expect(values.value[0].value).toBe(42);
-  }),
-);
-
-it.effect(
-  "should get all variable data for a notebook",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const allData = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const mockVariables = createMockVariablesOp([
+  it.effect(
+    "gets all variable data for a notebook",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateDeclarations([
         { name: "x", declared_by: ["cell1"], used_by: [] },
       ]);
-      const mockValues = createMockVariableValuesOp([
+      yield* variables.updateValues([
         { name: "x", value: 100, datatype: "int" },
       ]);
 
-      // Update both
-      yield* service.updateVariables(sessionFor(notebookUri), mockVariables);
-      yield* service.updateVariableValues(sessionFor(notebookUri), mockValues);
+      const current = yield* variables.current();
+      Vitest.expect(Option.getOrThrow(current.variables)[0]?.name).toBe("x");
+      Vitest.expect(Option.getOrThrow(current.values)[0]?.value).toBe(100);
+    }),
+  );
 
-      // Get all data
-      return yield* service.getAllVariableData(notebookUri);
-    }).pipe(Effect.provide(layer));
+  it.effect(
+    "handles multiple notebooks independently",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateDeclarations(
+        [{ name: "a", declared_by: ["cell1"], used_by: [] }],
+        TestNotebookVariables.NOTEBOOK_URI_1,
+      );
+      yield* variables.updateDeclarations(
+        [{ name: "b", declared_by: ["cell2"], used_by: [] }],
+        TestNotebookVariables.NOTEBOOK_URI_2,
+      );
 
-    assert(Option.isSome(allData.variables), "Expected variables");
-    assert(Option.isSome(allData.values), "Expected values");
-    expect(allData.variables.value[0].name).toBe("x");
-    expect(allData.values.value[0].value).toBe(100);
-  }),
-);
+      const first = Option.getOrThrow(
+        (yield* variables.current(TestNotebookVariables.NOTEBOOK_URI_1))
+          .variables,
+      );
+      const second = Option.getOrThrow(
+        (yield* variables.current(TestNotebookVariables.NOTEBOOK_URI_2))
+          .variables,
+      );
+      Vitest.expect(first[0]?.name).toBe("a");
+      Vitest.expect(second[0]?.name).toBe("b");
+    }),
+  );
 
-it.effect(
-  "should handle multiple notebooks independently",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
+  it.effect(
+    "releases all data when a notebook session ends",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      const declarations = [{ name: "x", declared_by: ["cell1"], used_by: [] }];
+      const values = [{ name: "x", value: 123, datatype: "int" }];
+      yield* variables.updateDeclarations(declarations);
+      yield* variables.updateValues(values);
 
-    const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebook1 = notebookId("file:///test/notebook1.py");
-      const notebook2 = notebookId("file:///test/notebook2.py");
+      const beforeClose = yield* variables.current();
+      yield* variables.closeCurrent();
+      const afterClose = yield* variables.current();
+      yield* variables.updateDeclarations(declarations);
+      yield* variables.updateValues(values);
+      const afterLateUpdate = yield* variables.current();
 
-      const mockOp1 = createMockVariablesOp([
-        { name: "a", declared_by: ["cell1"], used_by: [] },
+      Vitest.expect(Option.isSome(beforeClose.variables)).toBe(true);
+      Vitest.expect(Option.isSome(beforeClose.values)).toBe(true);
+      Vitest.expect(Option.isNone(afterClose.variables)).toBe(true);
+      Vitest.expect(Option.isNone(afterClose.values)).toBe(true);
+      Vitest.expect(Option.isNone(afterLateUpdate.variables)).toBe(true);
+      Vitest.expect(Option.isNone(afterLateUpdate.values)).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "keeps replacement-session state isolated from the displaced session",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateDeclarations([
+        { name: "old", declared_by: ["cell1"], used_by: [] },
       ]);
-      const mockOp2 = createMockVariablesOp([
-        { name: "b", declared_by: ["cell2"], used_by: [] },
+      yield* variables.replaceSession();
+      const beforeReplacementUpdate = yield* variables.current();
+      yield* variables.updateDeclarations([
+        { name: "new", declared_by: ["cell2"], used_by: [] },
       ]);
+      yield* variables.closeDisplaced();
 
-      // Update both notebooks
-      yield* service.updateVariables(sessionFor(notebook1), mockOp1);
-      yield* service.updateVariables(sessionFor(notebook2), mockOp2);
+      Vitest.expect(Option.isNone(beforeReplacementUpdate.variables)).toBe(
+        true,
+      );
+      Vitest.expect(
+        Option.getOrThrow((yield* variables.current()).variables)[0]?.name,
+      ).toBe("new");
+    }),
+  );
 
-      // Verify they're separate
-      return {
-        vars1: yield* service.getVariables(notebook1),
-        vars2: yield* service.getVariables(notebook2),
-      };
-    }).pipe(Effect.provide(layer));
+  it.effect(
+    "streams variable declaration changes",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      const count = yield* variables
+        .collectDeclarationChanges(4)
+        .pipe(Effect.forkChild);
+      yield* variables.declarationSubscriptionStarted;
 
-    assert(Option.isSome(result.vars1), "Expected vars1");
-    assert(Option.isSome(result.vars2), "Expected vars2");
-    expect(result.vars1.value[0].name).toBe("a");
-    expect(result.vars2.value[0].name).toBe("b");
-  }),
-);
-
-it.effect(
-  "should release all data when a notebook session ends",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const mockVariables = createMockVariablesOp([
+      yield* variables.updateDeclarations([
         { name: "x", declared_by: ["cell1"], used_by: [] },
       ]);
-      const mockValues = createMockVariableValuesOp([
-        { name: "x", value: 123, datatype: "int" },
+      yield* variables.updateDeclarations([
+        { name: "y", declared_by: ["cell2"], used_by: [] },
+      ]);
+      yield* variables.updateDeclarations([
+        { name: "x", declared_by: ["cell1"], used_by: [] },
+        { name: "z", declared_by: ["cell3"], used_by: [] },
       ]);
 
-      const session = sessionFor(notebookUri);
-      yield* service.updateVariables(session, mockVariables);
-      yield* service.updateVariableValues(session, mockValues);
+      Vitest.expect(yield* Fiber.join(count)).toBe(4);
+    }),
+  );
 
-      // Verify data exists
-      const beforeClear = yield* service.getAllVariableData(notebookUri);
+  it.effect(
+    "streams variable value changes",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      const count = yield* variables
+        .collectValueChanges(3)
+        .pipe(Effect.forkChild);
+      yield* variables.valueSubscriptionStarted;
 
-      yield* Scope.close(session.scope, Exit.void);
+      yield* variables.updateValues([{ name: "x", value: 1, datatype: "int" }]);
+      yield* variables.updateValues([{ name: "x", value: 2, datatype: "int" }]);
 
-      // Verify data is gone
-      const afterClear = yield* service.getAllVariableData(notebookUri);
+      Vitest.expect(yield* Fiber.join(count)).toBe(3);
+    }),
+  );
 
-      // A delayed notification cannot repopulate an ended session.
-      yield* service.updateVariables(session, mockVariables);
-      yield* service.updateVariableValues(session, mockValues);
-      const afterLateUpdate = yield* service.getAllVariableData(notebookUri);
+  it.effect(
+    "preserves variable values when updating variable declarations",
+    Effect.fn(function* () {
+      const variables = yield* TestNotebookVariables.Service;
+      yield* variables.updateValues([
+        { name: "x", value: 42, datatype: "int" },
+        { name: "y", value: "hello", datatype: "str" },
+        { name: "z", value: 3.14, datatype: "float" },
+      ]);
+      yield* variables.updateDeclarations([
+        { name: "x", declared_by: ["cell1"], used_by: ["cell2"] },
+        { name: "y", declared_by: ["cell2"], used_by: [] },
+      ]);
 
-      return { beforeClear, afterClear, afterLateUpdate };
-    }).pipe(Effect.provide(layer));
-
-    assert(
-      Option.isSome(result.beforeClear.variables),
-      "Expected variables before clear",
-    );
-    assert(
-      Option.isSome(result.beforeClear.values),
-      "Expected values before clear",
-    );
-
-    assert(Option.isNone(result.afterClear.variables));
-    assert(Option.isNone(result.afterClear.values));
-    assert(Option.isNone(result.afterLateUpdate.variables));
-    assert(Option.isNone(result.afterLateUpdate.values));
-  }),
-);
-
-it.effect(
-  "keeps replacement-session state isolated from the displaced session",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const result = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-      const displaced = sessionFor(notebookUri);
-
-      yield* service.updateVariables(
-        displaced,
-        createMockVariablesOp([
-          { name: "old", declared_by: ["cell1"], used_by: [] },
-        ]),
-      );
-
-      const replacement = replaceSessionFor(notebookUri);
-      const beforeReplacementUpdate = yield* service.getVariables(notebookUri);
-      yield* service.updateVariables(
-        replacement,
-        createMockVariablesOp([
-          { name: "new", declared_by: ["cell2"], used_by: [] },
-        ]),
-      );
-
-      // Finalizing a delayed close of the displaced document only removes
-      // that exact document opening's state.
-      yield* Scope.close(displaced.scope, Exit.void);
-      const afterDisplacedClear = yield* service.getVariables(notebookUri);
-      return { beforeReplacementUpdate, afterDisplacedClear };
-    }).pipe(Effect.provide(layer));
-
-    expect(Option.isNone(result.beforeReplacementUpdate)).toBe(true);
-    assert(
-      Option.isSome(result.afterDisplacedClear),
-      "Expected replacement variables",
-    );
-    expect(result.afterDisplacedClear.value[0].name).toBe("new");
-  }),
-);
-
-it.effect(
-  "should stream variable declaration changes",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const count = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const collected = yield* Ref.make(0);
-
-      // Subscribe to stream and count changes
-      yield* Effect.forkChild(
-        service.streamVariablesChanges.pipe(
-          Stream.mapEffect(() => Ref.update(collected, (n) => n + 1)),
-          Stream.runDrain,
-        ),
-      );
-
-      // Initial state
-      yield* Effect.yieldNow;
-
-      // Make changes
-      yield* service.updateVariables(
-        sessionFor(notebookUri),
-        createMockVariablesOp([
-          { name: "x", declared_by: ["cell1"], used_by: [] },
-        ]),
-      );
-      yield* Effect.yieldNow;
-
-      yield* service.updateVariables(
-        sessionFor(notebookUri),
-        createMockVariablesOp([
-          { name: "y", declared_by: ["cell2"], used_by: [] },
-        ]),
-      );
-      yield* Effect.yieldNow;
-
-      yield* service.updateVariables(
-        sessionFor(notebookUri),
-        createMockVariablesOp([
-          { name: "x", declared_by: ["cell1"], used_by: [] },
-          { name: "z", declared_by: ["cell3"], used_by: [] },
-        ]),
-      );
-      yield* Effect.yieldNow;
-
-      return yield* Ref.get(collected);
-    }).pipe(Effect.provide(layer));
-
-    // Expects 4 because SubscriptionRef.changes emits current value on subscription (empty map)
-    // plus the 3 updates
-    assert.strictEqual(count, 4);
-  }),
-);
-
-it.effect(
-  "should stream variable value changes",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const count = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      const collected = yield* Ref.make(0);
-
-      // Subscribe to stream and count changes
-      yield* Effect.forkChild(
-        service.streamVariableValuesChanges.pipe(
-          Stream.mapEffect(() => Ref.update(collected, (n) => n + 1)),
-          Stream.runDrain,
-        ),
-      );
-
-      // Let stream start
-      yield* Effect.yieldNow;
-
-      // Make changes
-      yield* service.updateVariableValues(
-        sessionFor(notebookUri),
-        createMockVariableValuesOp([{ name: "x", value: 1, datatype: "int" }]),
-      );
-      yield* Effect.yieldNow;
-
-      yield* service.updateVariableValues(
-        sessionFor(notebookUri),
-        createMockVariableValuesOp([{ name: "x", value: 2, datatype: "int" }]),
-      );
-      yield* Effect.yieldNow;
-
-      return yield* Ref.get(collected);
-    }).pipe(Effect.provide(layer));
-
-    // Expects 3 because SubscriptionRef.changes emits current value on subscription (empty map)
-    // plus the 2 updates
-    assert.strictEqual(count, 3);
-  }),
-);
-
-it.effect(
-  "should preserve variable values when updating variable declarations",
-  Effect.fn(function* () {
-    const { layer } = yield* withTestCtx();
-
-    const values = yield* Effect.gen(function* () {
-      const service = yield* NotebookVariables.Service;
-      const notebookUri = NOTEBOOK_URI;
-
-      // Set initial variable values
-      yield* service.updateVariableValues(
-        sessionFor(notebookUri),
-        createMockVariableValuesOp([
-          { name: "x", value: 42, datatype: "int" },
-          { name: "y", value: "hello", datatype: "str" },
-          { name: "z", value: 3.14, datatype: "float" },
-        ]),
-      );
-
-      // Update variable declarations - only x and y are declared now
-      yield* service.updateVariables(
-        sessionFor(notebookUri),
-        createMockVariablesOp([
-          { name: "x", declared_by: ["cell1"], used_by: ["cell2"] },
-          { name: "y", declared_by: ["cell2"], used_by: [] },
-        ]),
-      );
-
-      // Values for x and y should be preserved, z should be removed
-      return yield* service.getVariableValues(notebookUri);
-    }).pipe(Effect.provide(layer));
-
-    assert(Option.isSome(values), "Expected values");
-    expect(values.value.length).toBe(2);
-    const xValue = values.value.find((v) => v.name === "x");
-    const yValue = values.value.find((v) => v.name === "y");
-    const zValue = values.value.find((v) => v.name === "z");
-
-    expect(xValue).toBeDefined();
-    expect(xValue?.value).toBe(42);
-    expect(yValue).toBeDefined();
-    expect(yValue?.value).toBe("hello");
-    expect(zValue).toBeUndefined();
-  }),
-);
+      const values = Option.getOrThrow((yield* variables.current()).values);
+      Vitest.expect(values).toEqual([
+        Vitest.expect.objectContaining({ name: "x", value: 42 }),
+        Vitest.expect.objectContaining({ name: "y", value: "hello" }),
+      ]);
+    }),
+  );
+});
