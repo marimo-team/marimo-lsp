@@ -825,7 +825,6 @@ Vitest.it.effect(
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
       const vscode = yield* TestVsCode.Service;
-      yield* Effect.yieldNow;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
       const contexts = yield* eventually(
@@ -851,7 +850,6 @@ Vitest.it.effect(
       yield* NotebookRuntime.Service;
       const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
         generation: 1,
         revision: 2,

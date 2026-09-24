@@ -116,6 +116,7 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      { startImmediately: true },
     );
 
     // Subscribe first so changes during the initial query are not missed.
