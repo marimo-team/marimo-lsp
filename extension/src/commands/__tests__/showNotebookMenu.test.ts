@@ -1,5 +1,5 @@
 import * as Vitest from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Scope } from "effect";
+import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
@@ -96,6 +96,22 @@ const menuLabel = (value: (typeof NOTEBOOK_MENU_ITEMS)[number]["value"]) =>
     ),
   );
 
+const openSession = Effect.fn(function* (
+  vscode: TestVsCode.Interface,
+  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+) {
+  yield* vscode.openNotebook(editor.notebook);
+  yield* vscode.setActiveNotebookEditor(Option.some(editor));
+  const sessions = yield* NotebookDocumentSessions.Service;
+  return yield* sessions.active.pipe(
+    Stream.filter(
+      Option.exists((session) => session.document === editor.notebook),
+    ),
+    Stream.runHead,
+    Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+  );
+});
+
 Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "offers a focused four-item notebook menu",
@@ -176,8 +192,7 @@ Vitest.describe("showNotebookMenu", () => {
     Effect.fn(function* () {
       const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* openSession(vscode, editor);
       yield* vscode.selectQuickPick(menuLabel("reactivity"));
       yield* showNotebookMenu.invoke(targetFor(editor));
 
@@ -210,13 +225,8 @@ Vitest.describe("showNotebookMenu", () => {
 
       yield* Effect.gen(function* () {
         const vscode = yield* TestVsCode.Service;
-        yield* vscode.openNotebook(editor.notebook);
-        yield* Effect.yieldNow;
+        const session = yield* openSession(vscode, editor);
         yield* vscode.selectQuickPick(menuLabel("reactivity"));
-        const sessions = yield* NotebookDocumentSessions.Service;
-        const session = Option.getOrThrow(
-          sessions.forDocument(editor.notebook),
-        );
         const sessionEnded = yield* Deferred.make<void>();
 
         const running = yield* showNotebookMenu
