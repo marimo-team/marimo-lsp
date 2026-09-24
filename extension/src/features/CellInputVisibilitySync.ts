@@ -1,5 +1,6 @@
 import {
   Cause,
+  Context,
   Data,
   Effect,
   Filter,
@@ -9,6 +10,7 @@ import {
   Queue,
   Ref,
   Stream,
+  SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
 
@@ -97,6 +99,15 @@ type Event = Data.TaggedEnum<{
 }>;
 const Event = Data.taggedEnum<Event>();
 
+export interface Interface {
+  readonly processedRevision: Effect.Effect<number>;
+  readonly processedChanges: Stream.Stream<number>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/CellInputVisibilitySync",
+) {}
+
 function visibilityChanges(
   previous: Option.Option<HiddenCodeSnapshot>,
   cells: readonly MarimoNotebookCell[],
@@ -152,9 +163,11 @@ function visibilityChanges(
  * cell ID and apply only `hide_code` transitions. Refocusing and unrelated
  * edits therefore do not override a user's temporary manual expansion.
  */
-export const layer = Layer.effectDiscard(
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
+    const processed = yield* SubscriptionRef.make(0);
 
     const snapshots = yield* Ref.make(
       HashMap.empty<NotebookId, NotebookSnapshot>(),
@@ -298,10 +311,19 @@ export const layer = Layer.effectDiscard(
               }),
             Synchronize: ({ notebook, initialize }) =>
               synchronizeSafely(notebook, initialize),
-          }),
+          }).pipe(
+            Effect.ensuring(
+              SubscriptionRef.update(processed, (revision) => revision + 1),
+            ),
+          ),
         ),
       ),
       { startImmediately: true },
     );
+
+    return Service.of({
+      processedRevision: SubscriptionRef.get(processed),
+      processedChanges: SubscriptionRef.changes(processed),
+    });
   }).pipe(Effect.withSpan("CellInputVisibilitySync.layer")),
 );
