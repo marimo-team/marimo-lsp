@@ -1600,6 +1600,10 @@ export interface Snapshot {
 export interface Interface {
   readonly snapshot: Effect.Effect<Snapshot>;
   readonly controllers: Effect.Effect<ReadonlyArray<vscode.NotebookController>>;
+  readonly controllerChanges: Stream.Stream<
+    ReadonlyArray<vscode.NotebookController>
+  >;
+  readonly affinityChanges: Stream.Stream<ReadonlyArray<AffinityUpdate>>;
   readonly serializers: Effect.Effect<ReadonlyArray<RegisteredSerializer>>;
   readonly statusBarProviders: Effect.Effect<
     ReadonlyArray<RegisteredStatusBarProvider>
@@ -1654,7 +1658,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly layer: Layer.Layer<VsCode.Service | Service>;
   readonly views: Ref.Ref<HashSet.HashSet<string>>;
   readonly commands: Ref.Ref<HashSet.HashSet<string>>;
-  readonly controllers: Ref.Ref<HashSet.HashSet<vscode.NotebookController>>;
+  readonly controllers: SubscriptionRef.SubscriptionRef<
+    HashSet.HashSet<vscode.NotebookController>
+  >;
   readonly executions: Ref.Ref<ReadonlyArray<CommandExecution>>;
   readonly serializers: Ref.Ref<HashSet.HashSet<RegisteredSerializer>>;
   readonly statusBarProviders: Ref.Ref<Array<RegisteredStatusBarProvider>>;
@@ -1687,7 +1693,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
   readonly removeNotebookDocument: (
     doc: vscode.NotebookDocument,
   ) => Effect.Effect<void>;
-  readonly affinityUpdates: Ref.Ref<ReadonlyArray<AffinityUpdate>>;
+  readonly affinityUpdates: SubscriptionRef.SubscriptionRef<
+    ReadonlyArray<AffinityUpdate>
+  >;
 }> {
   static makeNotebookEditor(
     uri: string | Uri,
@@ -1709,17 +1717,19 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
             .map((s) => s.notebookType)
             .toSorted(),
         ),
-        controllers: yield* Effect.map(Ref.get(this.controllers), (map) =>
-          Array.from(map)
-            .map((c) => c.id)
-            .toSorted(),
+        controllers: yield* Effect.map(
+          SubscriptionRef.get(this.controllers),
+          (map) =>
+            Array.from(map)
+              .map((c) => c.id)
+              .toSorted(),
         ),
       };
     });
   }
 
   getAffinityUpdates() {
-    return Ref.get(this.affinityUpdates);
+    return SubscriptionRef.get(this.affinityUpdates);
   }
 
   createMockUri(path: string): Uri {
@@ -1796,7 +1806,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       yield* PubSub.unbounded<Workspace.NotebookLifecycleEvent>();
 
     const commands = yield* Ref.make(HashSet.empty<string>());
-    const controllers = yield* Ref.make(
+    const controllers = yield* SubscriptionRef.make(
       HashSet.empty<vscode.NotebookController>(),
     );
     const controllerSelectionEmitters = new Map<
@@ -1832,7 +1842,9 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
     const executions = yield* Ref.make<ReadonlyArray<CommandExecution>>([]);
     const executionRevision = yield* SubscriptionRef.make(0);
 
-    const affinityUpdates = yield* Ref.make<ReadonlyArray<AffinityUpdate>>([]);
+    const affinityUpdates = yield* SubscriptionRef.make<
+      ReadonlyArray<AffinityUpdate>
+    >([]);
     const openedExternalUris = yield* Ref.make<ReadonlyArray<string>>([]);
     const workspaceEdits = yield* Ref.make<ReadonlyArray<vscode.WorkspaceEdit>>(
       [],
@@ -2407,7 +2419,7 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                   affinity: vscode.NotebookControllerAffinity,
                 ) {
                   Effect.runSyncWith(context)(
-                    Ref.update(affinityUpdates, (updates) => [
+                    SubscriptionRef.update(affinityUpdates, (updates) => [
                       ...updates,
                       {
                         controllerId: id,
@@ -2419,14 +2431,20 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
                 },
               };
               controllerSelectionEmitters.set(id, emitter);
-              yield* Ref.update(controllers, HashSet.add(controller));
+              yield* SubscriptionRef.update(
+                controllers,
+                HashSet.add(controller),
+              );
               return controller;
             }),
             (controller) =>
               Effect.gen(function* () {
                 controllerSelectionEmitters.delete(controller.id);
                 yield* Effect.sync(() => controller.dispose());
-                yield* Ref.update(controllers, HashSet.remove(controller));
+                yield* SubscriptionRef.update(
+                  controllers,
+                  HashSet.remove(controller),
+                );
               }),
           );
         },
@@ -2728,9 +2746,10 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
       const currentViews = yield* Ref.get(views);
       const currentCommands = yield* Ref.get(commands);
       const currentSerializers = yield* Ref.get(serializers);
-      const currentControllers = yield* Ref.get(controllers);
+      const currentControllers = yield* SubscriptionRef.get(controllers);
       const currentExecutions = yield* Ref.get(executions);
-      const currentAffinityUpdates = yield* Ref.get(affinityUpdates);
+      const currentAffinityUpdates =
+        yield* SubscriptionRef.get(affinityUpdates);
       const currentOpenedExternalUris = yield* Ref.get(openedExternalUris);
       const currentWorkspaceEdits = yield* Ref.get(workspaceEdits);
       const currentQuickPicks = yield* Ref.get(quickPicks);
@@ -2783,9 +2802,13 @@ export class TestVsCode extends Data.TaggedClass("TestVsCode")<{
 
     const testService = Service.of({
       snapshot,
-      controllers: Effect.map(Ref.get(controllers), (items) =>
+      controllers: Effect.map(SubscriptionRef.get(controllers), (items) =>
         Array.from(items),
       ),
+      controllerChanges: SubscriptionRef.changes(controllers).pipe(
+        Stream.map((items) => Array.from(items)),
+      ),
+      affinityChanges: SubscriptionRef.changes(affinityUpdates),
       serializers: Effect.map(Ref.get(serializers), (items) =>
         Array.from(items),
       ),
