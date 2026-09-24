@@ -29,11 +29,14 @@ import {
   kernelSessionId,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import type {
   CellOutputReplay,
   ListSessionsResponse,
 } from "../../schemas/Models.gen.ts";
 import * as NotebookRuntime from "../NotebookRuntime.ts";
+import * as TestNotebookRuntime from "./TestNotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
 
@@ -116,6 +119,8 @@ const makeTestLayer = (
     snapshot,
     layer: Layer.empty.pipe(
       Layer.provideMerge(NotebookRuntime.defaultLayer),
+      Layer.provideMerge(NotebookDocumentSessions.layer),
+      Layer.provideMerge(NotebookEditorRegistry.layer),
       Layer.provide(client),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestPythonExtension.layer),
@@ -137,13 +142,11 @@ Vitest.it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
-      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.open(editor);
       const first = yield* notebooks.forNotebook(id);
       const second = yield* notebooks.forNotebook(id);
       const document = yield* notebooks.forDocument(editor.notebook);
@@ -291,7 +294,6 @@ Vitest.it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
-      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -306,8 +308,7 @@ Vitest.it.effect(
         ),
       };
 
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.open(editor);
       const document = yield* runtime.forDocument(editor.notebook);
       yield* document.execute({ cells: [] }, "/usr/bin/python");
       const notebook = yield* runtime.forNotebook(id);
@@ -510,7 +511,6 @@ Vitest.it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
-      const vscode = yield* TestVsCode.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const pending = yield* firstDocument
         .execute({ cells: [] }, "/old-python")
@@ -518,10 +518,10 @@ Vitest.it.effect(
       yield* Deferred.await(requestStarted);
 
       const replacement = TestVsCode.makeNotebookEditor(first.notebook.uri);
-      yield* vscode.openNotebook(replacement.notebook);
-      const replacementDocument = yield* runtime
-        .forDocument(replacement.notebook)
-        .pipe(Effect.retry(Schedule.recurs(100)), Effect.orDie);
+      yield* TestNotebookRuntime.open(replacement);
+      const replacementDocument = yield* runtime.forDocument(
+        replacement.notebook,
+      );
       yield* replacementDocument.execute({ cells: [] }, "/new-python");
 
       yield* Deferred.succeed(releaseRequest, undefined);
@@ -594,8 +594,7 @@ Vitest.it.live("tracks RuntimeSession until a successful kernel close", () =>
 
         yield* Effect.gen(function* () {
           const runtime = yield* NotebookRuntime.Service;
-          const vscode = yield* TestVsCode.Service;
-          yield* Effect.yieldNow;
+          yield* TestNotebookRuntime.activate(editor);
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.execute({ cells: [] }, "/python-one");
 
@@ -608,8 +607,7 @@ Vitest.it.live("tracks RuntimeSession until a successful kernel close", () =>
             }),
           );
 
-          yield* vscode.closeNotebook(editor.notebook);
-          yield* Effect.yieldNow;
+          yield* TestNotebookRuntime.close(editor.notebook);
           Vitest.expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
@@ -622,8 +620,7 @@ Vitest.it.live("tracks RuntimeSession until a successful kernel close", () =>
           const reopened = TestVsCode.makeNotebookEditor(
             NodePath.join(temporary.path, "notebook.py"),
           );
-          yield* vscode.openNotebook(reopened.notebook);
-          yield* Effect.yieldNow;
+          yield* TestNotebookRuntime.open(reopened);
           const secondDocument = yield* runtime.forDocument(reopened.notebook);
           yield* secondDocument.execute({ cells: [] }, "/python-two");
           const notebook = yield* runtime.forNotebook(id);
@@ -772,9 +769,7 @@ Vitest.it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
-      const vscode = yield* TestVsCode.Service;
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.activate(editor);
       const id = notebookId(editor.notebook.uri.toString());
       yield* notebooks.forDocument(editor.notebook);
       yield* notebooks.attachController(id, controller);
@@ -892,14 +887,11 @@ Vitest.it.effect(
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
       const vscode = yield* TestVsCode.Service;
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
-      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* TestNotebookRuntime.open(editor);
       yield* notebooks.attachController(id, controller);
       Vitest.expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
-      yield* Effect.yieldNow;
-      yield* vscode.closeNotebook(editor.notebook);
+      yield* TestNotebookRuntime.close(editor.notebook);
 
       // Pruning treats a controller as dead once no open notebook selects it,
       // so the runtime must stop handing this one out. Re-resolve the handle
