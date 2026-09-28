@@ -6,6 +6,7 @@ import {
   HashMap,
   Layer,
   Option,
+  PubSub,
   Scope,
   Stream,
   SubscriptionRef,
@@ -13,6 +14,7 @@ import {
 import type * as vscode from "vscode";
 
 import * as VsCode from "../platform/VsCode.ts";
+import type { NotebookLifecycleEvent } from "../platform/Workspace.ts";
 import {
   MarimoNotebookDocument,
   type NotebookId,
@@ -47,6 +49,12 @@ export interface Interface {
     document: vscode.NotebookDocument,
   ) => Option.Option<Session>;
   readonly active: Stream.Stream<Option.Option<Session>>;
+  /** Events observed after the document transition and its finalizers complete. */
+  readonly subscribeLifecycle: Effect.Effect<
+    Stream.Stream<NotebookLifecycleEvent>,
+    never,
+    Scope.Scope
+  >;
 }
 
 interface SessionEntry {
@@ -73,6 +81,7 @@ export const layer = Layer.effect(
     const sessions = yield* SubscriptionRef.make(
       HashMap.empty<NotebookId, SessionEntry>(),
     );
+    const lifecycleChanges = yield* PubSub.unbounded<NotebookLifecycleEvent>();
 
     const end = Effect.fn("NotebookDocumentSessions.end")(function* (
       entry: SessionEntry,
@@ -159,9 +168,10 @@ export const layer = Layer.effect(
     yield* Effect.forkScoped(
       lifecycle.pipe(
         Stream.runForEach((event) =>
-          event.type === "opened"
+          (event.type === "opened"
             ? markOpen(event.document)
-            : markClosed(event.document),
+            : markClosed(event.document)
+          ).pipe(Effect.andThen(PubSub.publish(lifecycleChanges, event))),
         ),
       ),
     );
@@ -208,6 +218,9 @@ export const layer = Layer.effect(
       forDocument,
       /** The current document session for VS Code's active notebook editor. */
       active,
+      subscribeLifecycle: PubSub.subscribe(lifecycleChanges).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
     });
   }),
 );

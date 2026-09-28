@@ -5,6 +5,7 @@ import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellExecutions from "../../kernel/CellExecutions.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
@@ -56,8 +57,10 @@ const fixture = Layer.effect(
     const sessions = yield* NotebookDocumentSessions.Service;
 
     const openExecutions = Effect.fn(function* (cell: vscode.NotebookCell) {
-      yield* vscode.openNotebook(cell.notebook);
-      yield* Effect.yieldNow;
+      yield* DocumentLifecycle.transition(cell.notebook, "opened").pipe(
+        Effect.provideService(TestVsCode.Service, vscode),
+        Effect.provideService(NotebookDocumentSessions.Service, sessions),
+      );
       const session = sessions.forDocument(cell.notebook);
       if (Option.isNone(session)) {
         return yield* Effect.die("Expected an open notebook document session");

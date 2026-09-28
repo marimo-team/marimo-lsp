@@ -2,14 +2,16 @@ import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
 
-const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = VsCodeValues.createNotebookUri(
+  "file:///test/notebook_mo.py",
+);
 const effectIt = EffectTest.make(Constants.defaultLayer);
 
 // Helper to create a mock cell with proper MarimoNotebookCell wrapping
@@ -19,8 +21,8 @@ function createMockCell(
   value: string,
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  const rawCell = TestVsCode.createNotebookCell(
-    TestVsCode.createTestNotebookDocument(uri),
+  const rawCell = VsCodeValues.createNotebookCell(
+    VsCodeValues.createTestNotebookDocument(uri),
     {
       kind: 2, // Code
       value,

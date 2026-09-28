@@ -40,7 +40,6 @@ it.effect(
     Vitest.expect(replacementSession.value).not.toBe(firstSession.value);
 
     yield* sessions.closeFirst;
-    yield* sessions.awaitLifecycle;
     Vitest.expect(
       Option.exists(
         yield* sessions.current,

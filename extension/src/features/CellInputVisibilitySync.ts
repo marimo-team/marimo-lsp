@@ -7,10 +7,11 @@ import {
   HashMap,
   Layer,
   Option,
+  PubSub,
   Queue,
   Ref,
+  Scope,
   Stream,
-  SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
 
@@ -94,14 +95,29 @@ type Event = Data.TaggedEnum<{
   Synchronize: {
     readonly notebook: MarimoNotebookDocument;
     readonly initialize: boolean;
+    readonly processed: Processed;
   };
-  Close: { readonly notebook: MarimoNotebookDocument };
+  Close: {
+    readonly notebook: MarimoNotebookDocument;
+    readonly processed: Processed;
+  };
 }>;
 const Event = Data.taggedEnum<Event>();
 
+export type Processed = Data.TaggedEnum<{
+  Activated: { readonly editor: vscode.NotebookEditor };
+  Changed: { readonly event: vscode.NotebookDocumentChangeEvent };
+  Closed: { readonly document: vscode.NotebookDocument };
+}>;
+const Processed = Data.taggedEnum<Processed>();
+
 export interface Interface {
-  readonly processedRevision: Effect.Effect<number>;
-  readonly processedChanges: Stream.Stream<number>;
+  /** Subscribes now; emits each source event after its synchronization attempt. */
+  readonly subscribeProcessed: Effect.Effect<
+    Stream.Stream<Processed>,
+    never,
+    Scope.Scope
+  >;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -167,7 +183,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
-    const processed = yield* SubscriptionRef.make(0);
+    const processed = yield* PubSub.unbounded<Processed>();
 
     const snapshots = yield* Ref.make(
       HashMap.empty<NotebookId, NotebookSnapshot>(),
@@ -247,15 +263,18 @@ export const layer = Layer.effect(
       Stream.filterMap(
         Filter.fromPredicateOption((editor) =>
           Option.flatMap(editor, (editor) =>
-            MarimoNotebookDocument.tryFrom(editor.notebook),
+            MarimoNotebookDocument.tryFrom(editor.notebook).pipe(
+              Option.map((notebook) => ({ notebook, editor })),
+            ),
           ),
         ),
       ),
       Stream.map(
-        (notebook): Event =>
+        ({ notebook, editor }): Event =>
           Event.Synchronize({
             notebook,
             initialize: true,
+            processed: Processed.Activated({ editor }),
           }),
       ),
     );
@@ -263,14 +282,17 @@ export const layer = Layer.effect(
     const changes = code.workspace.notebookDocumentChanges.pipe(
       Stream.filterMap(
         Filter.fromPredicateOption((event) =>
-          MarimoNotebookDocument.tryFrom(event.notebook),
+          MarimoNotebookDocument.tryFrom(event.notebook).pipe(
+            Option.map((notebook) => ({ notebook, event })),
+          ),
         ),
       ),
       Stream.map(
-        (notebook): Event =>
+        ({ notebook, event }): Event =>
           Event.Synchronize({
             notebook,
             initialize: false,
+            processed: Processed.Changed({ event }),
           }),
       ),
     );
@@ -281,7 +303,15 @@ export const layer = Layer.effect(
           MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
-      Stream.map((notebook): Event => Event.Close({ notebook })),
+      Stream.map(
+        (notebook): Event =>
+          Event.Close({
+            notebook,
+            processed: Processed.Closed({
+              document: notebook.rawNotebookDocument,
+            }),
+          }),
+      ),
     );
 
     // Each source has its own fiber that writes to one queue. A
@@ -311,19 +341,16 @@ export const layer = Layer.effect(
               }),
             Synchronize: ({ notebook, initialize }) =>
               synchronizeSafely(notebook, initialize),
-          }).pipe(
-            Effect.ensuring(
-              SubscriptionRef.update(processed, (revision) => revision + 1),
-            ),
-          ),
+          }).pipe(Effect.andThen(PubSub.publish(processed, event.processed))),
         ),
       ),
       { startImmediately: true },
     );
 
     return Service.of({
-      processedRevision: SubscriptionRef.get(processed),
-      processedChanges: SubscriptionRef.changes(processed),
+      subscribeProcessed: PubSub.subscribe(processed).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
     });
   }).pipe(Effect.withSpan("CellInputVisibilitySync.layer")),
 );

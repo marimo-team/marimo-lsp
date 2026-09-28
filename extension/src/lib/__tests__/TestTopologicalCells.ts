@@ -31,6 +31,7 @@ export const layer = Layer.suspend(() => {
         ),
       ),
     active: Stream.empty,
+    subscribeLifecycle: Effect.succeed(Stream.empty),
   });
   const environment = NotebookVariables.layer.pipe(
     Layer.provide(documentSessions),

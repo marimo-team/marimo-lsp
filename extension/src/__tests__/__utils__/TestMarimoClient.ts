@@ -146,6 +146,7 @@ export function makeTestNotebookRuntime(options: Options = {}) {
               });
             }),
           controllerChanges: Stream.fromPubSub(selections),
+          subscribeInputProgress: Effect.succeed(Stream.empty),
           getRuntimeSession: () =>
             Effect.succeed(Option.fromNullishOr(options.runtimeSession)),
           getRuntimeSessions: Effect.succeed([

@@ -7,7 +7,7 @@ import { Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as NotebookControllers from "../../kernel/NotebookControllers.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
@@ -24,7 +24,7 @@ const affinityMap = (
   );
 
 const scriptNotebookEditor = (uri: string) =>
-  TestVsCode.makeNotebookEditor(uri, {
+  VsCodeValues.makeNotebookEditor(uri, {
     data: {
       cells: [],
       metadata: { marimo: { header: "/// script" } },
@@ -85,7 +85,7 @@ Vitest.describe("NotebookControllers", () => {
       "attaches VS Code controller selections to the notebook runtime",
       Effect.fn(function* () {
         const controllers = yield* TestNotebookControllers.Service;
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+        const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
 
         Vitest.expect(
           Option.isNone(yield* controllers.controllerFor(editor)),
@@ -103,7 +103,7 @@ Vitest.describe("NotebookControllers", () => {
       "sets all controllers to default without a script header or adjacent venv",
       Effect.fn(function* () {
         const controllers = yield* TestNotebookControllers.Service;
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+        const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
 
         yield* controllers.activate(editor, 2);
 
@@ -124,7 +124,7 @@ Vitest.describe("NotebookControllers", () => {
         const uri = "/test/notebook_mo.py";
 
         yield* controllers.activate(scriptNotebookEditor(uri), 2);
-        yield* controllers.activate(TestVsCode.makeNotebookEditor(uri), 4);
+        yield* controllers.activate(VsCodeValues.makeNotebookEditor(uri), 4);
 
         const updates = yield* controllers.affinityUpdates;
         Vitest.expect(updates).toHaveLength(4);
@@ -175,7 +175,7 @@ Vitest.describe("NotebookControllers", () => {
       "keeps a selected controller when its Python environment disappears",
       Effect.fn(function* () {
         const controllers = yield* TestNotebookControllers.Service;
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+        const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
         yield* controllers.openNotebook(editor.notebook);
         yield* controllers.select(`marimo-${homeExecutable}`, editor);
 
@@ -197,7 +197,7 @@ Vitest.describe("NotebookControllers", () => {
     it.effect(
       "disposes the controller selection listener when its consumer ends",
       Effect.fn(function* () {
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+        const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
         let emit:
           | ((event: {
               notebook: vscode.NotebookDocument;
@@ -249,9 +249,9 @@ Vitest.describe("NotebookControllers", () => {
           TestPythonExtension.makeVenv(executable),
           controllerIds(executable),
         );
-        yield* controllers.activate(TestVsCode.makeNotebookEditor(uri), 2);
+        yield* controllers.activate(VsCodeValues.makeNotebookEditor(uri), 2);
         NodeFs.unlinkSync(pyvenvConfig);
-        yield* controllers.activate(TestVsCode.makeNotebookEditor(uri), 4);
+        yield* controllers.activate(VsCodeValues.makeNotebookEditor(uri), 4);
 
         const updates = yield* controllers.affinityUpdates;
         Vitest.expect(updates).toHaveLength(4);
@@ -287,7 +287,7 @@ Vitest.describe("NotebookControllers", () => {
           controllerIds(executable),
         );
         yield* controllers.activate(scriptNotebookEditor(uri), 2);
-        yield* controllers.activate(TestVsCode.makeNotebookEditor(uri), 4);
+        yield* controllers.activate(VsCodeValues.makeNotebookEditor(uri), 4);
 
         const updates = yield* controllers.affinityUpdates;
         Vitest.expect(updates).toHaveLength(4);

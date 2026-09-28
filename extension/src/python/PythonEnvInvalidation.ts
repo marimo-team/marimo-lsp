@@ -33,20 +33,23 @@ export const layer = Layer.effect(
     const pubsub = yield* PubSub.unbounded<string>();
     const generation = yield* SubscriptionRef.make(0);
 
-    // Forward Python extension env changes into the invalidation channel
-    yield* Effect.forkScoped(
-      pyExt.activeEnvironmentPathChanges.pipe(
-        Stream.debounce(Duration.seconds(2)),
-        Stream.runForEach(() => PubSub.publish(pubsub, "python-env-change")),
-      ),
-    );
-
     const invalidate = Effect.fn("PythonEnvInvalidation.invalidate")(function* (
       reason: string,
     ) {
       yield* SubscriptionRef.update(generation, (value) => value + 1);
       return yield* PubSub.publish(pubsub, reason);
     });
+
+    // Forward Python extension env changes into the invalidation channel
+    const environmentChanges =
+      yield* pyExt.subscribeActiveEnvironmentPathChanges;
+    yield* Effect.forkScoped(
+      environmentChanges.pipe(
+        Stream.debounce(Duration.seconds(2)),
+        Stream.runForEach(() => invalidate("python-env-change")),
+      ),
+    );
+
     const changes = Stream.fromPubSub(pubsub);
 
     return Service.of({

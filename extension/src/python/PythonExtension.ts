@@ -1,5 +1,5 @@
 import * as py from "@vscode/python-extension";
-import { Context, Effect, Layer, Option, Queue, Stream } from "effect";
+import { Context, Effect, Layer, Option, Queue, Scope, Stream } from "effect";
 
 import { acquireDisposable } from "../lib/acquireDisposable.ts";
 
@@ -13,7 +13,12 @@ export interface Interface {
   ) => Effect.Effect<void>;
   readonly knownEnvironments: Effect.Effect<ReadonlyArray<py.Environment>>;
   readonly environmentChanges: Stream.Stream<py.EnvironmentsChangeEvent>;
-  readonly activeEnvironmentPathChanges: Stream.Stream<py.ActiveEnvironmentPathChangeEvent>;
+  /** Acquires the listener before returning, buffering changes until consumed. */
+  readonly subscribeActiveEnvironmentPathChanges: Effect.Effect<
+    Stream.Stream<py.ActiveEnvironmentPathChangeEvent>,
+    never,
+    Scope.Scope
+  >;
   readonly getActiveEnvironmentPath: (
     resource?: py.Resource,
   ) => Effect.Effect<py.EnvironmentPath>;
@@ -50,14 +55,16 @@ export const layer = Layer.effect(
         ),
     );
 
-    const activeEnvironmentPathChanges =
-      Stream.callback<py.ActiveEnvironmentPathChangeEvent>((queue) =>
-        acquireDisposable(() =>
-          api.environments.onDidChangeActiveEnvironmentPath((event) => {
-            Queue.offerUnsafe(queue, event);
-          }),
-        ),
+    const subscribeActiveEnvironmentPathChanges = Effect.gen(function* () {
+      const queue =
+        yield* Queue.unbounded<py.ActiveEnvironmentPathChangeEvent>();
+      yield* acquireDisposable(() =>
+        api.environments.onDidChangeActiveEnvironmentPath((event) => {
+          Queue.offerUnsafe(queue, event);
+        }),
       );
+      return Stream.fromQueue(queue);
+    });
 
     const getActiveEnvironmentPath = Effect.fn(
       "PythonExtension.getActiveEnvironmentPath",
@@ -81,7 +88,7 @@ export const layer = Layer.effect(
       updateActiveEnvironmentPath,
       knownEnvironments,
       environmentChanges,
-      activeEnvironmentPathChanges,
+      subscribeActiveEnvironmentPathChanges,
       getActiveEnvironmentPath,
       resolveEnvironment,
     });

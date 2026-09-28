@@ -12,7 +12,7 @@ import {
   Stream,
 } from "effect";
 
-import * as TestVsCode from "../../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../../__mocks__/VsCodeValues.ts";
 import {
   makeTestMarimoClient,
   type TestCommand,
@@ -105,8 +105,8 @@ export const layerWith = (scenario: Scenario) =>
       const ownedSessions = new Set<NotebookDocumentSessions.Session>();
       const makeSession = () => {
         const session = makeTestNotebookDocumentSession(
-          TestVsCode.createTestNotebookDocument(
-            TestVsCode.Uri.parse(NOTEBOOK_URI),
+          VsCodeValues.createTestNotebookDocument(
+            VsCodeValues.Uri.parse(NOTEBOOK_URI),
             { notebookType: NOTEBOOK_TYPE },
           ),
         );
@@ -144,6 +144,7 @@ export const layerWith = (scenario: Scenario) =>
         forDocument: (document) =>
           current.document === document ? Option.some(current) : Option.none(),
         active: Stream.empty,
+        subscribeLifecycle: Effect.succeed(Stream.empty),
       });
       const environment = NotebookDatasources.layer.pipe(
         Layer.provide([makeTestMarimoClient({ send }), documentSessions]),

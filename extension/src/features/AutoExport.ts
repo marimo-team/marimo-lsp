@@ -26,12 +26,14 @@ export type Format = "html" | "ipynb" | "markdown";
 type AutoExportExtension = "html" | "ipynb" | "md";
 
 interface AutoExportState {
+  readonly document: vscode.NotebookDocument;
   readonly incarnation: object;
   readonly generation: number;
   readonly exported: Readonly<Record<Format, number>>;
 }
 
-const initialState = (): AutoExportState => ({
+const initialState = (document: vscode.NotebookDocument): AutoExportState => ({
+  document,
   incarnation: {},
   generation: 0,
   exported: { html: -1, ipynb: -1, markdown: -1 },
@@ -74,23 +76,27 @@ export const layer = Layer.effectDiscard(
       HashMap.empty<NotebookId, AutoExportState>(),
     );
 
-    const getOrCreateState = (notebookId: NotebookId) =>
-      Ref.modify(states, (current) =>
-        Option.match(HashMap.get(current, notebookId), {
-          onNone: () => {
-            const state = initialState();
-            return [state, HashMap.set(current, notebookId, state)];
-          },
-          onSome: (state) => [state, current],
-        }),
-      );
+    const getOrCreateState = (notebook: MarimoNotebookDocument) =>
+      Ref.modify(states, (current) => {
+        const existing = HashMap.get(current, notebook.id);
+        const state =
+          Option.isSome(existing) &&
+          existing.value.document === notebook.rawNotebookDocument
+            ? existing.value
+            : initialState(notebook.rawNotebookDocument);
+        return [state, HashMap.set(current, notebook.id, state)];
+      });
 
     const markDirty = (notebookId: NotebookId) =>
       Ref.update(states, (current) =>
-        HashMap.modifyAt(current, notebookId, (state) => {
-          const value = Option.getOrElse(state, initialState);
-          return Option.some({ ...value, generation: value.generation + 1 });
-        }),
+        HashMap.modifyAt(
+          current,
+          notebookId,
+          Option.map((state) => ({
+            ...state,
+            generation: state.generation + 1,
+          })),
+        ),
       );
 
     const markExported = (
@@ -154,7 +160,15 @@ export const layer = Layer.effectDiscard(
           ),
         ),
         Stream.runForEach((notebook) =>
-          Ref.update(states, HashMap.remove(notebook.id)),
+          Ref.update(states, (current) =>
+            HashMap.modifyAt(
+              current,
+              notebook.id,
+              Option.filter(
+                (state) => state.document !== notebook.rawNotebookDocument,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -187,7 +201,7 @@ export const layer = Layer.effectDiscard(
         const session = yield* runtime.getRuntimeSession(notebook.id);
         if (Option.isNone(session)) return;
 
-        const state = yield* getOrCreateState(notebook.id);
+        const state = yield* getOrCreateState(notebook);
         const pendingFormats = formats.filter((format) => {
           if (state.exported[format] >= state.generation) return false;
           return (

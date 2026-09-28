@@ -1,5 +1,5 @@
 import * as Vitest from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Layer, Stream } from "effect";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
@@ -23,6 +23,39 @@ const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
       index,
     ),
   );
+
+Vitest.describe("visibility completion observations", () => {
+  const it = EffectTest.make(
+    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(TestVsCode.layer)),
+  );
+
+  it.effect(
+    "buffers the exact processed changes even when no command is needed",
+    () =>
+      Effect.gen(function* () {
+        const sync = yield* CellInputVisibilitySync.Service;
+        const vscode = yield* TestVsCode.Service;
+        const processed = yield* sync.subscribeProcessed;
+        const changes = ["first.py", "second.py"].map((name) => ({
+          notebook: TestVsCode.makeNotebookEditor(`/test/${name}`).notebook,
+          metadata: undefined,
+          cellChanges: [],
+          contentChanges: [],
+        }));
+
+        // Subscription acquisition must precede publishing; consumption can wait.
+        for (const change of changes) yield* vscode.notebookChange(change);
+        const observed = yield* processed.pipe(
+          Stream.take(2),
+          Stream.runCollect,
+        );
+        Vitest.expect(observed).toEqual(
+          changes.map((event) => ({ _tag: "Changed", event })),
+        );
+        Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
+      }),
+  );
+});
 
 Vitest.describe("hiddenInputRanges", () => {
   Vitest.it(

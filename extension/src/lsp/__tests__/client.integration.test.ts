@@ -27,6 +27,7 @@ const variablesLayer = NotebookVariables.layer.pipe(
       current: () => Option.none(),
       forDocument: () => Option.none(),
       active: Stream.empty,
+      subscribeLifecycle: Effect.succeed(Stream.empty),
     }),
   ),
 );

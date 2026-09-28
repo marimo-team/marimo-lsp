@@ -25,6 +25,7 @@ import {
   runId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
@@ -2738,12 +2739,7 @@ Vitest.describe("NotebookExecutions", () => {
           .pipe(Effect.flip);
         Vitest.expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
-        yield* vscode.closeNotebook(editor.notebook);
-        const barrier = TestVsCode.makeNotebookEditor(
-          "/test/lifecycle-barrier.py",
-        );
-        yield* vscode.openNotebook(barrier.notebook);
-        yield* openNotebook(executions, barrier.notebook);
+        yield* DocumentLifecycle.transition(editor.notebook, "closed");
 
         yield* second.notebook.apply({
           op: "cell-op",

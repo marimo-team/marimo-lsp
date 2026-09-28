@@ -102,7 +102,9 @@ export const layer = Layer.effectDiscard(
     });
 
     // Listen for environment changes and update the status bar
-    yield* pythonExtension.activeEnvironmentPathChanges.pipe(
+    const environmentChanges =
+      yield* pythonExtension.subscribeActiveEnvironmentPathChanges;
+    yield* environmentChanges.pipe(
       Stream.runForEach(handleEnvironmentChange),
       Effect.forkScoped({ startImmediately: true }),
     );

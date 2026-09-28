@@ -65,44 +65,48 @@ export const layerWith = (scenario: Scenario) =>
       const releaseFirstWrite = yield* Latch.make();
       const secondConfigurationWritten = yield* Latch.make();
 
-      const vscodeLayer = TestVsCode.layerWith({
-        initialDocuments: [firstDocument, secondDocument],
-        commands: {
-          setContext: (key, value) =>
-            Effect.gen(function* () {
-              if (
-                Scenario.$is("BlockFirstWrite")(scenario) &&
-                key === "marimo.config.runtime.on_cell_change" &&
-                value === "lazy"
-              ) {
-                yield* firstWriteStarted.open;
-                yield* releaseFirstWrite.await;
-              }
-              yield* Ref.update(writes, (current) => [
-                ...current,
-                { key, value },
-              ]);
-              if (
-                key === "marimo.config.runtime.auto_reload" &&
-                value === "off"
-              ) {
-                yield* defaultsWritten.open;
-              }
-              if (
-                key === "marimo.config.runtime.auto_reload" &&
-                value === "autorun"
-              ) {
-                yield* firstConfigurationWritten.open;
-              }
-              if (
-                key === "marimo.config.runtime.auto_reload" &&
-                value === "lazy"
-              ) {
-                yield* secondConfigurationWritten.open;
-              }
-            }),
+      const vscodeLayer = TestVsCode.layerWith(
+        {
+          initialDocuments: [firstDocument, secondDocument],
         },
-      });
+        {
+          commands: {
+            setContext: (key, value) =>
+              Effect.gen(function* () {
+                if (
+                  Scenario.$is("BlockFirstWrite")(scenario) &&
+                  key === "marimo.config.runtime.on_cell_change" &&
+                  value === "lazy"
+                ) {
+                  yield* firstWriteStarted.open;
+                  yield* releaseFirstWrite.await;
+                }
+                yield* Ref.update(writes, (current) => [
+                  ...current,
+                  { key, value },
+                ]);
+                if (
+                  key === "marimo.config.runtime.auto_reload" &&
+                  value === "off"
+                ) {
+                  yield* defaultsWritten.open;
+                }
+                if (
+                  key === "marimo.config.runtime.auto_reload" &&
+                  value === "autorun"
+                ) {
+                  yield* firstConfigurationWritten.open;
+                }
+                if (
+                  key === "marimo.config.runtime.auto_reload" &&
+                  value === "lazy"
+                ) {
+                  yield* secondConfigurationWritten.open;
+                }
+              }),
+          },
+        },
+      );
       const configurations = new Map([
         [
           NOTEBOOK_URI,
@@ -150,9 +154,10 @@ export const layerWith = (scenario: Scenario) =>
           const manager = yield* ConfigContextManager.Service;
           const activate = (document: typeof firstDocument) =>
             Effect.gen(function* () {
-              const expected = (yield* manager.desiredRevision) + 1;
               const published = yield* manager.desiredChanges.pipe(
-                Stream.filter((revision) => revision >= expected),
+                Stream.filter(
+                  Option.exists((session) => session.document === document),
+                ),
                 Stream.runHead,
                 Effect.forkChild({ startImmediately: true }),
               );

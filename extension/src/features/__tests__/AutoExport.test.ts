@@ -110,7 +110,7 @@ Vitest.describe("AutoExport", () => {
     Effect.fn(function* () {
       const autoExport = yield* TestAutoExport.Service;
       yield* autoExport.activate;
-      yield* autoExport.activate;
+      yield* autoExport.showAnotherEditor;
       yield* autoExport.tick;
 
       Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([

@@ -2,7 +2,7 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option, Result, Schema } from "effect";
 
 import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as ExtensionContext from "../ExtensionContext.ts";
 import * as Storage from "../Storage.ts";
@@ -26,8 +26,11 @@ const layerWith = (
       return ExtensionContext.Service.of({
         globalState: new Memento(),
         workspaceState,
-        extensionUri: TestVsCode.Uri.parse("file:///test/extension/path", true),
-        globalStorageUri: TestVsCode.Uri.parse(
+        extensionUri: VsCodeValues.Uri.parse(
+          "file:///test/extension/path",
+          true,
+        ),
+        globalStorageUri: VsCodeValues.Uri.parse(
           "file:///test/extension/path/libs",
           true,
         ),

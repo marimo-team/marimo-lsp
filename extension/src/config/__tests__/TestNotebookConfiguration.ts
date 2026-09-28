@@ -16,6 +16,7 @@ import {
   type TestCommand,
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { mergeMarimoConfig, notebookId } from "../../lib/__tests__/branded.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../../notebook/NotebookSessionResources.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -156,7 +157,6 @@ export const layerWith = (
         Effect.gen(function* () {
           const vscode = yield* TestVsCode.Service;
           const sessions = yield* NotebookDocumentSessions.Service;
-          let barrierId = 0;
 
           const awaitActiveDocument = (document: vscode.NotebookDocument) =>
             sessions.active.pipe(
@@ -196,18 +196,14 @@ export const layerWith = (
               documents.set(notebookId, replacement);
               return replacement;
             }),
-            closeDocument: Effect.fn(function* (document) {
-              yield* vscode.closeNotebook(document);
-
-              // The lifecycle stream is sequential. Observing a later open
-              // proves that the close above has already been handled, even
-              // when that close intentionally leaves session state unchanged.
-              const barrier = TestVsCode.createTestNotebookDocument(
-                `/test/lifecycle-barrier-${barrierId++}.py`,
-              );
-              yield* vscode.openNotebook(barrier);
-              yield* activate(barrier);
-            }),
+            closeDocument: (document) =>
+              DocumentLifecycle.transition(document, "closed").pipe(
+                Effect.provideService(TestVsCode.Service, vscode),
+                Effect.provideService(
+                  NotebookDocumentSessions.Service,
+                  sessions,
+                ),
+              ),
             pauseNextGet: enqueuePause(nextGetPauses),
             pauseNextUpdate: enqueuePause(nextUpdatePauses),
           });

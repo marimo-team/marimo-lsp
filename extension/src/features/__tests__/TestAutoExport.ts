@@ -51,6 +51,7 @@ export interface Snapshot {
 export interface Interface {
   readonly snapshot: Effect.Effect<Snapshot>;
   readonly activate: Effect.Effect<void>;
+  readonly showAnotherEditor: Effect.Effect<void>;
   readonly tick: Effect.Effect<void>;
   readonly completeRun: Effect.Effect<void>;
   readonly addOutput: Effect.Effect<void>;
@@ -114,30 +115,34 @@ export const layerWith = (options: Options) =>
       const editor = makeEditor(formats, cellOutputs);
       const notebook = MarimoNotebookDocument.from(editor.notebook);
 
-      const vscodeLayer = TestVsCode.layerWith({
-        initialDocuments: [editor.notebook],
-        workspace: {
-          fs: {
-            createDirectory: (uri) =>
-              Ref.update(directories, (current) => [
-                ...current,
-                uri.toString(),
-              ]),
-            readFile: (uri) =>
-              Effect.fail(
-                new Workspace.FileSystemError({
-                  cause: new Error(`ENOENT: ${uri.toString()}`),
+      const vscodeLayer = TestVsCode.layerWith(
+        {
+          initialDocuments: [editor.notebook],
+        },
+        {
+          workspace: {
+            fs: {
+              createDirectory: (uri) =>
+                Ref.update(directories, (current) => [
+                  ...current,
+                  uri.toString(),
+                ]),
+              readFile: (uri) =>
+                Effect.fail(
+                  new Workspace.FileSystemError({
+                    cause: new Error(`ENOENT: ${uri.toString()}`),
+                  }),
+                ),
+              writeFile: (uri, contents) =>
+                Ref.update(writes, (current) => {
+                  const next = new Map(current);
+                  next.set(uri.toString(), new TextDecoder().decode(contents));
+                  return next;
                 }),
-              ),
-            writeFile: (uri, contents) =>
-              Ref.update(writes, (current) => {
-                const next = new Map(current);
-                next.set(uri.toString(), new TextDecoder().decode(contents));
-                return next;
-              }),
+            },
           },
         },
-      });
+      );
       const runtimeLayer = makeTestNotebookRuntime({
         initialControllers: [{ notebookUri: notebook.id, controller }],
         runtimeSession:
@@ -178,6 +183,13 @@ export const layerWith = (options: Options) =>
               directories: Ref.get(directories),
             }),
             activate: vscode.setActiveNotebookEditor(Option.some(editor)),
+            showAnotherEditor: Effect.suspend(() =>
+              vscode.setActiveNotebookEditor(
+                Option.some(
+                  TestVsCode.createTestNotebookEditor(editor.notebook),
+                ),
+              ),
+            ),
             tick: TestClock.adjust(AutoExport.interval),
             completeRun: PubSub.publish(operations, {
               notebookUri: notebook.id,
@@ -190,11 +202,9 @@ export const layerWith = (options: Options) =>
             reopen: Effect.gen(function* () {
               yield* vscode.setActiveNotebookEditor(Option.none());
               yield* vscode.closeNotebook(editor.notebook);
-              yield* Effect.yieldNow;
               const reopened = makeEditor(formats, cellOutputs, "2 + 2");
               yield* vscode.openNotebook(reopened.notebook);
               yield* vscode.setActiveNotebookEditor(Option.some(reopened));
-              yield* Effect.yieldNow;
             }),
             htmlExportStarted: htmlExportStarted.await,
             releaseHtmlExport: releaseHtmlExport.open.pipe(Effect.asVoid),

@@ -9,7 +9,7 @@ import {
   Stream,
 } from "effect";
 
-import * as TestVsCode from "../../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../../__mocks__/VsCodeValues.ts";
 import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
@@ -89,7 +89,7 @@ export const layer = Layer.unwrap(
 
     const makeSession = (id: NotebookId) => {
       const session = makeTestNotebookDocumentSession(
-        TestVsCode.createTestNotebookDocument(TestVsCode.Uri.parse(id), {
+        VsCodeValues.createTestNotebookDocument(VsCodeValues.Uri.parse(id), {
           notebookType: NOTEBOOK_TYPE,
         }),
       );
@@ -112,6 +112,7 @@ export const layer = Layer.unwrap(
           ),
         ),
       active: Stream.empty,
+      subscribeLifecycle: Effect.succeed(Stream.empty),
     });
     const environment = NotebookVariables.layer.pipe(
       Layer.provide(documentSessions),

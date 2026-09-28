@@ -3,6 +3,8 @@ import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import * as TestVsCode from "../__mocks__/TestVsCode.ts";
+import { commandId, defineCommand } from "../commands.ts";
+import { MarimoCommands } from "../commands/MarimoCommands.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import { makeActiveNotebookEditorChanges } from "../platform/Window.ts";
 import { makeNotebookLifecycle } from "../platform/Workspace.ts";
@@ -21,6 +23,151 @@ const initializedIt = EffectTest.make(
 
 // Tests for our VsCode test harness
 Vitest.describe("TestVsCode", () => {
+  it.effect(
+    "keeps text editor snapshots consistent when activation repeats",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      const editor = TestVsCode.createTestTextEditor(
+        TestVsCode.createTestTextDocument("/test/a.py", "python", "x = 1"),
+      );
+      yield* test.setActiveTextEditor(Option.some(editor));
+      yield* test.setActiveTextEditor(Option.some(editor));
+      Vitest.expect(yield* code.window.getActiveTextEditor).toEqual(
+        Option.some(editor),
+      );
+      Vitest.expect(yield* code.window.getVisibleTextEditors).toEqual([editor]);
+      Vitest.expect(yield* code.workspace.getTextDocuments).toEqual([
+        editor.document,
+      ]);
+    }),
+  );
+
+  it.effect(
+    "releases registrations when their scope closes",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* code.commands.register(
+            defineCommand(MarimoCommands.restartLsp, () => Effect.void),
+          );
+          yield* code.notebooks.createNotebookController(
+            "controller",
+            "test",
+            "Test",
+          );
+          yield* code.workspace.registerNotebookSerializer("test", {
+            deserializeNotebook: () => new code.NotebookData([]),
+            serializeNotebook: () => new Uint8Array(),
+          });
+          yield* code.window.createTreeView("view", {
+            treeDataProvider: {
+              getTreeItem: (item: vscode.TreeItem) => item,
+              getChildren: () => [],
+            },
+          });
+          yield* code.notebooks.registerNotebookCellStatusBarItemProvider(
+            "test",
+            {
+              provideCellStatusBarItems: () => Effect.succeed([]),
+              changes: Stream.empty,
+            },
+          );
+          const snapshot = yield* test.snapshot;
+          Vitest.expect(snapshot.commands).toEqual([
+            commandId(MarimoCommands.restartLsp),
+          ]);
+          Vitest.expect(snapshot.controllers).toEqual(["controller"]);
+          Vitest.expect(snapshot.serializers).toEqual(["test"]);
+          Vitest.expect(snapshot.views).toEqual(["view"]);
+          Vitest.expect(yield* test.statusBarProviders).toHaveLength(1);
+        }),
+      );
+      const snapshot = yield* test.snapshot;
+      Vitest.expect([
+        snapshot.commands,
+        snapshot.controllers,
+        snapshot.serializers,
+        snapshot.views,
+      ]).toEqual([[], [], [], []]);
+      Vitest.expect(yield* test.statusBarProviders).toEqual([]);
+    }),
+  );
+
+  it.effect(
+    "records commands without changing earlier snapshots",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      yield* code.commands.setContext("marimo.notebook.hasKernel", true);
+      const before = yield* test.snapshot;
+      yield* code.commands.setContext("marimo.notebook.hasKernel", false);
+      Vitest.expect(before.executions).toEqual([
+        { command: "setContext", args: ["marimo.notebook.hasKernel", true] },
+      ]);
+      Vitest.expect((yield* test.snapshot).executions).toHaveLength(2);
+    }),
+  );
+
+  it.effect(
+    "delivers renderer messages and removes disposed listeners",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      const editor = TestVsCode.makeNotebookEditor("/test/renderer.py");
+      const channel = yield* code.notebooks.createRendererMessaging("test");
+      const received: unknown[] = [];
+      const listener = channel.onDidReceiveMessage((message) =>
+        received.push(message),
+      );
+      yield* test.rendererMessaging.ready;
+      const request = {
+        command: "copy-image" as const,
+        params: { src: "image.png", requestId: "request" },
+      };
+      yield* test.rendererMessaging.send(editor, request);
+      Vitest.expect(received).toEqual([{ editor, message: request }]);
+      const reply = {
+        op: "image-data-result" as const,
+        requestId: "request",
+        dataUri: null,
+      };
+      yield* Effect.promise(() => channel.postMessage(reply, editor));
+      Vitest.expect(yield* test.rendererMessaging.receive).toEqual(reply);
+      listener.dispose();
+      yield* test.rendererMessaging.send(editor, request);
+      Vitest.expect(received).toHaveLength(1);
+    }),
+  );
+
+  it.effect(
+    "scripts input responses and observes prompt cancellation",
+    Effect.fn(function* () {
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      yield* test.respondToInput(Option.some("answer"));
+      Vitest.expect(
+        yield* code.window.showInputBox({ prompt: "First" }),
+      ).toEqual(Option.some("answer"));
+      const pending = yield* code.window
+        .showInputBox({ prompt: "Second" })
+        .pipe(Effect.forkChild);
+      yield* test.inputChanges.pipe(
+        Stream.filter((inputs) =>
+          inputs.some((input) => input.options?.prompt === "Second"),
+        ),
+        Stream.runHead,
+      );
+      yield* Fiber.interrupt(pending);
+      Vitest.expect((yield* test.snapshot).inputs).toEqual([
+        { options: { prompt: "First" }, status: "responded" },
+        { options: { prompt: "Second" }, status: "cancelled" },
+      ]);
+    }),
+  );
+
   it.effect(
     "defaults to None active editor",
     Effect.fn(function* () {
@@ -279,6 +426,61 @@ Vitest.describe("TestVsCode", () => {
 
       Vitest.assert(activeEditor._tag === "Some");
       Vitest.expect(editor).toBe(activeEditor.value);
+    }),
+  );
+
+  it.effect(
+    "keeps active and visible notebook state consistent across repeated activation and close",
+    Effect.fn(function* () {
+      const editor = TestVsCode.makeNotebookEditor("/test/active.py");
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      yield* test.openNotebook(editor.notebook);
+      yield* test.setActiveNotebookEditor(Option.some(editor));
+      yield* test.setActiveNotebookEditor(Option.some(editor));
+      Vitest.expect(yield* code.window.getVisibleNotebookEditors).toEqual([
+        editor,
+      ]);
+
+      const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+      const closed = yield* lifecycle.pipe(
+        Stream.filter((event) => event.type === "closed"),
+        Stream.mapEffect(() => test.snapshot),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* test.closeNotebook(editor.notebook);
+      const snapshot = Option.getOrThrow(yield* Fiber.join(closed));
+      Vitest.expect(snapshot.activeNotebookUri).toEqual(Option.none());
+      Vitest.expect(snapshot.visibleNotebookUris).toEqual([]);
+      Vitest.expect(snapshot.openNotebookUris).toEqual([]);
+      Vitest.expect(editor.notebook.isClosed).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "keeps the replacement editor active when an old document closes at the same URI",
+    Effect.fn(function* () {
+      const old = TestVsCode.makeNotebookEditor("/test/reopened.py");
+      const replacement = TestVsCode.makeNotebookEditor("/test/reopened.py");
+      const test = yield* TestVsCode.Service;
+      const code = yield* VsCode.Service;
+      yield* test.openNotebook(old.notebook);
+      yield* test.setActiveNotebookEditor(Option.some(old));
+      yield* test.openNotebook(replacement.notebook);
+      yield* test.setActiveNotebookEditor(Option.some(replacement));
+      yield* test.closeNotebook(old.notebook);
+
+      Vitest.expect(yield* code.window.getActiveNotebookEditor).toEqual(
+        Option.some(replacement),
+      );
+      Vitest.expect(yield* code.window.getVisibleNotebookEditors).toEqual([
+        replacement,
+      ]);
+      Vitest.expect(yield* code.workspace.getNotebookDocuments).toEqual([
+        replacement.notebook,
+      ]);
+      Vitest.expect(replacement.notebook.isClosed).toBe(false);
     }),
   );
 

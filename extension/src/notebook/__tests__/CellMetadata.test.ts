@@ -9,9 +9,12 @@ import * as CellMetadata from "../CellMetadata.ts";
 
 const it = EffectTest.make(TestVsCode.layer);
 const rejectingIt = EffectTest.make(
-  TestVsCode.layerWith({
-    workspace: { applyEdit: () => Effect.succeed(false) },
-  }),
+  TestVsCode.layerWith(
+    {},
+    {
+      workspace: { applyEdit: () => Effect.succeed(false) },
+    },
+  ),
 );
 
 const latestWorkspaceEdit = Effect.fn(function* () {

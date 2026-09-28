@@ -30,24 +30,27 @@ export const layerWith = (scenario: Scenario) =>
     Effect.gen(function* () {
       const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
       let logsOpened = 0;
-      const vscodeLayer = TestVsCode.layerWith({
-        window: {
-          showErrorMessage: (message, options = {}) =>
-            Ref.update(prompts, (current) => [...current, message]).pipe(
-              Effect.as(
-                Option.fromNullishOr(
-                  options.items?.find(
-                    (item) =>
-                      item ===
-                      (Scenario.$is("OpenLogs")(scenario)
-                        ? "Open Logs"
-                        : "Open Settings"),
+      const vscodeLayer = TestVsCode.layerWith(
+        {},
+        {
+          window: {
+            showErrorMessage: (message, options = {}) =>
+              Ref.update(prompts, (current) => [...current, message]).pipe(
+                Effect.as(
+                  Option.fromNullishOr(
+                    options.items?.find(
+                      (item) =>
+                        item ===
+                        (Scenario.$is("OpenLogs")(scenario)
+                          ? "Open Logs"
+                          : "Open Settings"),
+                    ),
                   ),
                 ),
               ),
-            ),
+          },
         },
-      });
+      );
       const fixture = Layer.effect(
         Service,
         Effect.gen(function* () {

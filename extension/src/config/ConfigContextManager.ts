@@ -15,8 +15,10 @@ import type { MarimoConfig } from "../types.ts";
 import * as NotebookConfiguration from "./NotebookConfiguration.ts";
 
 export interface Interface {
-  readonly desiredRevision: Effect.Effect<number>;
-  readonly desiredChanges: Stream.Stream<number>;
+  /** The session whose configuration has entered the ordered write pipeline. */
+  readonly desiredChanges: Stream.Stream<
+    Option.Option<NotebookDocumentSessions.Session>
+  >;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -37,16 +39,14 @@ export const layer = Layer.effect(
     const code = yield* VsCode.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources.Service;
-    const desiredConfiguration = yield* SubscriptionRef.make(
-      Option.none<MarimoConfig>(),
-    );
-    const desiredRevision = yield* SubscriptionRef.make(0);
-    const publishDesired = (configuration: Option.Option<MarimoConfig>) =>
-      SubscriptionRef.set(desiredConfiguration, configuration).pipe(
-        Effect.andThen(
-          SubscriptionRef.update(desiredRevision, (revision) => revision + 1),
-        ),
-      );
+    const desiredConfiguration = yield* SubscriptionRef.make({
+      session: Option.none<NotebookDocumentSessions.Session>(),
+      configuration: Option.none<MarimoConfig>(),
+    });
+    const publishDesired = (
+      session: Option.Option<NotebookDocumentSessions.Session>,
+      configuration: Option.Option<MarimoConfig>,
+    ) => SubscriptionRef.set(desiredConfiguration, { session, configuration });
 
     const updateContext = (configuration: Option.Option<MarimoConfig>) => {
       const onCellChange = Option.map(
@@ -83,7 +83,7 @@ export const layer = Layer.effect(
       Stream.switchMap(
         Option.match({
           onNone: () =>
-            Stream.fromEffect(publishDesired(Option.none<MarimoConfig>())),
+            Stream.fromEffect(publishDesired(Option.none(), Option.none())),
           onSome: (session) =>
             Stream.fromEffect(
               sessionResources
@@ -92,7 +92,9 @@ export const layer = Layer.effect(
                   NotebookConfiguration.Service.pipe(
                     Effect.flatMap((configuration) =>
                       configuration.changes.pipe(
-                        Stream.runForEach(publishDesired),
+                        Stream.runForEach((configuration) =>
+                          publishDesired(Option.some(session), configuration),
+                        ),
                       ),
                     ),
                   ),
@@ -115,7 +117,7 @@ export const layer = Layer.effect(
     // VS Code command. One manager-owned consumer preserves write order.
     yield* Effect.forkScoped(
       SubscriptionRef.changes(desiredConfiguration).pipe(
-        Stream.runForEach(updateContext),
+        Stream.runForEach(({ configuration }) => updateContext(configuration)),
       ),
       { startImmediately: true },
     );
@@ -124,8 +126,9 @@ export const layer = Layer.effect(
     });
 
     return Service.of({
-      desiredRevision: SubscriptionRef.get(desiredRevision),
-      desiredChanges: SubscriptionRef.changes(desiredRevision),
+      desiredChanges: SubscriptionRef.changes(desiredConfiguration).pipe(
+        Stream.map(({ session }) => session),
+      ),
     });
   }).pipe(Effect.withSpan("ConfigContextManager.layer")),
 );

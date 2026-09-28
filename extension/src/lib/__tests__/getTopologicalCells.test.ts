@@ -1,7 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import {
@@ -33,7 +33,7 @@ function createMockVariablesOp(
 function makeNotebookWithCells(
   cellConfigs: Array<{ stableId: string; code: string }>,
 ) {
-  const uri = TestVsCode.Uri.file("/test/notebook.py");
+  const uri = VsCodeValues.Uri.file("/test/notebook.py");
   const cells = cellConfigs.map((config) => ({
     kind: 2 as const, // Code cell
     value: config.code,
@@ -43,7 +43,7 @@ function makeNotebookWithCells(
     }),
   }));
 
-  const raw = TestVsCode.createTestNotebookDocument(uri, {
+  const raw = VsCodeValues.createTestNotebookDocument(uri, {
     notebookType: NOTEBOOK_TYPE,
     data: { cells, metadata: {} },
   });
@@ -145,8 +145,8 @@ Vitest.describe("getTopologicalCells", () => {
 
   it.effect("places cells without stableId at the end", () =>
     Effect.gen(function* () {
-      const uri = TestVsCode.Uri.file("/test/notebook.py");
-      const raw = TestVsCode.createTestNotebookDocument(uri, {
+      const uri = VsCodeValues.Uri.file("/test/notebook.py");
+      const raw = VsCodeValues.createTestNotebookDocument(uri, {
         notebookType: NOTEBOOK_TYPE,
         data: {
           cells: [
@@ -275,8 +275,8 @@ Vitest.describe("getTopologicalCells", () => {
 
   it.effect("filters out non-Python cells (SQL, markdown)", () =>
     Effect.gen(function* () {
-      const uri = TestVsCode.Uri.file("/test/notebook.py");
-      const raw = TestVsCode.createTestNotebookDocument(uri, {
+      const uri = VsCodeValues.Uri.file("/test/notebook.py");
+      const raw = VsCodeValues.createTestNotebookDocument(uri, {
         notebookType: NOTEBOOK_TYPE,
         data: {
           cells: [

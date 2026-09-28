@@ -1,9 +1,19 @@
 import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
-import { Effect, Fiber, Latch, Option, Ref, Stream } from "effect";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Fiber,
+  HashMap,
+  Latch,
+  Option,
+  Ref,
+  Stream,
+} from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { SCRATCH_CELL_ID } from "../../constants.ts";
@@ -18,7 +28,6 @@ import {
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import {
-  MarimoNotebookCell,
   MarimoNotebookDocument,
   type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
@@ -223,13 +232,13 @@ Vitest.describe("NotebookRuntime cell identity", () => {
         yield* NotebookRuntime.Service;
 
         const cell = ctx.editor.notebook.cellAt(0);
-        yield* ctx.vscode.notebookChange({
+        yield* ctx.changeNotebook({
           notebook: ctx.editor.notebook,
           metadata: undefined,
           cellChanges: [],
           contentChanges: [
             {
-              range: new TestVsCode.NotebookRange(0, 1),
+              range: new VsCodeValues.NotebookRange(0, 1),
               removedCells: [cell],
               addedCells: [],
             },
@@ -262,68 +271,26 @@ Vitest.describe("NotebookRuntime cell identity", () => {
         yield* NotebookRuntime.Service;
 
         const cell = ctx.editor.notebook.cellAt(0);
-        yield* ctx.vscode.notebookChange({
+        yield* ctx.changeNotebook({
           notebook: ctx.editor.notebook,
           metadata: undefined,
           cellChanges: [],
           contentChanges: [
             {
-              range: new TestVsCode.NotebookRange(0, 1),
+              range: new VsCodeValues.NotebookRange(0, 1),
               removedCells: [cell],
               addedCells: [],
             },
             {
-              range: new TestVsCode.NotebookRange(1, 1),
+              range: new VsCodeValues.NotebookRange(1, 1),
               removedCells: [],
               addedCells: [cell],
             },
           ],
         });
 
-        // The assertion below is negative, so the unchanged command list
-        // cannot tell us when the move has been processed. Follow it with an
-        // observable deletion on the same sequential change stream. Once the
-        // marker deletion is recorded, the preceding move event has completed.
-        const markerCell = TestVsCode.createTestNotebookDocument(
-          NodePath.join(process.cwd(), "cell-move-marker_mo.py"),
-          {
-            data: {
-              cells: [
-                {
-                  kind: 1,
-                  value: "",
-                  languageId: "python",
-                  metadata: MarimoNotebookCell.createMetadata({
-                    marimoRuntime: { stableId: "cell-move-marker" },
-                  }),
-                },
-              ],
-            },
-          },
-        ).cellAt(0);
-        yield* ctx.vscode.notebookChange({
-          notebook: ctx.editor.notebook,
-          metadata: undefined,
-          cellChanges: [],
-          contentChanges: [
-            {
-              range: new TestVsCode.NotebookRange(1, 1),
-              removedCells: [markerCell],
-              addedCells: [],
-            },
-          ],
-        });
-        const commands = yield* ctx.executionChanges.pipe(
-          Stream.filter((calls) =>
-            calls.some(
-              (command) =>
-                command.kind === "delete-cell" &&
-                command.cellId === "cell-move-marker",
-            ),
-          ),
-          Stream.runHead,
-          Effect.map(Option.getOrThrow),
-        );
+        // This exact move has completed, including the no-deletion path.
+        const commands = yield* ctx.executions;
 
         Vitest.expect(
           commands.some(
@@ -369,13 +336,13 @@ Vitest.describe("NotebookRuntime stdin", () => {
         yield* ctx.provideInput(Option.some("foo"));
 
         // Assert executeCommand was called with send-stdin
-        const cmds = yield* ctx.executions.pipe(
-          Effect.filterOrFail(
-            (calls) => calls.some((call) => call.kind === "send-stdin"),
-            () => "stdin response not sent" as const,
+        const observed = yield* ctx.executionChanges.pipe(
+          Stream.filter((calls) =>
+            calls.some((call) => call.kind === "send-stdin"),
           ),
-          Effect.eventually,
+          Stream.runHead,
         );
+        const cmds = Option.getOrThrow(observed);
         const stdinCmd = cmds.find((c) => c.kind === "send-stdin");
         Vitest.expect(stdinCmd).toMatchObject({
           kind: "send-stdin",
@@ -501,8 +468,25 @@ Vitest.describe("NotebookRuntime stdin", () => {
 
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         yield* notebook.restart;
-        yield* ctx.provideInput(Option.some("stale response"));
-        yield* Effect.yieldNow;
+        const progress = yield* runtime.subscribeInputProgress;
+        const response = Option.some("stale response");
+        yield* ctx.provideInput(response);
+        const handled = yield* progress.pipe(
+          Stream.filter(
+            (
+              event,
+            ): event is Extract<
+              NotebookRuntime.InputProgress,
+              { _tag: "StdinResponded" }
+            > => event._tag === "StdinResponded" && event.result === response,
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        Vitest.assert(Exit.isFailure(handled.exit));
+        Vitest.expect(Cause.squash(handled.exit.cause)).toBeInstanceOf(
+          NotebookRuntime.NoActiveKernelError,
+        );
 
         Vitest.expect(
           (yield* ctx.executions).some(
@@ -523,26 +507,30 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const progress = yield* runtime.subscribeInputProgress;
         const first = yield* Effect.forkChild(
           notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
-        );
-        const second = yield* Effect.forkChild(
-          notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
         );
 
         const scratchpadCalls = (calls: ReadonlyArray<TestCommand>) =>
           calls.filter((call) => call.kind === "execute-scratchpad");
 
-        // Wait until the first command is recorded. Do not count scheduler
-        // drains. The scratchpad setup can need more than one drain.
         yield* ctx.executionChanges.pipe(
           Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
           Stream.runHead,
         );
-        // Extra drain: give the second scratchpad every chance to
-        // (incorrectly) bypass the per-notebook lock before asserting that
-        // exactly one command went out.
-        yield* Effect.yieldNow;
+        const second = yield* Effect.forkChild(
+          notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
+        );
+        yield* progress.pipe(
+          Stream.filter(
+            (event) =>
+              event._tag === "ScratchpadQueued" &&
+              event.notebookId === ctx.notebookUri &&
+              event.code === "print('second')",
+          ),
+          Stream.runHead,
+        );
 
         const first_ = scratchpadCalls(yield* ctx.executions);
         Vitest.expect(first_).toHaveLength(1);
@@ -560,8 +548,6 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
           },
         });
 
-        // Await the second command the same way: the released scratchpad may
-        // need several drains to acquire the lock and send its command.
         const commands = scratchpadCalls(
           yield* ctx.executionChanges.pipe(
             Stream.filter((calls) => scratchpadCalls(calls).length >= 2),
@@ -595,7 +581,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
     "allows scratchpad execution in separate notebooks",
     Effect.fn(function* () {
       const ctx = yield* TestNotebookRuntime.Service;
-      const otherEditor = TestVsCode.makeNotebookEditor(
+      const otherEditor = VsCodeValues.makeNotebookEditor(
         NodePath.join(process.cwd(), "other_notebook_mo.py"),
       );
       const otherNotebook = MarimoNotebookDocument.from(otherEditor.notebook);
@@ -896,9 +882,9 @@ Vitest.describe("NotebookRuntime state eviction", () => {
           sessionId: activeSessionId,
           notification: { op: "variables", variables: [] },
         });
-        yield* variables.getVariables(ctx.notebookUri).pipe(
-          Effect.filterOrFail(Option.isSome, () => "variables not settled"),
-          Effect.eventually,
+        yield* variables.streamVariablesChanges.pipe(
+          Stream.filter(HashMap.has(ctx.notebookUri)),
+          Stream.runHead,
         );
       });
     }),
@@ -933,16 +919,15 @@ Vitest.describe("NotebookRuntime state eviction", () => {
           notification: { op: "datasets", tables: [] },
         });
         yield* Effect.all([
-          variables.getVariables(ctx.notebookUri),
-          datasources.getDatasets(ctx.notebookUri),
-        ]).pipe(
-          Effect.filterOrFail(
-            ([currentVariables, currentDatasets]) =>
-              Option.isSome(currentVariables) && Option.isSome(currentDatasets),
-            () => "runtime projections not settled" as const,
+          variables.streamVariablesChanges.pipe(
+            Stream.filter(HashMap.has(ctx.notebookUri)),
+            Stream.runHead,
           ),
-          Effect.eventually,
-        );
+          datasources.streamDatasetsChanges.pipe(
+            Stream.filter(HashMap.has(ctx.notebookUri)),
+            Stream.runHead,
+          ),
+        ]);
 
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
@@ -952,16 +937,11 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         ).toBe(true);
 
         yield* ctx.close(ctx.editor.notebook);
-        yield* Effect.all([
-          variables.getVariables(ctx.notebookUri),
-          datasources.getDatasets(ctx.notebookUri),
-        ]).pipe(
-          Effect.filterOrFail(
-            ([currentVariables, currentDatasets]) =>
-              Option.isNone(currentVariables) && Option.isNone(currentDatasets),
-            () => "runtime projections not evicted" as const,
-          ),
-          Effect.eventually,
+        Vitest.expect(yield* variables.getVariables(ctx.notebookUri)).toEqual(
+          Option.none(),
+        );
+        Vitest.expect(yield* datasources.getDatasets(ctx.notebookUri)).toEqual(
+          Option.none(),
         );
 
         // Notifications already queued, or delivered late by the old kernel
@@ -980,45 +960,25 @@ Vitest.describe("NotebookRuntime state eviction", () => {
           },
         });
 
-        const marker = TestVsCode.makeNotebookEditor(
-          NodePath.join(process.cwd(), "analysis-marker_mo.py"),
-        );
-        const markerId = MarimoNotebookDocument.from(marker.notebook).id;
-        yield* ctx.open(marker);
-        yield* ctx.publishAnalysis({
-          notebookUri: markerId,
-          analysis: { op: "variables", variables: [] },
-        });
-        yield* variables.getVariables(markerId).pipe(
-          Effect.filterOrFail(
-            Option.isSome,
-            () => "analysis pipeline did not settle" as const,
-          ),
-          Effect.eventually,
-        );
+        // Publishing waits for this analysis to be dispatched or discarded.
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(false);
 
         // Reopening creates a distinct document session at the same URI.
-        const replacement = TestVsCode.createTestNotebookEditor(
-          TestVsCode.createTestNotebookDocument(ctx.editor.notebook.uri, {
+        const replacement = VsCodeValues.createTestNotebookEditor(
+          VsCodeValues.createTestNotebookDocument(ctx.editor.notebook.uri, {
             notebookType: ctx.editor.notebook.notebookType,
           }),
         );
         yield* ctx.open(replacement);
-        yield* Effect.gen(function* () {
-          yield* ctx.publishAnalysis({
-            notebookUri: ctx.notebookUri,
-            analysis: { op: "variables", variables: [] },
-          });
-          return yield* variables.getVariables(ctx.notebookUri);
-        }).pipe(
-          Effect.filterOrFail(
-            Option.isSome,
-            () => "replacement session not ready" as const,
-          ),
-          Effect.eventually,
+        yield* ctx.publishAnalysis({
+          notebookUri: ctx.notebookUri,
+          analysis: { op: "variables", variables: [] },
+        });
+        yield* variables.streamVariablesChanges.pipe(
+          Stream.filter(HashMap.has(ctx.notebookUri)),
+          Stream.runHead,
         );
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),

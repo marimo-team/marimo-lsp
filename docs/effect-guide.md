@@ -1,7 +1,6 @@
 # Effect guide
 
-How we write Effect code in `extension/src`. The companion roadmap is
-[effect-todo.md](effect-todo.md). This guide follows the
+How we write Effect code in `extension/src`. This guide follows the
 [OpenCode Effect guide](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/specs/effect/guide.md),
 adapted to this extension.
 
@@ -40,8 +39,8 @@ Consumers import the module as a standard ESM namespace:
 ```ts
 import * as ItemStore from "./ItemStore.ts";
 
-const items = yield* ItemStore.Service;
-yield* items.get(id);
+const items = yield * ItemStore.Service;
+yield * items.get(id);
 ```
 
 Rules:
@@ -80,17 +79,16 @@ export const layer = Layer.effectDiscard(
 );
 ```
 
-Import these modules as ESM namespaces and compose `Module.layer`. Do not use a
-`Live` suffix. Pure modules export functions and data without a layer.
+Import these modules as ESM namespaces and compose `Module.layer`.
 
 ## Runtime boundaries
 
 Most code runs through the application `ManagedRuntime` created in
-`features/Main.ts`. Do not add service-local runtimes.
+`features/Main.ts`. Avoid service-local runtimes.
 
 At VS Code and language-client callback boundaries, capture the current context
 with `Effect.runPromiseWith` or `Effect.runForkWith`. Domain code returns
-effects; adapters run them.
+effects while adapters run them.
 
 ## Notebook session state
 
@@ -100,6 +98,12 @@ resources owned by one notebook belong to `NotebookSessionResources`.
 Keep subscriptions, finalizers, and background work in the owning scope. Use
 `Effect.acquireRelease`, `Effect.addFinalizer`, and `Effect.forkScoped`. The
 caller controls concurrency; do not expose partially initialized state.
+
+When a caller can publish immediately after construction, acquire the required
+subscription before returning the layer. Prefer a scoped Effect that returns a
+buffered stream, as in `subscribeNotebookLifecycle`. Starting a consumer with
+`startImmediately` does not guarantee that asynchronous stream setup has
+finished. Acquire first, then fork the consumer.
 
 ## Errors
 
@@ -154,9 +158,6 @@ narrow adapters.
   with a fresh layer build and scope for every test. Put observations and named
   controls on a test service instead of returning the layer, refs,
   queues, or pub/sub handles to each test.
-- Name a yielded test service after its domain, such as `sessions`, `ty`, or
-  `autoExport`. Keep names such as `vscode` and `python` for reusable test
-  doubles, and reserve `fixture` for static test data.
 - Import `@effect/vitest` as the `Vitest` namespace and qualify its exports,
   such as `Vitest.describe`, `Vitest.expect`, and `Vitest.it`. When a file uses
   `EffectTest.make`, name the bound runner `it` and use `Vitest.it` for tests
@@ -165,14 +166,6 @@ narrow adapters.
   nested `Vitest.describe` and name its locally scoped runner `it`. The nested
   suite describes where the configuration applies; each test still receives a
   fresh layer build from `EffectTest.make`.
-- Prefer realistic local or in-memory adapters.
-- Use `Layer.succeed` when the complete service behavior is intentional. Use
-  `Layer.mock` sparingly when a test exercises only a narrow part of a service
-  and any omitted Effect, Stream, or Channel operation should fail as an
-  unexpected dependency.
-- Export a shared test adapter only when several suites need its behavior or
-  inspection controls. Do not require every service to export `testLayer`.
-- Wait for events or deterministic state transitions instead of sleeping.
 
 ## Verification
 

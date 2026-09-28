@@ -8,8 +8,6 @@ import {
   Layer,
   Option,
   PubSub,
-  Queue,
-  Ref,
   Stream,
   SubscriptionRef,
 } from "effect";
@@ -24,6 +22,7 @@ import {
 } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
@@ -59,14 +58,15 @@ export interface Interface {
   readonly activate: Effect.Effect<void>;
   readonly open: (editor: vscode.NotebookEditor) => Effect.Effect<void>;
   readonly close: (document: vscode.NotebookDocument) => Effect.Effect<void>;
-  readonly provideInput: (
-    value: Option.Option<string>,
-  ) => Effect.Effect<boolean>;
+  readonly provideInput: (value: Option.Option<string>) => Effect.Effect<void>;
   readonly publishOperation: (
     notification: KernelNotification,
   ) => Effect.Effect<boolean>;
   readonly publishAnalysis: (
     analysis: DocumentAnalysis,
+  ) => Effect.Effect<boolean>;
+  readonly changeNotebook: (
+    event: vscode.NotebookDocumentChangeEvent,
   ) => Effect.Effect<boolean>;
   readonly attachController: (notebook: NotebookId) => Effect.Effect<void>;
 }
@@ -108,26 +108,8 @@ export const open = Effect.fn("TestNotebookRuntime.open")(function* (
   yield* activate(target);
 });
 
-export const close = Effect.fn("TestNotebookRuntime.close")(function* (
-  document: vscode.NotebookDocument,
-) {
-  const vscode = yield* TestVsCode.Service;
-  const sessions = yield* NotebookDocumentSessions.Service;
-  const marker = TestVsCode.makeNotebookEditor(
-    NodePath.join(process.cwd(), "lifecycle-marker_mo.py"),
-  );
-  const markerActive = yield* sessions.active.pipe(
-    Stream.filter(
-      Option.exists((session) => session.document === marker.notebook),
-    ),
-    Stream.runHead,
-    Effect.forkChild({ startImmediately: true }),
-  );
-  yield* vscode.closeNotebook(document);
-  yield* vscode.openNotebook(marker.notebook);
-  yield* vscode.setActiveNotebookEditor(Option.some(marker));
-  yield* Fiber.join(markerActive);
-});
+export const close = (document: vscode.NotebookDocument) =>
+  DocumentLifecycle.transition(document, "closed");
 
 export interface Options {
   readonly activeSessionId?: KernelSessionId;
@@ -145,14 +127,10 @@ export const layerWith = (options: Options) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const activeSessionId = options.activeSessionId ?? ACTIVE_SESSION_ID;
-      const inputQueue = yield* Queue.unbounded<Option.Option<string>>();
-      const inputRequested = yield* Latch.make();
-      const inputCancelled = yield* Latch.make();
       const workspaceEditStarted = yield* Latch.make();
       const executions = yield* SubscriptionRef.make<
         ReadonlyArray<TestCommand>
       >([]);
-      const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
       const operations = yield* PubSub.unbounded<KernelNotification>();
       const documentAnalysis = yield* PubSub.unbounded<DocumentAnalysis>();
 
@@ -194,26 +172,19 @@ export const layerWith = (options: Options) =>
         ],
       ]);
 
-      const vscodeLayer = TestVsCode.layerWith({
-        initialDocuments: [editor.notebook],
-        workspace: {
-          applyEdit: options.suspendWorkspaceEdits
-            ? () => workspaceEditStarted.open.pipe(Effect.andThen(Effect.never))
-            : () => Effect.succeed(true),
+      const vscodeLayer = TestVsCode.layerWith(
+        {
+          initialDocuments: [editor.notebook],
         },
-        window: {
-          showInputBox: () =>
-            inputRequested.open.pipe(
-              Effect.andThen(Queue.take(inputQueue)),
-              Effect.onInterrupt(() => inputCancelled.open),
-            ),
-          showErrorMessage: (message) =>
-            Ref.update(errorMessages, (messages) => [
-              ...messages,
-              message,
-            ]).pipe(Effect.as(Option.none())),
+        {
+          workspace: {
+            applyEdit: options.suspendWorkspaceEdits
+              ? () =>
+                  workspaceEditStarted.open.pipe(Effect.andThen(Effect.never))
+              : () => Effect.succeed(true),
+          },
         },
-      });
+      );
 
       const projectionsLayer = CellOutputProjections.layer.pipe(
         Layer.provide(vscodeLayer),
@@ -324,9 +295,24 @@ export const layerWith = (options: Options) =>
             notebookUri,
             executions: SubscriptionRef.get(executions),
             executionChanges: SubscriptionRef.changes(executions),
-            errors: Ref.get(errorMessages),
-            inputRequested: inputRequested.await,
-            inputCancelled: inputCancelled.await,
+            errors: Effect.map(
+              vscode.snapshot,
+              (snapshot) => snapshot.errorMessages,
+            ),
+            inputRequested: vscode.inputChanges.pipe(
+              Stream.filter((inputs) =>
+                inputs.some((input) => input.status === "pending"),
+              ),
+              Stream.runHead,
+              Effect.asVoid,
+            ),
+            inputCancelled: vscode.inputChanges.pipe(
+              Stream.filter((inputs) =>
+                inputs.some((input) => input.status === "cancelled"),
+              ),
+              Stream.runHead,
+              Effect.asVoid,
+            ),
             workspaceEditStarted: workspaceEditStarted.await,
             activate: activate(editor).pipe(
               Effect.provideService(TestVsCode.Service, vscode),
@@ -350,11 +336,43 @@ export const layerWith = (options: Options) =>
                   sessions,
                 ),
               ),
-            provideInput: (value) => Queue.offer(inputQueue, value),
+            provideInput: vscode.respondToInput,
             publishOperation: (notification) =>
               PubSub.publish(operations, notification),
             publishAnalysis: (analysis) =>
-              PubSub.publish(documentAnalysis, analysis),
+              Effect.gen(function* () {
+                const dispatched = yield* runtime.subscribeInputProgress;
+                const observed = yield* dispatched.pipe(
+                  Stream.filter(
+                    (input) =>
+                      input._tag === "AnalysisDispatched" &&
+                      input.message === analysis,
+                  ),
+                  Stream.runHead,
+                  Effect.forkChild,
+                );
+                const published = yield* PubSub.publish(
+                  documentAnalysis,
+                  analysis,
+                );
+                yield* Fiber.join(observed);
+                return published;
+              }).pipe(Effect.scoped),
+            changeNotebook: (event) =>
+              Effect.gen(function* () {
+                const progress = yield* runtime.subscribeInputProgress;
+                const synchronized = yield* progress.pipe(
+                  Stream.filter(
+                    (input) =>
+                      input._tag === "NotebookChanged" && input.event === event,
+                  ),
+                  Stream.runHead,
+                  Effect.forkChild,
+                );
+                const published = yield* vscode.notebookChange(event);
+                yield* Fiber.join(synchronized);
+                return published;
+              }).pipe(Effect.scoped),
             attachController: (id) =>
               runtime.attachController(id, mockController),
           });

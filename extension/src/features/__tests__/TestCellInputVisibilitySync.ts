@@ -118,6 +118,7 @@ export const layerWith = (scenario: Scenario) =>
     Effect.gen(function* () {
       const attempts = yield* Ref.make(0);
       const vscodeLayer = TestVsCode.layerWith(
+        {},
         Scenario.$is("DefectFirstCommand")(scenario)
           ? {
               commands: {
@@ -142,17 +143,20 @@ export const layerWith = (scenario: Scenario) =>
           const vscode = yield* TestVsCode.Service;
           const sync = yield* CellInputVisibilitySync.Service;
 
-          const process = (action: Effect.Effect<unknown>) =>
+          const process = (
+            action: Effect.Effect<unknown>,
+            matches: (event: CellInputVisibilitySync.Processed) => boolean,
+          ) =>
             Effect.gen(function* () {
-              const expected = (yield* sync.processedRevision) + 1;
-              const processed = yield* sync.processedChanges.pipe(
-                Stream.filter((revision) => revision >= expected),
+              const changes = yield* sync.subscribeProcessed;
+              const processed = yield* changes.pipe(
+                Stream.filter(matches),
                 Stream.runHead,
-                Effect.forkChild({ startImmediately: true }),
+                Effect.forkChild,
               );
               yield* action;
               yield* Fiber.join(processed);
-            });
+            }).pipe(Effect.scoped);
 
           const change: Interface["change"] = (editor, cells) =>
             Effect.gen(function* () {
@@ -161,22 +165,22 @@ export const layerWith = (scenario: Scenario) =>
                 editor.notebook,
                 cells.map(cellData),
               );
+              const event: vscode.NotebookDocumentChangeEvent = {
+                notebook: editor.notebook,
+                metadata: undefined,
+                cellChanges: [],
+                contentChanges: [
+                  {
+                    range: new TestVsCode.NotebookRange(0, removedCells.length),
+                    removedCells,
+                    addedCells: Array.from(editor.notebook.getCells()),
+                  },
+                ],
+              };
               yield* process(
-                vscode.notebookChange({
-                  notebook: editor.notebook,
-                  metadata: undefined,
-                  cellChanges: [],
-                  contentChanges: [
-                    {
-                      range: new TestVsCode.NotebookRange(
-                        0,
-                        removedCells.length,
-                      ),
-                      removedCells,
-                      addedCells: Array.from(editor.notebook.getCells()),
-                    },
-                  ],
-                }),
+                vscode.notebookChange(event),
+                (processed) =>
+                  processed._tag === "Changed" && processed.event === event,
               );
             });
 
@@ -199,11 +203,20 @@ export const layerWith = (scenario: Scenario) =>
                   Effect.andThen(
                     process(
                       vscode.setActiveNotebookEditor(Option.some(editor)),
+                      (processed) =>
+                        processed._tag === "Activated" &&
+                        processed.editor === editor,
                     ),
                   ),
                 ),
             deactivate: vscode.setActiveNotebookEditor(Option.none()),
-            close: (document) => process(vscode.closeNotebook(document)),
+            close: (document) =>
+              process(
+                vscode.closeNotebook(document),
+                (processed) =>
+                  processed._tag === "Closed" &&
+                  processed.document === document,
+              ),
             change,
             collapsed: (editor) =>
               ranges(editor, "notebook.cell.collapseCellInput"),

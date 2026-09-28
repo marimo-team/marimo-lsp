@@ -12,6 +12,7 @@ import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookDocumentSessionId } from "../../schemas/SessionIds.ts";
 import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
+import * as DocumentLifecycle from "./documentLifecycle.ts";
 
 export interface Options {
   readonly initiallyOpen: boolean;
@@ -38,7 +39,6 @@ export interface Interface {
   readonly awaitActiveDocument: (
     document: vscode.NotebookDocument,
   ) => Effect.Effect<NotebookDocumentSessions.Session>;
-  readonly awaitLifecycle: Effect.Effect<void>;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -62,7 +62,6 @@ export const layerWith = (options: Options) =>
       Effect.gen(function* () {
         const vscode = yield* TestVsCode.Service;
         const sessions = yield* NotebookDocumentSessions.Service;
-        let barrierId = 0;
         const active = yield* SubscriptionRef.make<
           ReadonlyArray<NotebookDocumentSessionId | null>
         >([]);
@@ -97,16 +96,14 @@ export const layerWith = (options: Options) =>
             ),
           );
 
-        const awaitLifecycle = Effect.gen(function* () {
-          const barrier = TestVsCode.createTestNotebookDocument(
-            `file:///test/lifecycle-barrier-${barrierId++}.py`,
+        const transition = (
+          document: vscode.NotebookDocument,
+          type: "opened" | "closed",
+        ) =>
+          DocumentLifecycle.transition(document, type).pipe(
+            Effect.provideService(TestVsCode.Service, vscode),
+            Effect.provideService(NotebookDocumentSessions.Service, sessions),
           );
-          yield* vscode.openNotebook(barrier);
-          yield* vscode.setActiveNotebookEditor(
-            Option.some(TestVsCode.createTestNotebookEditor(barrier)),
-          );
-          yield* awaitActiveDocument(barrier);
-        });
 
         return Service.of({
           first,
@@ -114,15 +111,12 @@ export const layerWith = (options: Options) =>
           current: Effect.sync(() => sessions.current(id)),
           forDocument: (document) =>
             Effect.sync(() => sessions.forDocument(document)),
-          openReplacement: vscode.openNotebook(replacement).pipe(Effect.asVoid),
-          closeFirst: vscode.closeNotebook(first),
-          closeReplacement: vscode.closeNotebook(replacement),
-          replayClosedFirst: vscode
-            .closeNotebook(first)
-            .pipe(
-              Effect.andThen(vscode.openNotebook(first)),
-              Effect.andThen(awaitLifecycle),
-            ),
+          openReplacement: transition(replacement, "opened"),
+          closeFirst: transition(first, "closed"),
+          closeReplacement: transition(replacement, "closed"),
+          replayClosedFirst: transition(first, "closed").pipe(
+            Effect.andThen(transition(first, "opened")),
+          ),
           activateFirst: vscode.setActiveNotebookEditor(
             Option.some(TestVsCode.createTestNotebookEditor(first)),
           ),
@@ -131,7 +125,6 @@ export const layerWith = (options: Options) =>
           ),
           awaitActive,
           awaitActiveDocument,
-          awaitLifecycle,
         });
       }),
     ).pipe(Layer.provide(environment));

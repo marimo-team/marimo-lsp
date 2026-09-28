@@ -80,36 +80,39 @@ const layerWith = (options: {
   const vscodeLayer = Layer.unwrap(
     TestState.pipe(
       Effect.map((state) =>
-        TestVsCode.layerWith({
-          window: {
-            showInformationMessage: (_message, messageOptions = {}) =>
-              state.recordPrompt.pipe(
-                Effect.as(
-                  options.installAll
-                    ? Option.fromNullishOr(messageOptions.items?.[0])
-                    : Option.none(),
+        TestVsCode.layerWith(
+          {},
+          {
+            window: {
+              showInformationMessage: (_message, messageOptions = {}) =>
+                state.recordPrompt.pipe(
+                  Effect.as(
+                    options.installAll
+                      ? Option.fromNullishOr(messageOptions.items?.[0])
+                      : Option.none(),
+                  ),
                 ),
-              ),
+            },
+            workspace: {
+              getConfiguration: (section) =>
+                Effect.succeed({
+                  // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+                  get: <T>(key: string, defaultValue?: T) => {
+                    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+                    return (
+                      section === "marimo" && key === "disableUvIntegration"
+                        ? options.disableUvIntegration
+                        : defaultValue
+                    ) as T;
+                  },
+                  has: (key: string) =>
+                    section === "marimo" && key === "disableUvIntegration",
+                  inspect: () => undefined,
+                  async update() {},
+                }),
+            },
           },
-          workspace: {
-            getConfiguration: (section) =>
-              Effect.succeed({
-                // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
-                get: <T>(key: string, defaultValue?: T) => {
-                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-                  return (
-                    section === "marimo" && key === "disableUvIntegration"
-                      ? options.disableUvIntegration
-                      : defaultValue
-                  ) as T;
-                },
-                has: (key: string) =>
-                  section === "marimo" && key === "disableUvIntegration",
-                inspect: () => undefined,
-                async update() {},
-              }),
-          },
-        }),
+        ),
       ),
     ),
   ).pipe(Layer.provideMerge(stateLayer));

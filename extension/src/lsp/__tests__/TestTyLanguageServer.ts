@@ -99,52 +99,57 @@ export const layerWith = (scenario: Scenario) =>
         InstallFailure: () => "Install ty Extension",
       });
 
-      const vscodeLayer = TestVsCode.layerWith({
-        installedExtensions: Scenario.$is("Installed")(scenario)
-          ? ["astral-sh.ty"]
-          : [],
-        window: {
-          showWarningMessage: <T extends string>(
-            message: string,
-            options: vscode.MessageOptions & { items?: readonly T[] } = {},
-          ) =>
-            Ref.update(warningMessages, (current) => [
-              ...current,
-              message,
-            ]).pipe(
-              Effect.as(
-                warningSelection === undefined
-                  ? Option.none<T>()
-                  : selectedItem(options, warningSelection),
-              ),
-            ),
-          showInformationMessage: <T extends string>(
-            message: string,
-            options: vscode.MessageOptions & { items?: readonly T[] } = {},
-          ) =>
-            Ref.update(informationMessages, (current) => [
-              ...current,
-              message,
-            ]).pipe(Effect.as(selectedItem(options, "Reload Window"))),
-          showErrorMessage: (message) =>
-            Ref.update(errorMessages, (current) => [...current, message]).pipe(
-              Effect.as(Option.none()),
-            ),
+      const vscodeLayer = TestVsCode.layerWith(
+        {
+          installedExtensions: Scenario.$is("Installed")(scenario)
+            ? ["astral-sh.ty"]
+            : [],
         },
-        commands: {
-          executeVSCode: (command, ...args) =>
-            Ref.update(executions, (current) => [
-              ...current,
-              { command, args },
-            ]).pipe(
-              Effect.andThen(
-                Scenario.$is("InstallFailure")(scenario)
-                  ? Effect.die(new Error("command rejected"))
-                  : Effect.succeed(undefined),
+        {
+          window: {
+            showWarningMessage: <T extends string>(
+              message: string,
+              options: vscode.MessageOptions & { items?: readonly T[] } = {},
+            ) =>
+              Ref.update(warningMessages, (current) => [
+                ...current,
+                message,
+              ]).pipe(
+                Effect.as(
+                  warningSelection === undefined
+                    ? Option.none<T>()
+                    : selectedItem(options, warningSelection),
+                ),
               ),
-            ),
+            showInformationMessage: <T extends string>(
+              message: string,
+              options: vscode.MessageOptions & { items?: readonly T[] } = {},
+            ) =>
+              Ref.update(informationMessages, (current) => [
+                ...current,
+                message,
+              ]).pipe(Effect.as(selectedItem(options, "Reload Window"))),
+            showErrorMessage: (message) =>
+              Ref.update(errorMessages, (current) => [
+                ...current,
+                message,
+              ]).pipe(Effect.as(Option.none())),
+          },
+          commands: {
+            executeVSCode: (command, ...args) =>
+              Ref.update(executions, (current) => [
+                ...current,
+                { command, args },
+              ]).pipe(
+                Effect.andThen(
+                  Scenario.$is("InstallFailure")(scenario)
+                    ? Effect.die(new Error("command rejected"))
+                    : Effect.succeed(undefined),
+                ),
+              ),
+          },
         },
-      });
+      );
       const storageLayer = Storage.layer.pipe(
         Layer.provide(
           Layer.succeed(ExtensionContext.Service, {

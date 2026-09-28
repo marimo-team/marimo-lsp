@@ -46,12 +46,16 @@ export const layerWith = (initialTheme: "light" | "dark") =>
           ],
         },
       });
-      const vscodeLayer = TestVsCode.layerWith({
-        initialDocuments: [editor.notebook],
-        window: {
-          colorThemeChanges: SubscriptionRef.changes(theme),
+      const vscodeLayer = TestVsCode.layerWith(
+        {
+          initialDocuments: [editor.notebook],
         },
-      });
+        {
+          window: {
+            colorThemeChanges: SubscriptionRef.changes(theme),
+          },
+        },
+      );
       const environment = Layer.empty.pipe(
         Layer.provideMerge(ThemeSync.layer),
         Layer.provide(NotebookEditorRegistry.layer),

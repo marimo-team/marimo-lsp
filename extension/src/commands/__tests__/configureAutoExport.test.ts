@@ -137,27 +137,33 @@ Vitest.it.effect(
         }),
       },
     });
-    const layer = TestVsCode.layerWith({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.sync(() => {
-            const marimo = editor.notebook.metadata.marimo;
-            if (!isRecord(marimo)) {
-              throw new Error("Expected marimo notebook metadata");
-            }
-            const currentAppOptions = marimo.appOptions;
-            if (!isRecord(currentAppOptions)) {
-              throw new Error("Expected marimo app options");
-            }
-            marimo.appOptions = {
-              ...currentAppOptions,
-              passthrough: { width: "full" },
-            };
-            return Option.some(items.filter((item) => item.label === "IPYNB"));
-          }),
+    const layer = TestVsCode.layerWith(
+      {
+        initialDocuments: [editor.notebook],
       },
-    });
+      {
+        window: {
+          showQuickPickItemsMany: (items) =>
+            Effect.sync(() => {
+              const marimo = editor.notebook.metadata.marimo;
+              if (!isRecord(marimo)) {
+                throw new Error("Expected marimo notebook metadata");
+              }
+              const currentAppOptions = marimo.appOptions;
+              if (!isRecord(currentAppOptions)) {
+                throw new Error("Expected marimo app options");
+              }
+              marimo.appOptions = {
+                ...currentAppOptions,
+                passthrough: { width: "full" },
+              };
+              return Option.some(
+                items.filter((item) => item.label === "IPYNB"),
+              );
+            }),
+        },
+      },
+    );
 
     const snapshot = yield* Effect.gen(function* () {
       const vscode = yield* TestVsCode.Service;
