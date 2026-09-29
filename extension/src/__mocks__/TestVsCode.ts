@@ -80,6 +80,7 @@ export interface Options {
   readonly version?: string;
   readonly fileSystem?: Map<string, Uint8Array | Error>;
   readonly installedExtensions?: ReadonlyArray<string>;
+  readonly initialColorTheme?: "light" | "dark";
 }
 
 /** One-test scripts for behavior that the standard controls cannot express. */
@@ -201,6 +202,7 @@ export interface Interface {
   ) => Effect.Effect<void>;
   readonly selectInformationMessage: (item: string) => Effect.Effect<void>;
   readonly selectErrorMessage: (item: string) => Effect.Effect<void>;
+  readonly setColorTheme: (theme: "light" | "dark") => Effect.Effect<void>;
   readonly configurationChange: (
     event: vscode.ConfigurationChangeEvent,
   ) => Effect.Effect<void>;
@@ -320,6 +322,9 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
   const informationMessageResponses = yield* Queue.unbounded<string>();
   const errorMessageResponses = yield* Queue.unbounded<string>();
+  const colorTheme = yield* SubscriptionRef.make(
+    options.initialColorTheme ?? ("light" as const),
+  );
   const files = new Map<string, Uint8Array | Error>(options.fileSystem);
   const directories = yield* Ref.make<ReadonlyArray<string>>([]);
   const configurationChanges =
@@ -580,7 +585,8 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
         return Stream.fromQueue(queue);
       }),
       colorThemeChanges:
-        behavior.window?.colorThemeChanges ?? Stream.make("light" as const),
+        behavior.window?.colorThemeChanges ??
+        SubscriptionRef.changes(colorTheme),
       closeTextEditorTab: () => Effect.void,
       // oxlint-disable-next-line typescript-eslint/no-unnecessary-type-parameters
       createTreeView<T>(viewId: string) {
@@ -1374,6 +1380,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
     selectInformationMessage: (item) =>
       Queue.offer(informationMessageResponses, item),
     selectErrorMessage: (item) => Queue.offer(errorMessageResponses, item),
+    setColorTheme: (theme) => SubscriptionRef.set(colorTheme, theme),
     configurationChange: (event) =>
       PubSub.publish(configurationChanges, event).pipe(Effect.asVoid),
     awaitExecutions: (predicate) =>
