@@ -2,7 +2,6 @@ import * as Vitest from "@effect/vitest";
 import {
   Context,
   Effect,
-  Fiber,
   Latch,
   Layer,
   Option,
@@ -14,6 +13,8 @@ import type * as vscode from "vscode";
 import * as ConfigContextManager from "../../src/config/ConfigContextManager.ts";
 import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../../src/notebook/NotebookSessionResources.ts";
+import { MarimoNotebookDocument } from "../../src/schemas/MarimoNotebookDocument.ts";
+import * as MarimoClientTest from "../fake/MarimoClient.ts";
 import * as NotebookRuntimeTest from "../fake/NotebookRuntime.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import { marimoConfigFixture, notebookId } from "../lib/branded.ts";
@@ -106,8 +107,8 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
         }),
       });
       const manager = ConfigContextManager.layer.pipe(
-        Layer.provide(
-          NotebookSessionResources.layer.pipe(Layer.provide(runtimeLayer)),
+        Layer.provideMerge(
+          NotebookSessionResources.layer.pipe(Layer.provideMerge(runtimeLayer)),
         ),
         Layer.provide(
           NotebookDocumentSessions.layer.pipe(Layer.provide(vscodeLayer)),
@@ -138,21 +139,23 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
     }),
   );
 
-/** Activates the document and waits until the manager has queued its config. */
+/** Activates the document and waits until the manager fetches its config. */
 const activate = Effect.fn("activate")(function* (
   document: vscode.NotebookDocument,
 ) {
   const vscode = yield* VsCodeTest.Service;
-  const manager = yield* ConfigContextManager.Service;
-  const published = yield* manager.desiredChanges.pipe(
-    Stream.filter(Option.exists((session) => session.document === document)),
-    Stream.runHead,
-    Effect.forkChild({ startImmediately: true }),
-  );
+  const marimo = yield* MarimoClientTest.Service;
+  const notebookUri = MarimoNotebookDocument.from(document).id;
   yield* vscode.setActiveNotebookEditor(
     Option.some(VsCodeTest.createTestNotebookEditor(document)),
   );
-  yield* Fiber.join(published);
+  yield* marimo.awaitCommands((commands) =>
+    commands.some(
+      (command) =>
+        command.kind === "get-configuration" &&
+        command.notebookUri === notebookUri,
+    ),
+  );
 });
 
 const AUTO_RELOAD = "marimo.config.runtime.auto_reload";
