@@ -1,28 +1,168 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Context, Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
+import type * as vscode from "vscode";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as CellInputVisibilitySync from "../CellInputVisibilitySync.ts";
-import * as TestCellInputVisibilitySync from "./TestCellInputVisibilitySync.ts";
+
+interface CellState {
+  readonly stableId: string;
+  readonly hideCode: boolean;
+  readonly kind?: 1 | 2;
+}
+
+const states = (hideCode: ReadonlyArray<boolean>): CellState[] =>
+  hideCode.map((hidden, index) => ({
+    stableId: `cell-${index}`,
+    hideCode: hidden,
+  }));
+
+const cellData = ({ stableId, hideCode: hide_code, kind = 2 }: CellState) => ({
+  kind,
+  value: "",
+  languageId: kind === 1 ? "markdown" : "python",
+  metadata: MarimoNotebookCell.createMetadata({
+    marimo: { options: { hide_code } },
+    marimoRuntime: { stableId },
+  }),
+});
+
+const makeEditor = (
+  cells: ReadonlyArray<CellState>,
+  uri = "/test/notebook_mo.py",
+) =>
+  TestVsCode.makeNotebookEditor(uri, {
+    data: { cells: cells.map(cellData) },
+  });
 
 const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
   MarimoNotebookCell.from(
     TestVsCode.createNotebookCell(
       TestVsCode.createTestNotebookDocument("/test/notebook_mo.py"),
-      {
-        kind,
-        value: "",
-        languageId: kind === 1 ? "markdown" : "python",
-        metadata: MarimoNotebookCell.createMetadata({
-          marimo: { options: { hide_code: hideCode } },
-          marimoRuntime: { stableId: `cell-${index}` },
-        }),
-      },
+      cellData({ stableId: `cell-${index}`, hideCode, kind }),
       index,
     ),
   );
+
+const isCellRange = (value: unknown): value is CellInputVisibilitySync.Range =>
+  typeof value === "object" &&
+  value !== null &&
+  "start" in value &&
+  typeof value.start === "number" &&
+  "end" in value &&
+  typeof value.end === "number";
+
+type VisibilityCommand =
+  | "notebook.cell.collapseCellInput"
+  | "notebook.cell.expandCellInput";
+
+/** Ranges passed to `command` for `document`, one entry per invocation. */
+const ranges = Effect.fn("ranges")(function* (
+  editor: vscode.NotebookEditor,
+  command: VisibilityCommand,
+) {
+  const vscode = yield* TestVsCode.Service;
+  const { executions } = yield* vscode.snapshot;
+  return executions
+    .filter((execution) => execution.command === command)
+    .filter((execution) => {
+      const options = execution.args[0];
+      return (
+        typeof options === "object" &&
+        options !== null &&
+        "document" in options &&
+        String(options.document) === editor.notebook.uri.toString()
+      );
+    })
+    .flatMap((execution) => {
+      const options = execution.args[0];
+      if (
+        typeof options !== "object" ||
+        options === null ||
+        !("ranges" in options) ||
+        !Array.isArray(options.ranges) ||
+        !options.ranges.every(isCellRange)
+      ) {
+        return [];
+      }
+      return [options.ranges];
+    });
+});
+
+const collapsed = (editor: vscode.NotebookEditor) =>
+  ranges(editor, "notebook.cell.collapseCellInput");
+const expanded = (editor: vscode.NotebookEditor) =>
+  ranges(editor, "notebook.cell.expandCellInput");
+
+/** Runs `action` and waits until the sync has processed the matching event. */
+const process = Effect.fn("process")(function* (
+  action: Effect.Effect<unknown>,
+  matches: (event: CellInputVisibilitySync.Processed) => boolean,
+) {
+  const sync = yield* CellInputVisibilitySync.Service;
+  const changes = yield* sync.subscribeProcessed;
+  const processed = yield* changes.pipe(
+    Stream.filter(matches),
+    Stream.runHead,
+    Effect.forkChild,
+  );
+  yield* action;
+  yield* Fiber.join(processed);
+}, Effect.scoped);
+
+const activate = Effect.fn("activate")(function* (
+  editor: vscode.NotebookEditor,
+) {
+  const vscode = yield* TestVsCode.Service;
+  yield* vscode.openNotebook(editor.notebook);
+  yield* process(
+    vscode.setActiveNotebookEditor(Option.some(editor)),
+    (processed) =>
+      processed._tag === "Activated" && processed.editor === editor,
+  );
+});
+
+const deactivate = Effect.gen(function* () {
+  const vscode = yield* TestVsCode.Service;
+  yield* vscode.setActiveNotebookEditor(Option.none());
+});
+
+const close = Effect.fn("close")(function* (document: vscode.NotebookDocument) {
+  const vscode = yield* TestVsCode.Service;
+  yield* process(
+    vscode.closeNotebook(document),
+    (processed) =>
+      processed._tag === "Closed" && processed.document === document,
+  );
+});
+
+/** Replaces every cell in the notebook and waits for the change to sync. */
+const change = Effect.fn("change")(function* (
+  editor: vscode.NotebookEditor,
+  cells: ReadonlyArray<CellState>,
+) {
+  const vscode = yield* TestVsCode.Service;
+  const removedCells = Array.from(editor.notebook.getCells());
+  TestVsCode.replaceTestNotebookCells(editor.notebook, cells.map(cellData));
+  const event: vscode.NotebookDocumentChangeEvent = {
+    notebook: editor.notebook,
+    metadata: undefined,
+    cellChanges: [],
+    contentChanges: [
+      {
+        range: new TestVsCode.NotebookRange(0, removedCells.length),
+        removedCells,
+        addedCells: Array.from(editor.notebook.getCells()),
+      },
+    ],
+  };
+  yield* process(
+    vscode.notebookChange(event),
+    (processed) => processed._tag === "Changed" && processed.event === event,
+  );
+});
 
 Vitest.describe("visibility completion observations", () => {
   const it = EffectTest.make(
@@ -91,17 +231,16 @@ Vitest.describe("hiddenInputRanges", () => {
 });
 
 Vitest.describe("CellInputVisibilitySync", () => {
-  const it = EffectTest.make(TestCellInputVisibilitySync.layer);
+  const it = EffectTest.make(
+    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(TestVsCode.layer)),
+  );
 
   it.effect(
     "collapses hide_code cells when a notebook first becomes active",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([false, true, true]),
-      );
-      yield* sync.activate(editor);
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
+      const editor = makeEditor(states([false, true, true]));
+      yield* activate(editor);
+      Vitest.expect(yield* collapsed(editor)).toEqual([
         [
           { start: 1, end: 2 },
           { start: 2, end: 3 },
@@ -113,32 +252,26 @@ Vitest.describe("CellInputVisibilitySync", () => {
   it.effect(
     "expands markup cells while collapsing hidden code cells on activation",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor([
+      const editor = makeEditor([
         { stableId: "code", hideCode: true },
         { stableId: "markdown", hideCode: true, kind: 1 },
       ]);
-      yield* sync.activate(editor);
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
-        [{ start: 0, end: 1 }],
-      ]);
-      Vitest.expect(yield* sync.expanded(editor)).toEqual([
-        [{ start: 1, end: 2 }],
-      ]);
+      yield* activate(editor);
+      Vitest.expect(yield* collapsed(editor)).toEqual([[{ start: 0, end: 1 }]]);
+      Vitest.expect(yield* expanded(editor)).toEqual([[{ start: 1, end: 2 }]]);
     }),
   );
 
   it.effect(
     "re-expands markup cells whenever the notebook becomes active",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor([
+      const editor = makeEditor([
         { stableId: "markdown", hideCode: true, kind: 1 },
       ]);
-      yield* sync.activate(editor);
-      yield* sync.deactivate;
-      yield* sync.activate(editor);
-      Vitest.expect(yield* sync.expanded(editor)).toEqual([
+      yield* activate(editor);
+      yield* deactivate;
+      yield* activate(editor);
+      Vitest.expect(yield* expanded(editor)).toEqual([
         [{ start: 0, end: 1 }],
         [{ start: 0, end: 1 }],
       ]);
@@ -148,34 +281,24 @@ Vitest.describe("CellInputVisibilitySync", () => {
   it.effect(
     "collapses once and does not re-collapse on tab refocus",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([true]),
-      );
-      yield* sync.activate(editor);
-      yield* sync.deactivate;
-      yield* sync.activate(editor);
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
-        [{ start: 0, end: 1 }],
-      ]);
+      const editor = makeEditor(states([true]));
+      yield* activate(editor);
+      yield* deactivate;
+      yield* activate(editor);
+      Vitest.expect(yield* collapsed(editor)).toEqual([[{ start: 0, end: 1 }]]);
     }),
   );
 
   it.effect(
     "collapses hidden cells again after the notebook is closed and reopened",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([true]),
-      );
-      const reopened = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([true]),
-      );
-      yield* sync.activate(editor);
-      yield* sync.deactivate;
-      yield* sync.close(editor.notebook);
-      yield* sync.activate(reopened);
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
+      const editor = makeEditor(states([true]));
+      const reopened = makeEditor(states([true]));
+      yield* activate(editor);
+      yield* deactivate;
+      yield* close(editor.notebook);
+      yield* activate(reopened);
+      Vitest.expect(yield* collapsed(editor)).toEqual([
         [{ start: 0, end: 1 }],
         [{ start: 0, end: 1 }],
       ]);
@@ -185,87 +308,93 @@ Vitest.describe("CellInputVisibilitySync", () => {
   it.effect(
     "collapses a cell when hide_code changes to true",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([false]),
-      );
-      yield* sync.activate(editor);
-      yield* sync.change(editor, TestCellInputVisibilitySync.states([true]));
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
-        [{ start: 0, end: 1 }],
-      ]);
+      const editor = makeEditor(states([false]));
+      yield* activate(editor);
+      yield* change(editor, states([true]));
+      Vitest.expect(yield* collapsed(editor)).toEqual([[{ start: 0, end: 1 }]]);
     }),
   );
 
   it.effect(
     "expands a cell when hide_code changes to false",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([true]),
-      );
-      yield* sync.activate(editor);
-      yield* sync.change(editor, TestCellInputVisibilitySync.states([false]));
-      Vitest.expect(yield* sync.expanded(editor)).toEqual([
-        [{ start: 0, end: 1 }],
-      ]);
+      const editor = makeEditor(states([true]));
+      yield* activate(editor);
+      yield* change(editor, states([false]));
+      Vitest.expect(yield* expanded(editor)).toEqual([[{ start: 0, end: 1 }]]);
     }),
   );
 
   it.effect(
     "tracks cells by stable ID across structural reordering",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor(
-        TestCellInputVisibilitySync.states([false, true]),
-      );
-      yield* sync.activate(editor);
-      yield* sync.change(editor, [
+      const editor = makeEditor(states([false, true]));
+      yield* activate(editor);
+      yield* change(editor, [
         { stableId: "cell-1", hideCode: true },
         { stableId: "cell-0", hideCode: false },
       ]);
-      Vitest.expect(yield* sync.collapsed(editor)).toEqual([
-        [{ start: 1, end: 2 }],
-      ]);
-      Vitest.expect(yield* sync.expanded(editor)).toEqual([]);
+      Vitest.expect(yield* collapsed(editor)).toEqual([[{ start: 1, end: 2 }]]);
+      Vitest.expect(yield* expanded(editor)).toEqual([]);
     }),
   );
 
   it.effect(
     "expands a hidden code cell when it becomes markup",
     Effect.fn(function* () {
-      const sync = yield* TestCellInputVisibilitySync.Service;
-      const editor = TestCellInputVisibilitySync.makeEditor([
-        { stableId: "cell", hideCode: true },
-      ]);
-      yield* sync.activate(editor);
-      yield* sync.change(editor, [
-        { stableId: "cell", hideCode: true, kind: 1 },
-      ]);
-      Vitest.expect(yield* sync.expanded(editor)).toEqual([
-        [{ start: 0, end: 1 }],
-      ]);
+      const editor = makeEditor([{ stableId: "cell", hideCode: true }]);
+      yield* activate(editor);
+      yield* change(editor, [{ stableId: "cell", hideCode: true, kind: 1 }]);
+      Vitest.expect(yield* expanded(editor)).toEqual([[{ start: 0, end: 1 }]]);
     }),
   );
 
   Vitest.describe("when a visibility command defects", () => {
+    /** Number of VS Code commands attempted; the first one defects. */
+    class Attempts extends Context.Service<Attempts, Ref.Ref<number>>()(
+      "@marimo/test/CellInputVisibilitySync/Attempts",
+    ) {}
+
     const it = EffectTest.make(
-      TestCellInputVisibilitySync.layerWith(
-        TestCellInputVisibilitySync.Scenario.DefectFirstCommand(),
+      Layer.unwrap(
+        Effect.map(Ref.make(0), (attempts) =>
+          Layer.merge(
+            CellInputVisibilitySync.layer.pipe(
+              Layer.provideMerge(
+                TestVsCode.layerWith(
+                  {},
+                  {
+                    commands: {
+                      executeVSCode: () =>
+                        Ref.updateAndGet(attempts, (count) => count + 1).pipe(
+                          Effect.flatMap((count) =>
+                            count === 1
+                              ? Effect.die(
+                                  new Error("VS Code command rejected"),
+                                )
+                              : Effect.void,
+                          ),
+                        ),
+                    },
+                  },
+                ),
+              ),
+            ),
+            Layer.succeed(Attempts, attempts),
+          ),
+        ),
       ),
     );
 
     it.effect(
       "continues synchronizing",
       Effect.fn(function* () {
-        const sync = yield* TestCellInputVisibilitySync.Service;
-        const editor = TestCellInputVisibilitySync.makeEditor(
-          TestCellInputVisibilitySync.states([false]),
-        );
-        yield* sync.activate(editor);
-        yield* sync.change(editor, TestCellInputVisibilitySync.states([true]));
-        yield* sync.change(editor, TestCellInputVisibilitySync.states([true]));
-        Vitest.expect(yield* sync.attempts).toBe(2);
+        const attempts = yield* Attempts;
+        const editor = makeEditor(states([false]));
+        yield* activate(editor);
+        yield* change(editor, states([true]));
+        yield* change(editor, states([true]));
+        Vitest.expect(yield* Ref.get(attempts)).toBe(2);
       }),
     );
   });
