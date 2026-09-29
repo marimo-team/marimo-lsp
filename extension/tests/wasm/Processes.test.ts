@@ -89,19 +89,22 @@ Vitest.it("includes captured stderr when reporting process exit", () => {
   const spawn = vi.fn(() => child);
   const captured: Array<string | undefined> = [];
   const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
-  const processes = new Processes(
-    {
-      stdout: () => {},
-      exited: (_processId, _code, _signal, processStderr) =>
-        captured.push(processStderr),
-    },
-    spawn,
-  );
+  try {
+    const processes = new Processes(
+      {
+        stdout: () => {},
+        exited: (_processId, _code, _signal, processStderr) =>
+          captured.push(processStderr),
+      },
+      spawn,
+    );
 
-  processes.spawn("kernel", "/python", "/workspace");
-  child.stderr.write("Traceback: missing dependency\n");
-  child.emit("close", 1, null);
+    processes.spawn("kernel", "/python", "/workspace");
+    child.stderr.write("Traceback: missing dependency\n");
+    child.emit("close", 1, null);
 
-  Vitest.expect(captured).toEqual(["Traceback: missing dependency"]);
-  stderr.mockRestore();
+    Vitest.expect(captured).toEqual(["Traceback: missing dependency"]);
+  } finally {
+    stderr.mockRestore();
+  }
 });

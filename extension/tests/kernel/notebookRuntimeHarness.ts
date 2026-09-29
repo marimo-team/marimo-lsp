@@ -234,6 +234,12 @@ export const activate = Effect.fn("NotebookRuntimeHarness.activate")(function* (
   const sessions = yield* NotebookDocumentSessions.Service;
   const editors = yield* NotebookEditorRegistry.Service;
   const targetId = MarimoNotebookDocument.from(target.notebook).id;
+  // Both observed streams deduplicate, so re-activating the active editor
+  // would never emit; there is nothing to wait for in that case.
+  const { activeNotebookUri } = yield* vscode.snapshot;
+  if (Option.contains(activeNotebookUri, target.notebook.uri.toString())) {
+    return;
+  }
   const activeSession = yield* sessions.active.pipe(
     Stream.filter(
       Option.exists((session) => session.document === target.notebook),

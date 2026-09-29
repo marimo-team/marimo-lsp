@@ -793,8 +793,8 @@ export class ThemeColor implements vscode.ThemeColor {
 }
 
 export class ThemeIcon implements vscode.ThemeIcon {
-  static readonly File: ThemeIcon;
-  static readonly Folder: ThemeIcon;
+  static readonly File = new ThemeIcon("file");
+  static readonly Folder = new ThemeIcon("folder");
   readonly id: string;
   readonly color?: ThemeColor | undefined;
   constructor(id: string, color?: ThemeColor) {

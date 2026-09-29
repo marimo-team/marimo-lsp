@@ -285,6 +285,8 @@ Vitest.describe("NotebookDatasources", () => {
         );
         yield* datasources.clearKernelSession(NOTEBOOK_URI, KERNEL_SESSION_ID);
 
+        // Clearing the old kernel must not touch the replacement kernel's state.
+        Vitest.expect((yield* getDatabase()).schemas.has("new")).toBe(true);
         const datasets = Option.getOrThrow(
           yield* datasources.getDatasets(NOTEBOOK_URI),
         );
@@ -486,7 +488,9 @@ Vitest.describe("NotebookDatasources", () => {
       yield* Fiber.join(second);
 
       Vitest.expect(yield* requests).toHaveLength(1);
-      Vitest.expect((yield* getDatabase()).schemas.has("public")).toBe(true);
+      const database = yield* getDatabase();
+      Vitest.expect(database.schemas.has("public")).toBe(true);
+      Vitest.expect(database.schemasResolved).toBe(true);
     }),
   );
 

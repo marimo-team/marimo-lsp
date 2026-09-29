@@ -106,7 +106,7 @@ Vitest.describe("MarimoCodeLensProvider.layer", () => {
     }),
   );
 
-  effectIt.effect("happy path: provides CodeLens for valid marimo file", () =>
+  effectIt.effect("detects a marimo app in Python source", () =>
     Effect.sync(() => {
       const pythonCode = `import marimo
 
@@ -116,13 +116,6 @@ app = marimo.App()
 def _():
     return
 `;
-      const _document = VsCodeTest.createTestTextDocument(
-        "/test/notebook.py",
-        "python",
-        pythonCode,
-      );
-      // The provider is registered and will be called by VSCode
-      // We verify the layer builds and the detection logic works
       Vitest.expect(MarimoCodeLensProvider.isAppText(pythonCode)).toBe(true);
       Vitest.expect(MarimoCodeLensProvider.findAppLine(pythonCode)).toBe(2);
     }),

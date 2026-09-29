@@ -109,7 +109,13 @@ const process = Effect.fn("process")(function* (
     Effect.forkChild,
   );
   yield* action;
-  yield* Fiber.join(processed);
+  yield* Effect.flatMap(
+    Fiber.join(processed),
+    Option.match({
+      onNone: () => Effect.die("The sync stopped before processing the event"),
+      onSome: () => Effect.void,
+    }),
+  );
 }, Effect.scoped);
 
 const activate = Effect.fn("activate")(function* (

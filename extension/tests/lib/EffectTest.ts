@@ -9,7 +9,10 @@ export interface Interface<R> {
 
 export interface Test<R> extends EffectVitest.Test<R> {
   readonly each: EffectVitest.Tester<R>["each"];
-  readonly skipIf: EffectVitest.Tester<R>["skipIf"];
+  /** A skipped variant of the runner; it carries no `each` or `skipIf`. */
+  readonly skipIf: (
+    condition: Parameters<EffectVitest.Tester<R>["skipIf"]>[0],
+  ) => EffectVitest.Test<R>;
 }
 
 const bind = <R, E>(

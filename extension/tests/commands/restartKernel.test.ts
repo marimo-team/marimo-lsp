@@ -16,6 +16,8 @@ Vitest.describe("restartKernel invocation", () => {
       const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(target.notebook);
       yield* vscode.openNotebook(active.notebook);
+      // Activating an editor is what makes it visible; the toolbar context
+      // resolves against visible editors, so `target` must be shown once.
       yield* vscode.setActiveNotebookEditor(Option.some(target));
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 

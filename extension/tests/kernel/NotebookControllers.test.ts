@@ -276,15 +276,27 @@ Vitest.describe("NotebookControllers", () => {
       Effect.fn(function* () {
         const vscode = yield* VsCodeTest.Service;
         const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
+        yield* addEnvironment(
+          secondEnvironment,
+          controllerIds(homeExecutable, globalExecutable),
+        );
         yield* vscode.openNotebook(editor.notebook);
         yield* select(`marimo-${homeExecutable}`, editor);
 
+        // Removing the selected environment leaves the controller set as is,
+        // so wait for the next refresh that changes the set: removing the
+        // other environment. Had the selected controller been pruned, that
+        // set would be the sandbox alone and this wait would time out.
         yield* removeEnvironment(
           firstEnvironment,
+          controllerIds(homeExecutable, globalExecutable),
+        );
+        yield* removeEnvironment(
+          secondEnvironment,
           controllerIds(homeExecutable),
         );
 
-        Vitest.expect(yield* registered).toContain(`marimo-${homeExecutable}`);
+        Vitest.expect(yield* registered).toEqual(controllerIds(homeExecutable));
       }),
     );
   });
