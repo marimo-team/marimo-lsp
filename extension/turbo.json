@@ -5,8 +5,6 @@
       "outputs": ["dist/**/*.mjs", "dist/**/*.mjs.map"],
       "inputs": [
         "src/renderer/**",
-        "!src/renderer/**/__tests__/**",
-        "!src/renderer/**/*.test.*",
         "src/assert.ts",
         "src/types.ts",
         "scripts/run-turbo.mjs",
@@ -27,8 +25,6 @@
       "inputs": [
         "src/**/*.ts",
         "!src/renderer/**",
-        "!src/**/__tests__/**",
-        "!src/**/*.test.*",
         "builtin-command-catalog.json",
         "package.json"
       ],

@@ -38,10 +38,10 @@ export default vite.defineConfig({
     pool: "threads",
     isolate: false,
     // Unit tests live in src/
-    include: ["src/**/*.test.ts"],
-    // Extension tests live in tests/extension/
-    exclude: ["tests/extension/**/*.test.ts"],
-    setupFiles: ["./src/__tests__/setup.ts"],
+    include: ["tests/**/*.test.ts"],
+    // The VS Code extension-host suite runs through /test-cli.
+    exclude: ["tests/vscode/**"],
+    setupFiles: ["./tests/lib/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary", "html", "json-summary", "lcov"],
@@ -49,12 +49,10 @@ export default vite.defineConfig({
       reportOnFailure: true,
       include: ["src/**/*.{ts,tsx,mts}"],
       exclude: [
-        "src/**/*.test.ts",
         "src/**/*.d.ts",
-        "src/__tests__/**",
         "src/renderer/**",
         // Boundary wrapper around the `vscode` module; unit tests use the
-        // VsCodeTest fake (src/__tests__/fake/VsCode.ts) instead.
+        // VsCodeTest fake (tests/fake/VsCode.ts) instead.
         "src/platform/VsCode.ts",
       ],
     },
@@ -100,7 +98,7 @@ export default vite.defineConfig({
     },
     overrides: [
       {
-        files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
+        files: ["tests/**/*.ts"],
         rules: {
           // Effect.provide is the application boundary for independently
           // constructed test layers that cannot be shared through it.layer.

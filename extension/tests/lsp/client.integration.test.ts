@@ -1,0 +1,155 @@
+/**
+ * Integration tests for `makeNotebookLspClient` against a real `ty` LSP
+ * server spawned via `uv run ty server`. Unlike mocked tests, these exercise
+ * the real JSON-RPC stack: stdio framing, initialize handshake, capability
+ * negotiation, notebook sync, and shutdown.
+ *
+ * Requires `uv` and `ty` on PATH. Assertions are intentionally loose where
+ * server output (versions, exact capability shapes, hover content) may drift
+ * between upstream ty releases.
+ */
+
+import * as Vitest from "@effect/vitest";
+import { Effect, Layer, Option, Stream } from "effect";
+import * as lsp from "vscode-languageserver-protocol";
+
+import { makeNotebookLspClient } from "../../src/lsp/client.ts";
+import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSessions.ts";
+import * as NotebookVariables from "../../src/panel/variables/NotebookVariables.ts";
+import * as VsCode from "../../src/platform/VsCode.ts";
+import { MarimoNotebookDocument } from "../../src/schemas/MarimoNotebookDocument.ts";
+import * as VsCodeTest from "../fake/VsCode.ts";
+import * as EffectTest from "../lib/EffectTest.ts";
+
+const variablesLayer = NotebookVariables.layer.pipe(
+  Layer.provide(
+    Layer.succeed(NotebookDocumentSessions.Service, {
+      current: () => Option.none(),
+      forDocument: () => Option.none(),
+      active: Stream.empty,
+      subscribeLifecycle: Effect.succeed(Stream.empty),
+    }),
+  ),
+);
+const it = EffectTest.make(Layer.merge(variablesLayer, VsCodeTest.layer));
+
+Vitest.describe("makeNotebookLspClient against uv run ty server", () => {
+  it.live(
+    "initialize → openNotebook → hover → textChange → close",
+    () =>
+      Effect.gen(function* () {
+        const code = yield* VsCode.Service;
+        const outputChannel = yield* code.window.createOutputChannel("ty");
+
+        const client = yield* makeNotebookLspClient({
+          name: "ty",
+          command: "uv",
+          args: ["run", "ty", "server"],
+          outputChannel,
+          workspaceFolders: [],
+        });
+
+        // --- 1. Server handshake -------------------------------------------
+        Vitest.expect(client.serverInfo.name).toBe("ty");
+        Vitest.expect(typeof client.serverInfo.version).toBe("string");
+        Vitest.expect(Object.keys(client.serverInfo.capabilities).sort())
+          .toMatchInlineSnapshot(`
+            [
+              "callHierarchyProvider",
+              "codeActionProvider",
+              "completionProvider",
+              "declarationProvider",
+              "definitionProvider",
+              "diagnosticProvider",
+              "documentHighlightProvider",
+              "documentSymbolProvider",
+              "executeCommandProvider",
+              "foldingRangeProvider",
+              "hoverProvider",
+              "inlayHintProvider",
+              "notebookDocumentSync",
+              "positionEncoding",
+              "referencesProvider",
+              "renameProvider",
+              "selectionRangeProvider",
+              "semanticTokensProvider",
+              "signatureHelpProvider",
+              "textDocumentSync",
+              "typeDefinitionProvider",
+              "typeHierarchyProvider",
+              "workspace",
+              "workspaceSymbolProvider",
+            ]
+          `);
+
+        // --- 2. Build a notebook with one Python cell ---------------------
+        // `x` is declared at the start of the line so hover at (0,0) lands
+        // on a symbol ty can Vitest.describe.
+        const notebook = VsCodeTest.createTestNotebookDocument("/nb.py", {
+          data: {
+            cells: [
+              {
+                kind: 2, // NotebookCellKind.Code
+                value: "x: int = 1\n",
+                languageId: "python",
+              },
+            ],
+          },
+        });
+        const doc = MarimoNotebookDocument.from(notebook);
+        const cell = notebook.cellAt(0);
+
+        // --- 3. Open the notebook (fires didOpen) --------------------------
+        yield* client.openNotebookDocument(doc);
+
+        // --- 4. Send a typed request (hover on `x`) ------------------------
+        // ty declares `diagnosticProvider` (pull-based) so push-diagnostics
+        // aren't exercised here; a hover round-trip is the accuracy signal.
+        const hover = yield* client.sendRequest(lsp.HoverRequest.method, {
+          textDocument: { uri: cell.document.uri.toString() },
+          position: { line: 0, character: 0 },
+        });
+        Vitest.expect(hover).toMatchInlineSnapshot(`
+      	{
+      	  "contents": {
+      	    "kind": "markdown",
+      	    "value": "\`\`\`python
+      	Literal[1]
+      	\`\`\`",
+      	  },
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	}
+      `);
+
+        // --- 5. Forward a text edit within the cell ------------------------
+        yield* client.textDocumentChange({
+          document: cell.document,
+          contentChanges: [
+            {
+              range: new code.Range(0, 0, 0, 0),
+              rangeOffset: 0,
+              rangeLength: 0,
+              text: "# leading comment\n",
+            },
+          ],
+          reason: undefined,
+        });
+
+        // --- 6. Close the notebook (fires didClose) ------------------------
+        yield* client.closeNotebookDocument(doc);
+
+        // Scope closes → shutdown request + exit notification + process kill
+        // are asserted implicitly by the test completing without hanging.
+      }),
+    { timeout: 30_000 },
+  );
+});

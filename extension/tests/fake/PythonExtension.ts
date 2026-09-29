@@ -1,0 +1,146 @@
+import type * as py from "@vscode/python-extension";
+import {
+  Context,
+  Data,
+  Effect,
+  HashSet,
+  Layer,
+  Option,
+  PubSub,
+  Ref,
+  Stream,
+} from "effect";
+
+import * as PythonExtension from "../../src/python/PythonExtension.ts";
+import { Uri } from "./VsCode.ts";
+
+export interface Interface {
+  readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
+  readonly removeEnvironment: (
+    env: py.ResolvedEnvironment,
+  ) => Effect.Effect<void>;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/test/PythonExtension",
+) {}
+
+export class PythonExtensionTest extends Data.TaggedClass(
+  "PythonExtensionTest",
+)<{
+  readonly layer: Layer.Layer<PythonExtension.Service | Service>;
+  readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
+  readonly removeEnvironment: (
+    env: py.ResolvedEnvironment,
+  ) => Effect.Effect<void>;
+}> {
+  static makeGlobalEnv(path: string): py.ResolvedEnvironment {
+    return {
+      id: path,
+      path,
+      environment: undefined,
+      tools: [],
+      version: undefined,
+      executable: {
+        uri: undefined,
+        bitness: "Unknown",
+        sysPrefix: "/usr/local/envs/blah/.venv",
+      },
+    };
+  }
+  static makeVenv(venvPath: string): py.ResolvedEnvironment {
+    const env = PythonExtensionTest.makeGlobalEnv(venvPath);
+    return {
+      ...env,
+      environment: {
+        type: "VirtualEnv",
+        name: undefined,
+        folderUri: Uri.file(venvPath),
+        workspaceFolder: undefined,
+      },
+    };
+  }
+  static make = Effect.fn(function* (envs: Array<py.ResolvedEnvironment> = []) {
+    const known = yield* Ref.make(HashSet.make(...envs));
+    const pubsub = yield* PubSub.unbounded<py.EnvironmentsChangeEvent>();
+    const activePathPubsub =
+      yield* PubSub.unbounded<py.ActiveEnvironmentPathChangeEvent>();
+    const activeEnv = yield* Ref.make({
+      id: envs[0]?.id || "",
+      path: envs[0]?.path || "",
+    });
+
+    const pythonLayer = Layer.succeed(PythonExtension.Service, {
+      updateActiveEnvironmentPath(executable: string) {
+        return Effect.gen(function* () {
+          const envPath: py.EnvironmentPath = {
+            id: executable,
+            path: executable,
+          };
+          yield* Ref.set(activeEnv, envPath);
+          yield* PubSub.publish(activePathPubsub, {
+            ...envPath,
+            resource: undefined,
+          });
+        });
+      },
+      knownEnvironments: Effect.map(Ref.get(known), (set) => Array.from(set)),
+      environmentChanges: Stream.fromPubSub(pubsub),
+      subscribeEnvironmentChanges: PubSub.subscribe(pubsub).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
+      subscribeActiveEnvironmentPathChanges: PubSub.subscribe(
+        activePathPubsub,
+      ).pipe(Effect.map(Stream.fromSubscription)),
+      getActiveEnvironmentPath(_resource?: py.Resource) {
+        return Ref.get(activeEnv);
+      },
+      resolveEnvironment(path: string | py.EnvironmentPath) {
+        return Effect.gen(function* () {
+          const pathStr = typeof path === "string" ? path : path.path;
+          const knownSet = yield* Ref.get(known);
+          return Option.fromNullishOr(
+            Array.from(knownSet).find((e) => e.path === pathStr),
+          );
+        });
+      },
+    });
+    const addEnvironment: Interface["addEnvironment"] = (env) =>
+      Effect.gen(function* () {
+        yield* Ref.update(known, HashSet.add(env));
+        yield* PubSub.publish(pubsub, { type: "add", env });
+      });
+    const removeEnvironment: Interface["removeEnvironment"] = (env) =>
+      Effect.gen(function* () {
+        yield* Ref.update(known, HashSet.remove(env));
+        yield* PubSub.publish(pubsub, { type: "remove", env });
+      });
+    const testService = Service.of({ addEnvironment, removeEnvironment });
+
+    return new PythonExtensionTest({
+      layer: Layer.merge(pythonLayer, Layer.succeed(Service, testService)),
+      addEnvironment,
+      removeEnvironment,
+    });
+  });
+
+  static layer = PythonExtensionTest.make([]).pipe(
+    Effect.map((py) => py.layer),
+    Layer.unwrap,
+  );
+}
+
+export const makeGlobalEnv = (path: string) =>
+  PythonExtensionTest.makeGlobalEnv(path);
+
+export const makeVenv = (path: string) => PythonExtensionTest.makeVenv(path);
+
+/** @deprecated Prefer `layer` or `layerWith` and yield `Service` in tests. */
+export const make = PythonExtensionTest.make;
+
+export const layerWith = (initialEnvironments: Array<py.ResolvedEnvironment>) =>
+  Layer.unwrap(
+    make(initialEnvironments).pipe(Effect.map((python) => python.layer)),
+  );
+
+export const layer = layerWith([]);

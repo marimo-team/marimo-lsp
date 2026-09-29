@@ -1,0 +1,21 @@
+import { Effect, Layer, Logger } from "effect";
+
+import * as Telemetry from "../../src/telemetry/Telemetry.ts";
+
+/**
+ * Test implementation of Telemetry that does nothing
+ */
+export const layer = Layer.succeed(Telemetry.Service, {
+  tySetup: () => Effect.void,
+  commandExecuted: () => Effect.void,
+  notebookCreated: Effect.void,
+  notebookOpened: () => Effect.void,
+  tutorialOpened: () => Effect.void,
+  uvMissing: () => Effect.void,
+  uvInstallClicked: Effect.void,
+  binaryResolved: () => Effect.void,
+  binaryUnresolved: () => Effect.void,
+  lspModeSelected: () => Effect.void,
+  lspStarted: () => Effect.void,
+  errorLogger: Logger.make(() => undefined),
+});

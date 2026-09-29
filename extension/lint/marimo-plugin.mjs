@@ -197,11 +197,7 @@ const effectArchitecture = defineRule({
   },
   create(context) {
     const filename = context.filename.replaceAll("\\", "/");
-    if (
-      !filename.includes("/src/") ||
-      /\/__tests__\//.test(filename) ||
-      filename.endsWith(".test.ts")
-    ) {
+    if (!filename.includes("/src/") || filename.includes("/tests/")) {
       return {};
     }
     const imports = new Map();
