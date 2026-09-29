@@ -128,9 +128,12 @@ export const layer = Layer.effectDiscard(
       });
     }).pipe(Effect.withSpan("NotebookControllers.refresh"));
 
+    // Acquire the listener first so an environment change during the initial
+    // refresh is buffered rather than dropped.
+    const environmentChanges = yield* pyExt.subscribeEnvironmentChanges;
     yield* refresh;
     yield* Effect.forkScoped(
-      pyExt.environmentChanges.pipe(Stream.runForEach(() => refresh)),
+      environmentChanges.pipe(Stream.runForEach(() => refresh)),
       { startImmediately: true },
     );
 

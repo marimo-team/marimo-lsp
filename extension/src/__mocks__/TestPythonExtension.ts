@@ -86,6 +86,9 @@ export class TestPythonExtension extends Data.TaggedClass(
       },
       knownEnvironments: Effect.map(Ref.get(known), (set) => Array.from(set)),
       environmentChanges: Stream.fromPubSub(pubsub),
+      subscribeEnvironmentChanges: PubSub.subscribe(pubsub).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
       subscribeActiveEnvironmentPathChanges: PubSub.subscribe(
         activePathPubsub,
       ).pipe(Effect.map(Stream.fromSubscription)),

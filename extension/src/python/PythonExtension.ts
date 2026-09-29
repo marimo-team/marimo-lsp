@@ -14,6 +14,12 @@ export interface Interface {
   readonly knownEnvironments: Effect.Effect<ReadonlyArray<py.Environment>>;
   readonly environmentChanges: Stream.Stream<py.EnvironmentsChangeEvent>;
   /** Acquires the listener before returning, buffering changes until consumed. */
+  readonly subscribeEnvironmentChanges: Effect.Effect<
+    Stream.Stream<py.EnvironmentsChangeEvent>,
+    never,
+    Scope.Scope
+  >;
+  /** Acquires the listener before returning, buffering changes until consumed. */
   readonly subscribeActiveEnvironmentPathChanges: Effect.Effect<
     Stream.Stream<py.ActiveEnvironmentPathChangeEvent>,
     never,
@@ -55,6 +61,16 @@ export const layer = Layer.effect(
         ),
     );
 
+    const subscribeEnvironmentChanges = Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<py.EnvironmentsChangeEvent>();
+      yield* acquireDisposable(() =>
+        api.environments.onDidChangeEnvironments((event) => {
+          Queue.offerUnsafe(queue, event);
+        }),
+      );
+      return Stream.fromQueue(queue);
+    });
+
     const subscribeActiveEnvironmentPathChanges = Effect.gen(function* () {
       const queue =
         yield* Queue.unbounded<py.ActiveEnvironmentPathChangeEvent>();
@@ -88,6 +104,7 @@ export const layer = Layer.effect(
       updateActiveEnvironmentPath,
       knownEnvironments,
       environmentChanges,
+      subscribeEnvironmentChanges,
       subscribeActiveEnvironmentPathChanges,
       getActiveEnvironmentPath,
       resolveEnvironment,
