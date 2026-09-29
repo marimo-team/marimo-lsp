@@ -8,7 +8,7 @@
 // transaction applier) together, as a user would experience it.
 //
 // The transaction → NotebookEdit translation is unit-tested in
-// `src/notebook/__tests__/transactionPlan.test.ts`; this proves the full path.
+// `tests/notebook/transactionPlan.test.ts`; this proves the full path.
 
 const NodeAssert = require("node:assert");
 const vscode = require("vscode");

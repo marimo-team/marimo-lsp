@@ -24,9 +24,9 @@ import type {
 import * as MarimoClientTest from "../../fake/MarimoClient.ts";
 import * as VsCodeTest from "../../fake/VsCode.ts";
 import { kernelSessionId, notebookId, requestId } from "../../lib/branded.ts";
+import * as DocumentLifecycle from "../../lib/documentLifecycle.ts";
 import * as EffectTest from "../../lib/EffectTest.ts";
 import { makeScopedResourceCounter } from "../../lib/scopedResourceCounter.ts";
-import * as DocumentLifecycle from "../../notebook/documentLifecycle.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const KERNEL_SESSION_ID = kernelSessionId(

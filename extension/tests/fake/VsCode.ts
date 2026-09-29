@@ -329,6 +329,27 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const informationMessageResponses = yield* Queue.unbounded<string>();
   const errorMessageResponses = yield* Queue.unbounded<string>();
   const warningMessageResponses = yield* Queue.unbounded<string>();
+  /** Answers a message with the next queued selection, if any. */
+  const selectMessageItem = <T extends string>(
+    responses: Queue.Queue<string>,
+    options: { readonly items?: readonly T[] },
+    kind: string,
+  ) =>
+    Queue.poll(responses).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(Option.none<T>()),
+          onSome: (selected) => {
+            const item = options.items?.find(
+              (candidate) => candidate === selected,
+            );
+            return item === undefined
+              ? Effect.die(`${kind}-message item not found: ${selected}`)
+              : Effect.succeed(Option.some(item));
+          },
+        }),
+      ),
+    );
   const colorTheme = yield* SubscriptionRef.make(
     options.initialColorTheme ?? ("light" as const),
   );
@@ -446,21 +467,12 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
                 (revision) => revision + 1,
               ),
             ),
-            Effect.andThen(Queue.poll(informationMessageResponses)),
-            Effect.flatMap(
-              Option.match({
-                onNone: () => Effect.succeed(Option.none()),
-                onSome: (selected) => {
-                  const item = options.items?.find(
-                    (candidate) => candidate === selected,
-                  );
-                  return item === undefined
-                    ? Effect.die(
-                        `Information-message item not found: ${selected}`,
-                      )
-                    : Effect.succeed(Option.some(item));
-                },
-              }),
+            Effect.andThen(
+              selectMessageItem(
+                informationMessageResponses,
+                options,
+                "Information",
+              ),
             ),
           )),
       showWarningMessage:
@@ -470,38 +482,16 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
             ...messages,
             message,
           ]).pipe(
-            Effect.andThen(Queue.poll(warningMessageResponses)),
-            Effect.flatMap(
-              Option.match({
-                onNone: () => Effect.succeed(Option.none()),
-                onSome: (selected) => {
-                  const item = options.items?.find(
-                    (candidate) => candidate === selected,
-                  );
-                  return item === undefined
-                    ? Effect.die(`Warning-message item not found: ${selected}`)
-                    : Effect.succeed(Option.some(item));
-                },
-              }),
+            Effect.andThen(
+              selectMessageItem(warningMessageResponses, options, "Warning"),
             ),
           )),
       showErrorMessage:
         behavior.window?.showErrorMessage ??
         ((message, options = {}) =>
           Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
-            Effect.andThen(Queue.poll(errorMessageResponses)),
-            Effect.flatMap(
-              Option.match({
-                onNone: () => Effect.succeed(Option.none()),
-                onSome: (selected) => {
-                  const item = options.items?.find(
-                    (candidate) => candidate === selected,
-                  );
-                  return item === undefined
-                    ? Effect.die(`Error-message item not found: ${selected}`)
-                    : Effect.succeed(Option.some(item));
-                },
-              }),
+            Effect.andThen(
+              selectMessageItem(errorMessageResponses, options, "Error"),
             ),
           )),
       showQuickPick:

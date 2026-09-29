@@ -25,16 +25,20 @@ export class Memento {
   }
 }
 
-const testExtensionContext = {
+/** A fresh extension context with empty global and workspace state. */
+export const make = () => ({
   globalState: new Memento(),
   workspaceState: new Memento(),
   extensionUri: Uri.parse("file:///test/extension/path", true),
   globalStorageUri: Uri.parse("file://test/extension/libs", true),
-};
+});
 
-export const layer = Layer.succeed(
-  ExtensionContext.Service,
-  testExtensionContext,
+/** A new context for every caller, so state never leaks between tests. */
+export const get = Effect.sync(make);
+
+/** Provides a fresh context for every layer build. */
+export const layer = Layer.unwrap(
+  Effect.map(get, (context) =>
+    Layer.succeed(ExtensionContext.Service, context),
+  ),
 );
-
-export const get = Effect.succeed(testExtensionContext);

@@ -15,8 +15,8 @@ import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSe
 import type { NotebookDocumentSessionId } from "../../src/schemas/SessionIds.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import { notebookId } from "../lib/branded.ts";
+import * as DocumentLifecycle from "../lib/documentLifecycle.ts";
 import * as EffectTest from "../lib/EffectTest.ts";
-import * as DocumentLifecycle from "./documentLifecycle.ts";
 
 const uri = VsCodeTest.Uri.parse("file:///test/notebook.py");
 const id = notebookId(uri.toString());

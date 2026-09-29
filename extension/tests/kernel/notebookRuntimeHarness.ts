@@ -42,7 +42,7 @@ import * as PythonExtensionTest from "../fake/PythonExtension.ts";
 import * as TelemetryTest from "../fake/Telemetry.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import { kernelSessionId, notebookId } from "../lib/branded.ts";
-import * as DocumentLifecycle from "../notebook/documentLifecycle.ts";
+import * as DocumentLifecycle from "../lib/documentLifecycle.ts";
 
 export interface Options {
   readonly activeSessionId?: KernelSessionId;
@@ -253,12 +253,6 @@ export const activate = Effect.fn("NotebookRuntimeHarness.activate")(function* (
   const sessions = yield* NotebookDocumentSessions.Service;
   const editors = yield* NotebookEditorRegistry.Service;
   const targetId = MarimoNotebookDocument.from(target.notebook).id;
-  // Both observed streams deduplicate, so re-activating the active editor
-  // would never emit; there is nothing to wait for in that case.
-  const { activeNotebookUri } = yield* vscode.snapshot;
-  if (Option.contains(activeNotebookUri, target.notebook.uri.toString())) {
-    return;
-  }
   const activeSession = yield* sessions.active.pipe(
     Stream.filter(
       Option.exists((session) => session.document === target.notebook),

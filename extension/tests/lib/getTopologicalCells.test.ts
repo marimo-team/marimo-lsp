@@ -12,8 +12,8 @@ import {
 import type { VariablesNotification } from "../../src/types.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import * as VsCodeValues from "../fake/VsCodeValues.ts";
-import * as DocumentLifecycle from "../notebook/documentLifecycle.ts";
 import { cellId, variableName } from "./branded.ts";
+import * as DocumentLifecycle from "./documentLifecycle.ts";
 import * as EffectTest from "./EffectTest.ts";
 
 function createMockVariablesOp(

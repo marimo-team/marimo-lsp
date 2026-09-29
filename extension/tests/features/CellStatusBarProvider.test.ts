@@ -13,8 +13,8 @@ import type * as Api from "../../src/schemas/Models.gen.ts";
 import * as NotebookRuntimeTest from "../fake/NotebookRuntime.ts";
 import * as TelemetryTest from "../fake/Telemetry.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
+import * as DocumentLifecycle from "../lib/documentLifecycle.ts";
 import * as EffectTest from "../lib/EffectTest.ts";
-import * as DocumentLifecycle from "../notebook/documentLifecycle.ts";
 
 const it = EffectTest.make(
   CellStatusBarProvider.layer.pipe(

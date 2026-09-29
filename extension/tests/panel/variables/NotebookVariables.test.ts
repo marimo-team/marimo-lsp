@@ -11,8 +11,8 @@ import type {
 } from "../../../src/types.ts";
 import * as VsCodeTest from "../../fake/VsCode.ts";
 import { notebookId } from "../../lib/branded.ts";
+import * as DocumentLifecycle from "../../lib/documentLifecycle.ts";
 import * as EffectTest from "../../lib/EffectTest.ts";
-import * as DocumentLifecycle from "../../notebook/documentLifecycle.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const NOTEBOOK_URI_1 = notebookId("file:///test/notebook1.py");

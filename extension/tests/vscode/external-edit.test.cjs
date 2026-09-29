@@ -5,7 +5,7 @@
 // edits. Each case writes a different edit pattern to disk and asserts that
 // cells we *didn't* edit retain their outputs after VS Code re-deserializes.
 //
-// Unit tests in `src/lib/__tests__/enrichNotebookFromLive.test.ts` exercise
+// Unit tests in `tests/lib/enrichNotebookFromLive.test.ts` exercise
 // the cell-level matcher exhaustively; the tests here are end-to-end —
 // they verify the full path from `fs.writeFile` through the serializer's
 // `pickLiveNotebook` match and into the live `NotebookDocument`'s outputs.
