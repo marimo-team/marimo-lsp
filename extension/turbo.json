@@ -27,7 +27,6 @@
       "inputs": [
         "src/**/*.ts",
         "!src/renderer/**",
-        "!src/**/__mocks__/**",
         "!src/**/__tests__/**",
         "!src/**/*.test.*",
         "builtin-command-catalog.json",

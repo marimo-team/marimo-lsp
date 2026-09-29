@@ -2,19 +2,19 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Latch, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { commandId } from "../../commands.ts";
 import restartKernel from "../../commands/restartKernel.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as ReloadOnConfigChange from "../ReloadOnConfigChange.ts";
 
-const layerWith = (runtime = makeTestNotebookRuntime()) =>
-  Layer.merge(TestVsCode.layer, runtime);
+const layerWith = (runtime = NotebookRuntimeTest.layerWith()) =>
+  Layer.merge(VsCodeTest.layer, runtime);
 
 const it = EffectTest.make(layerWith());
-const affectedEditor = TestVsCode.makeNotebookEditor("/project/notebook.py");
+const affectedEditor = VsCodeTest.makeNotebookEditor("/project/notebook.py");
 const affectedId = notebookId(affectedEditor.notebook.uri.toString());
 const affectedSession = {
   executable: "/python",
@@ -22,7 +22,7 @@ const affectedSession = {
 };
 const affectedIt = EffectTest.make(
   layerWith(
-    makeTestNotebookRuntime({
+    NotebookRuntimeTest.layerWith({
       runtimeSession: affectedSession,
       runtimeSessions: [{ notebookId: affectedId, session: affectedSession }],
     }),
@@ -32,7 +32,7 @@ const affectedIt = EffectTest.make(
 it.effect(
   "runs the restart command only when selected",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     yield* vscode.selectInformationMessage("Restart Kernel");
     yield* ReloadOnConfigChange.promptForFileRootChange;
     Vitest.expect((yield* vscode.snapshot).executions).toContainEqual({
@@ -48,7 +48,7 @@ it.effect(
 it.effect(
   "reloads after telemetry changes only when selected",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const configurationChange: vscode.ConfigurationChangeEvent = {
       affectsConfiguration: (section) => section === "marimo.telemetry",
     };
@@ -76,7 +76,7 @@ it.effect(
 it.effect(
   "prompts to reload after changing the language-server runtime",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     yield* ReloadOnConfigChange.watch;
     yield* vscode.selectInformationMessage("Reload Window");
     yield* vscode.configurationChange({
@@ -103,7 +103,7 @@ it.effect(
 affectedIt.effect(
   "prompts when an affected inactive RuntimeSession becomes active",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const resourceChecked = yield* Latch.make();
     const configurationChange: vscode.ConfigurationChangeEvent = {
       affectsConfiguration: (section, resource) => {

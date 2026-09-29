@@ -1,22 +1,22 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as MarimoFileDetector from "../MarimoFileDetector.ts";
 
-const layerWith = (vscode: typeof TestVsCode.layer) =>
+const layerWith = (vscode: typeof VsCodeTest.layer) =>
   Layer.empty.pipe(
     Layer.provideMerge(MarimoFileDetector.layer),
     Layer.provideMerge(vscode),
   );
 
-const it = EffectTest.make(layerWith(TestVsCode.layer));
+const it = EffectTest.make(layerWith(VsCodeTest.layer));
 
 it.effect(
   "should be false on initialization without active editor",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     Vitest.expect((yield* vscode.snapshot).executions).toEqual([
       {
         command: "setContext",
@@ -88,19 +88,19 @@ if __name__ == "__main__":
 ] as const)(
   "should be true on initialization with active editor: %s",
   Effect.fn(function* ([_, pythonCode]) {
-    const editor = TestVsCode.createTestTextEditor(
-      TestVsCode.createTestTextDocument(
+    const editor = VsCodeTest.createTestTextEditor(
+      VsCodeTest.createTestTextDocument(
         "/test/notebook.py",
         "python",
         pythonCode,
       ),
     );
     const layer = layerWith(
-      TestVsCode.layerWith({
+      VsCodeTest.layerWith({
         initialActiveTextEditor: Option.some(editor),
       }),
     );
-    const snapshot = yield* TestVsCode.Service.pipe(
+    const snapshot = yield* VsCodeTest.Service.pipe(
       Effect.flatMap((vscode) => vscode.snapshot),
       Effect.provide(layer),
     );
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 it.effect(
   "should set context to true for valid marimo notebook",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const pythonCode = `import marimo
 
 app = marimo.App()
@@ -130,8 +130,8 @@ if __name__ == "__main__":
     app.run()
 `;
 
-    const editor = TestVsCode.createTestTextEditor(
-      TestVsCode.createTestTextDocument(
+    const editor = VsCodeTest.createTestTextEditor(
+      VsCodeTest.createTestTextDocument(
         "/test/notebook.py",
         "python",
         pythonCode,
@@ -226,9 +226,9 @@ my_app = marimo.App()
 ] as const)(
   "should set context to false for non-marimo Python files: %s",
   Effect.fn(function* ([_, pythonCode]) {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.createTestTextEditor(
-      TestVsCode.createTestTextDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.createTestTextEditor(
+      VsCodeTest.createTestTextDocument(
         "/test/notebook.py",
         "python",
         pythonCode,

@@ -8,9 +8,9 @@ import {
   SubscriptionRef,
 } from "effect";
 
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as PythonEnvironmentStatusBar from "../PythonEnvironmentStatusBar.ts";
 import * as StatusBar from "../StatusBar.ts";
 
@@ -64,20 +64,20 @@ const it = EffectTest.make(
   PythonEnvironmentStatusBar.layer.pipe(
     Layer.provideMerge(statusBarLayer),
     Layer.provide(
-      TestPythonExtension.layerWith([
-        TestPythonExtension.makeGlobalEnv("/usr/bin/python3"),
+      PythonExtensionTest.layerWith([
+        PythonExtensionTest.makeGlobalEnv("/usr/bin/python3"),
       ]),
     ),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
 it.effect(
   "should show status bar when marimo notebook is active",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const visibility = yield* Visibility;
-    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
     yield* vscode.openNotebook(marimoEditor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
@@ -89,16 +89,16 @@ it.effect(
 it.effect(
   "should hide status bar when Jupyter notebook becomes active",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const visibility = yield* Visibility;
-    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
     yield* vscode.openNotebook(marimoEditor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 
     yield* visibility.await(true);
     Vitest.expect(yield* visibility.current).toBe(true);
 
-    const jupyterEditor = TestVsCode.makeNotebookEditor(
+    const jupyterEditor = VsCodeTest.makeNotebookEditor(
       "/test/notebook.ipynb",
       { notebookType: "jupyter-notebook" },
     );
@@ -113,9 +113,9 @@ it.effect(
 it.effect(
   "should hide status bar when no notebook is active",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const visibility = yield* Visibility;
-    const marimoEditor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
     yield* vscode.openNotebook(marimoEditor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
 

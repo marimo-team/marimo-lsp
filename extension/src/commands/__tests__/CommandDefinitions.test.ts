@@ -1,8 +1,8 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Logger, Option, References } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   commandContributedSurfaces,
   defineCommand,
@@ -13,7 +13,7 @@ import { CommandIds, CommandSurfaces } from "../CommandIds.gen.ts";
 import hideCellCode from "../hideCellCode.ts";
 import { MarimoCommands } from "../MarimoCommands.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("command definitions", () => {
   Vitest.it("defines every generated command exactly once", () => {
@@ -45,11 +45,11 @@ Vitest.describe("command definitions", () => {
   it.effect(
     "normalizes a cell-status invocation to its exact notebook",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
-      const vscode = yield* TestVsCode.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      const cell = TestVsCode.createNotebookCell(
+      const cell = VsCodeTest.createNotebookCell(
         editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
@@ -69,8 +69,8 @@ Vitest.describe("command definitions", () => {
   it.effect(
     "normalizes a cell-title invocation to a marimo cell",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
-      const cell = TestVsCode.createNotebookCell(
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
+      const cell = VsCodeTest.createNotebookCell(
         editor.notebook,
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
@@ -88,12 +88,12 @@ Vitest.describe("command definitions", () => {
   it.effect(
     "handles a cell-container invocation using the active cell",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py", {
         data: {
           cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
@@ -119,7 +119,7 @@ Vitest.describe("command definitions", () => {
   it.effect(
     "ignores a cell-container invocation without an active cell",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
 
       const [target] = yield* decodeCommandArguments(
         MarimoCommands.hideCellCode,
@@ -135,12 +135,12 @@ Vitest.describe("command definitions", () => {
   it.effect.each([MarimoCommands.hideCellCode, MarimoCommands.showCellCode])(
     "resolves an omitted cell target to the active cell",
     Effect.fn(function* (command) {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py", {
         data: {
           cells: [{ kind: 2, value: "x = 1", languageId: "python" }],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 

@@ -1,13 +1,13 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Result } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as Config from "../../config/Config.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
+import * as Config from "../Config.ts";
 
 const configLayer = Layer.empty.pipe(
   Layer.provideMerge(Config.layer),
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 const configIt = EffectTest.make(configLayer);
 

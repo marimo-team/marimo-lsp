@@ -1,13 +1,13 @@
 import { Effect, Fiber, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
 import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
 
 /** Waits for this document's transition, including finalizers, without changing focus. */
 export const transition = Effect.fn("TestDocumentLifecycle.transition")(
   function* (document: vscode.NotebookDocument, type: "opened" | "closed") {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const sessions = yield* NotebookDocumentSessions.Service;
     const lifecycle = yield* sessions.subscribeLifecycle;
     const processed = yield* lifecycle.pipe(

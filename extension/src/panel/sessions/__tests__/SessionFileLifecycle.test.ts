@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Uri } from "../../../__mocks__/TestVsCode.ts";
+import { Uri } from "../../../__tests__/fake/VsCode.ts";
 import * as SessionFileLifecycle from "../SessionFileLifecycle.ts";
 
 describe("session file lifecycle URI reconciliation", () => {

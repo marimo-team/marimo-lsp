@@ -8,7 +8,7 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookDocumentSessionId } from "../../schemas/SessionIds.ts";
 import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
@@ -47,11 +47,11 @@ export class Service extends Context.Service<Service, Interface>()(
 
 export const layerWith = (options: Options) =>
   Layer.suspend(() => {
-    const uri = TestVsCode.Uri.parse("file:///test/notebook.py");
+    const uri = VsCodeTest.Uri.parse("file:///test/notebook.py");
     const id = notebookId(uri.toString());
-    const first = TestVsCode.createTestNotebookDocument(uri);
-    const replacement = TestVsCode.createTestNotebookDocument(uri);
-    const vscodeLayer = TestVsCode.layerWith({
+    const first = VsCodeTest.createTestNotebookDocument(uri);
+    const replacement = VsCodeTest.createTestNotebookDocument(uri);
+    const vscodeLayer = VsCodeTest.layerWith({
       initialDocuments: options.initiallyOpen ? [first] : [],
     });
     const environment = NotebookDocumentSessions.layer.pipe(
@@ -60,7 +60,7 @@ export const layerWith = (options: Options) =>
     const fixture = Layer.effect(
       Service,
       Effect.gen(function* () {
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         const sessions = yield* NotebookDocumentSessions.Service;
         const active = yield* SubscriptionRef.make<
           ReadonlyArray<NotebookDocumentSessionId | null>
@@ -101,7 +101,7 @@ export const layerWith = (options: Options) =>
           type: "opened" | "closed",
         ) =>
           DocumentLifecycle.transition(document, type).pipe(
-            Effect.provideService(TestVsCode.Service, vscode),
+            Effect.provideService(VsCodeTest.Service, vscode),
             Effect.provideService(NotebookDocumentSessions.Service, sessions),
           );
 
@@ -118,10 +118,10 @@ export const layerWith = (options: Options) =>
             Effect.andThen(transition(first, "opened")),
           ),
           activateFirst: vscode.setActiveNotebookEditor(
-            Option.some(TestVsCode.createTestNotebookEditor(first)),
+            Option.some(VsCodeTest.createTestNotebookEditor(first)),
           ),
           activateReplacement: vscode.setActiveNotebookEditor(
-            Option.some(TestVsCode.createTestNotebookEditor(replacement)),
+            Option.some(VsCodeTest.createTestNotebookEditor(replacement)),
           ),
           awaitActive,
           awaitActiveDocument,

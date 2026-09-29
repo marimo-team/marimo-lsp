@@ -2,7 +2,7 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
 
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   decodeDataUri,
   ImageFetchError,

@@ -5,11 +5,11 @@ import * as NodePath from "node:path";
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Result } from "effect";
 
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as Uv from "../../python/Uv.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { ProjectDependencyTarget } from "../ProjectDependencyTarget.ts";
+import * as Uv from "../Uv.ts";
 
 const python = "3.13";
 const timeout = 30_000;
@@ -35,8 +35,8 @@ class TmpDir extends Context.Service<TmpDir>()("TmpDir", {
 const layer = Layer.empty.pipe(
   Layer.merge(Uv.layer),
   Layer.merge(TmpDir.layer),
-  Layer.provide(TestTelemetryLive),
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(TelemetryTest.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 
 Vitest.describe("Uv", () => {

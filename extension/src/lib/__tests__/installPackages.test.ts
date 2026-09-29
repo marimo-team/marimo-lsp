@@ -5,11 +5,11 @@ import * as NodePath from "node:path";
 import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { resolveProjectInstallRequests } from "../installPackages.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 function makeProject(content: string) {
   const tmp = NodeFs.mkdtempDisposableSync(

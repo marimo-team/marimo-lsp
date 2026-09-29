@@ -2,12 +2,6 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Ref } from "effect";
 
 import * as pkg from "../../package.json";
-import { getTestExtensionContext } from "../__mocks__/TestExtensionContext.ts";
-import { TestPythonExtension } from "../__mocks__/TestPythonExtension.ts";
-import { TestRuffLanguageServerLive } from "../__mocks__/TestRuffLanguageServer.ts";
-import { TestTelemetryLive } from "../__mocks__/TestTelemetry.ts";
-import { TestTyLanguageServerLive } from "../__mocks__/TestTyLanguageServer.ts";
-import * as TestVsCode from "../__mocks__/TestVsCode.ts";
 import { commandId } from "../commands.ts";
 import disableCell from "../commands/disableCell.ts";
 import hideCellCode from "../commands/hideCellCode.ts";
@@ -16,8 +10,14 @@ import { NOTEBOOK_TYPE } from "../constants.ts";
 import { makeExtension } from "../features/Main.ts";
 import { SANDBOX_CONTROLLER_ID } from "../ids.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import * as EffectTest from "./__utils__/EffectTest.ts";
-import { makeTestMarimoClient } from "./__utils__/TestMarimoClient.ts";
+import * as ExtensionContextTest from "./fake/ExtensionContext.ts";
+import * as MarimoClientTest from "./fake/MarimoClient.ts";
+import * as PythonExtensionTest from "./fake/PythonExtension.ts";
+import * as RuffLanguageServerTest from "./fake/RuffLanguageServer.ts";
+import * as TelemetryTest from "./fake/Telemetry.ts";
+import * as TyLanguageServerTest from "./fake/TyLanguageServer.ts";
+import * as VsCodeTest from "./fake/VsCode.ts";
+import * as EffectTest from "./lib/EffectTest.ts";
 
 const withTestCtx = Effect.fn(function* (
   additionalLayer: Layer.Layer<never> = Layer.empty,
@@ -26,16 +26,16 @@ const withTestCtx = Effect.fn(function* (
   const layer = Layer.empty.pipe(
     Layer.merge(additionalLayer),
     Layer.provideMerge(Layer.succeed(VsCode.Service, code)),
-    Layer.provideMerge(makeTestMarimoClient()),
-    Layer.provideMerge(TestPythonExtension.layer),
-    Layer.provideMerge(TestTyLanguageServerLive),
-    Layer.provideMerge(TestRuffLanguageServerLive),
-    Layer.provideMerge(TestTelemetryLive),
+    Layer.provideMerge(MarimoClientTest.layerWith()),
+    Layer.provideMerge(PythonExtensionTest.layer),
+    Layer.provideMerge(TyLanguageServerTest.layer),
+    Layer.provideMerge(RuffLanguageServerTest.layer),
+    Layer.provideMerge(TelemetryTest.layer),
   );
   return makeExtension(layer, "Error");
 });
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("extension.activate", () => {
   it.effect(
@@ -43,7 +43,7 @@ Vitest.describe("extension.activate", () => {
     Effect.fn(function* () {
       const extension = yield* withTestCtx();
 
-      const context = yield* getTestExtensionContext;
+      const context = yield* ExtensionContextTest.get;
       const api = yield* Effect.promise(() => extension.activate(context));
 
       Vitest.expect(api).toMatchInlineSnapshot(`
@@ -65,11 +65,11 @@ Vitest.describe("extension.activate", () => {
   it.effect(
     "should own contributions until deactivation",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const extension = yield* withTestCtx();
 
       // activate the extension
-      const context = yield* getTestExtensionContext;
+      const context = yield* ExtensionContextTest.get;
       yield* Effect.promise(() => extension.activate(context));
 
       const snapshot = yield* vscode.snapshot;
@@ -120,7 +120,7 @@ Vitest.describe("extension.activate", () => {
       );
       const extension = yield* withTestCtx(finalizer);
 
-      const context = yield* getTestExtensionContext;
+      const context = yield* ExtensionContextTest.get;
       yield* Effect.promise(() => extension.activate(context));
       yield* Effect.promise(() => extension.deactivate());
       yield* Effect.promise(() => extension.deactivate());

@@ -2,8 +2,8 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
   MarimoNotebookCell,
@@ -15,14 +15,14 @@ import * as CellOutputProjections from "../CellOutputProjections.ts";
 import * as VsCodeNotebookOutputPresenter from "../VsCodeNotebookOutputPresenter.ts";
 
 const projectionsLayer = CellOutputProjections.layer.pipe(
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 const presenterLayer = VsCodeNotebookOutputPresenter.layer.pipe(
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
   Layer.provide(projectionsLayer),
 );
 const it = EffectTest.make(
-  Layer.mergeAll(TestVsCode.layer, projectionsLayer, presenterLayer),
+  Layer.mergeAll(VsCodeTest.layer, projectionsLayer, presenterLayer),
 );
 
 const savedReplay: CellOutputReplay = {
@@ -41,7 +41,7 @@ const savedReplay: CellOutputReplay = {
 };
 
 const editor = (outputs: vscode.NotebookCellOutput[] = []) =>
-  TestVsCode.makeNotebookEditor("/test/notebook.py", {
+  VsCodeTest.makeNotebookEditor("/test/notebook.py", {
     data: {
       cells: [
         {

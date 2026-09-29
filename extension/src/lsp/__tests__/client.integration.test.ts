@@ -13,8 +13,8 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option, Stream } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import * as VsCode from "../../platform/VsCode.ts";
@@ -31,7 +31,7 @@ const variablesLayer = NotebookVariables.layer.pipe(
     }),
   ),
 );
-const it = EffectTest.make(Layer.merge(variablesLayer, TestVsCode.layer));
+const it = EffectTest.make(Layer.merge(variablesLayer, VsCodeTest.layer));
 
 Vitest.describe("makeNotebookLspClient against uv run ty server", () => {
   it.live(
@@ -85,7 +85,7 @@ Vitest.describe("makeNotebookLspClient against uv run ty server", () => {
         // --- 2. Build a notebook with one Python cell ---------------------
         // `x` is declared at the start of the line so hover at (0,0) lands
         // on a symbol ty can Vitest.describe.
-        const notebook = TestVsCode.createTestNotebookDocument("/nb.py", {
+        const notebook = VsCodeTest.createTestNotebookDocument("/nb.py", {
           data: {
             cells: [
               {

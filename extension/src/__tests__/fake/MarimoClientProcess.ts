@@ -3,18 +3,18 @@ import * as NodeChildProcess from "node:child_process";
 import { Effect, Layer, Queue, Redacted, Stream } from "effect";
 import * as rpc from "vscode-jsonrpc/node";
 
-import { MarimoLspServer } from "../config/Config.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import * as MarimoClient from "../lsp/MarimoClient.ts";
+import { MarimoLspServer } from "../../config/Config.ts";
+import { acquireDisposable } from "../../lib/acquireDisposable.ts";
+import * as MarimoClient from "../../lsp/MarimoClient.ts";
 
 /**
  * Process-backed Adapter for tests that intentionally verify the
  * TypeScript/Python marimo command contract.
  *
- * Unit tests should use `makeTestMarimoClient` instead. Constructing this
+ * Unit tests should use `MarimoClientTest.layerWith` instead. Constructing this
  * Layer starts a real `marimo-lsp` process and performs an LSP handshake.
  */
-export const TestMarimoClientProcess = Layer.effect(
+export const layer = Layer.effect(
   MarimoClient.Service,
   Effect.gen(function* () {
     const { conn } = yield* Effect.acquireRelease(

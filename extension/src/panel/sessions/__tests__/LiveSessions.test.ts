@@ -10,8 +10,8 @@ import {
   Stream,
 } from "effect";
 
-import * as EffectTest from "../../../__tests__/__utils__/EffectTest.ts";
-import * as TestMarimoClient from "../../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../../__tests__/fake/MarimoClient.ts";
+import * as EffectTest from "../../../__tests__/lib/EffectTest.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
 import type { ListSessionsResponse } from "../../../schemas/Models.gen.ts";
 import * as LiveSessions from "../LiveSessions.ts";
@@ -57,10 +57,10 @@ class Gate extends Context.Service<
 
 /** Answers one server command given this test's gate and the commands so far. */
 type Responder = (
-  request: TestMarimoClient.TestCommand,
+  request: MarimoClientTest.Command,
   context: {
     readonly gate: Gate["Service"];
-    readonly commands: ReadonlyArray<TestMarimoClient.TestCommand>;
+    readonly commands: ReadonlyArray<MarimoClientTest.Command>;
   },
 ) => Effect.Effect<unknown>;
 
@@ -75,7 +75,7 @@ const layerWith = (respond: Responder) =>
       return Layer.merge(
         LiveSessions.layer.pipe(
           Layer.provideMerge(
-            TestMarimoClient.makeTestMarimoClient({
+            MarimoClientTest.layerWith({
               send: (request, commands) => respond(request, { gate, commands }),
             }),
           ),
@@ -86,8 +86,8 @@ const layerWith = (respond: Responder) =>
   );
 
 const count = (
-  commands: ReadonlyArray<TestMarimoClient.TestCommand>,
-  kind: TestMarimoClient.TestCommand["kind"],
+  commands: ReadonlyArray<MarimoClientTest.Command>,
+  kind: MarimoClientTest.Command["kind"],
 ) => commands.filter((command) => command.kind === kind).length;
 
 /** Signals that the request started, then waits for the test to release it. */
@@ -130,7 +130,7 @@ Vitest.describe("LiveSessions", () => {
       "does not resurrect a closed session when an earlier query returns late",
       Effect.fn(function* () {
         const gate = yield* Gate;
-        const marimo = yield* TestMarimoClient.Service;
+        const marimo = yield* MarimoClientTest.Service;
         const live = yield* LiveSessions.Service;
         const refresh = yield* live.refresh.pipe(Effect.forkChild);
         yield* gate.requestStarted.await;
@@ -227,7 +227,7 @@ Vitest.describe("LiveSessions", () => {
       "%s applies its response without a follow-up query",
       (method) =>
         Effect.gen(function* () {
-          const marimo = yield* TestMarimoClient.Service;
+          const marimo = yield* MarimoClientTest.Service;
           const live = yield* LiveSessions.Service;
           yield* method === "shutdown"
             ? live.shutdown(NOTEBOOK_URI)

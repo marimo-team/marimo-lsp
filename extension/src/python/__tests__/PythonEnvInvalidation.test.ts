@@ -2,14 +2,14 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as PythonEnvInvalidation from "../PythonEnvInvalidation.ts";
 import * as PythonExtension from "../PythonExtension.ts";
 
 const it = EffectTest.make(
   PythonEnvInvalidation.layer.pipe(
-    Layer.provideMerge(TestPythonExtension.layer),
+    Layer.provideMerge(PythonExtensionTest.layer),
   ),
 );
 

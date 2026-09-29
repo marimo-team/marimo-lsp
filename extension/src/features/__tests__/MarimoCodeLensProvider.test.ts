@@ -1,8 +1,8 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as MarimoCodeLensProvider from "../MarimoCodeLensProvider.ts";
 
 // ============================================================================
@@ -95,7 +95,7 @@ Vitest.describe("MarimoCodeLensProvider.layer", () => {
   const effectIt = EffectTest.make(
     Layer.empty.pipe(
       Layer.provideMerge(MarimoCodeLensProvider.layer),
-      Layer.provide(TestVsCode.layer),
+      Layer.provide(VsCodeTest.layer),
     ),
   );
 
@@ -116,7 +116,7 @@ app = marimo.App()
 def _():
     return
 `;
-      const _document = TestVsCode.createTestTextDocument(
+      const _document = VsCodeTest.createTestTextDocument(
         "/test/notebook.py",
         "python",
         pythonCode,

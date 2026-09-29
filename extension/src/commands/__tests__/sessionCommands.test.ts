@@ -1,21 +1,21 @@
 import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import openSession from "../openSession.ts";
 
 const NOTEBOOK_URI = notebookId("file:///workspace/notebook.py");
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 it.effect(
   "uses an existing marimo notebook document instead of reopening the file",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestNotebookDocument(
-      TestVsCode.Uri.parse(NOTEBOOK_URI),
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestNotebookDocument(
+      VsCodeTest.Uri.parse(NOTEBOOK_URI),
     );
     yield* vscode.openNotebook(document);
 
@@ -28,7 +28,7 @@ it.effect(
 it.effect(
   "explicitly opens a background session with the marimo notebook editor",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
 
     yield* openSession.invoke({ notebookUri: NOTEBOOK_URI });
 
@@ -36,7 +36,7 @@ it.effect(
     Vitest.expect(executions).toHaveLength(1);
     Vitest.expect(executions[0]?.command).toBe("vscode.openWith");
     Vitest.expect(executions[0]?.args[0]).toEqual(
-      TestVsCode.Uri.parse(NOTEBOOK_URI),
+      VsCodeTest.Uri.parse(NOTEBOOK_URI),
     );
     Vitest.expect(executions[0]?.args[1]).toBe(NOTEBOOK_TYPE);
   }),
@@ -45,10 +45,10 @@ it.effect(
 it.effect(
   "matches an already-open notebook using its unescaped URI",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const rawUri = notebookId("file:///workspace/notebook with spaces.py");
-    const document = TestVsCode.createTestNotebookDocument(
-      TestVsCode.Uri.file("/workspace/notebook with spaces.py"),
+    const document = VsCodeTest.createTestNotebookDocument(
+      VsCodeTest.Uri.file("/workspace/notebook with spaces.py"),
     );
     yield* vscode.openNotebook(document);
 

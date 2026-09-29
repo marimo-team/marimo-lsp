@@ -1,9 +1,9 @@
 import * as Vitest from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
@@ -30,7 +30,7 @@ const constantsLayer = Layer.succeed(
   }),
 );
 
-const runtimeLayer = makeTestNotebookRuntime({
+const runtimeLayer = NotebookRuntimeTest.layerWith({
   send: (request) =>
     request.kind === "get-configuration"
       ? Effect.succeed({
@@ -59,7 +59,7 @@ const githubLayer = Layer.succeed(
 );
 
 const targetFor = (
-  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+  editor: ReturnType<typeof VsCodeTest.makeNotebookEditor>,
 ): Option.Option<NotebookTarget> =>
   Option.map(MarimoNotebookDocument.tryFrom(editor.notebook), (document) => ({
     document,
@@ -67,24 +67,24 @@ const targetFor = (
   }));
 
 const layerWith = (
-  runtime: ReturnType<typeof makeTestNotebookRuntime> = runtimeLayer,
+  runtime: ReturnType<typeof NotebookRuntimeTest.layerWith> = runtimeLayer,
 ) => {
   const documentSessions = NotebookDocumentSessions.layer.pipe(
-    Layer.provide(TestVsCode.layer),
+    Layer.provide(VsCodeTest.layer),
   );
   const sessionResources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
     Layer.provide(runtime),
   );
   return Layer.mergeAll(
-    TestVsCode.layer,
+    VsCodeTest.layer,
     documentSessions,
     sessionResources,
     constantsLayer,
     runtime,
     serializerLayer,
     githubLayer,
-    OutputChannel.layer.pipe(Layer.provide(TestVsCode.layer)),
+    OutputChannel.layer.pipe(Layer.provide(VsCodeTest.layer)),
   );
 };
 
@@ -97,8 +97,8 @@ const menuLabel = (value: (typeof NOTEBOOK_MENU_ITEMS)[number]["value"]) =>
   );
 
 const openSession = Effect.fn(function* (
-  vscode: TestVsCode.Interface,
-  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+  vscode: VsCodeTest.Interface,
+  editor: ReturnType<typeof VsCodeTest.makeNotebookEditor>,
 ) {
   yield* vscode.openNotebook(editor.notebook);
   yield* vscode.setActiveNotebookEditor(Option.some(editor));
@@ -116,7 +116,7 @@ Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "offers a focused four-item notebook menu",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* showNotebookMenu.invoke(Option.none());
 
       const snapshot = yield* vscode.snapshot;
@@ -130,8 +130,8 @@ Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "creates a setup cell in the normalized target notebook",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+      const vscode = yield* VsCodeTest.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py");
       yield* vscode.openNotebook(editor.notebook);
       yield* vscode.selectQuickPick(menuLabel("create-setup-cell"));
       yield* showNotebookMenu.invoke(targetFor(editor));
@@ -145,7 +145,7 @@ Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "routes publish through the normalized target",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.selectQuickPick(menuLabel("publish-notebook"));
       yield* showNotebookMenu.invoke(Option.none());
 
@@ -160,8 +160,8 @@ Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "configures exports for the normalized target notebook",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
-      const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+      const vscode = yield* VsCodeTest.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
         data: {
           metadata: MarimoNotebookDocument.createMetadata({
             appOptions: { managed: { autoDownload: [] }, passthrough: {} },
@@ -190,8 +190,8 @@ Vitest.describe("showNotebookMenu", () => {
   it.effect(
     "shows the current reactivity state for the normalized target",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+      const vscode = yield* VsCodeTest.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py");
       yield* openSession(vscode, editor);
       yield* vscode.selectQuickPick(menuLabel("reactivity"));
       yield* showNotebookMenu.invoke(targetFor(editor));
@@ -208,8 +208,8 @@ Vitest.describe("showNotebookMenu", () => {
     Effect.fn(function* () {
       const requestStarted = yield* Deferred.make<void>();
       const releaseRequest = yield* Deferred.make<void>();
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      const runtime = makeTestNotebookRuntime({
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py");
+      const runtime = NotebookRuntimeTest.layerWith({
         send: (request) =>
           request.kind === "get-configuration"
             ? Deferred.succeed(requestStarted, undefined).pipe(
@@ -224,7 +224,7 @@ Vitest.describe("showNotebookMenu", () => {
       });
 
       yield* Effect.gen(function* () {
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         const session = yield* openSession(vscode, editor);
         yield* vscode.selectQuickPick(menuLabel("reactivity"));
         const sessionEnded = yield* Deferred.make<void>();

@@ -7,28 +7,28 @@ import type * as py from "@vscode/python-extension";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import * as NotebookControllers from "../../kernel/NotebookControllers.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as VsCodeValues from "../../__tests__/fake/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as Constants from "../../platform/Constants.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { makeControllerSelectionChanges } from "../ControllerSelectionChanges.ts";
+import * as NotebookControllers from "../NotebookControllers.ts";
 import * as NotebookRuntime from "../NotebookRuntime.ts";
 
 const layerWith = (initialEnvironments: Array<py.ResolvedEnvironment> = []) =>
   Layer.suspend(() => {
-    const runtime = makeTestNotebookRuntime();
+    const runtime = NotebookRuntimeTest.layerWith();
     return NotebookControllers.layer.pipe(
       Layer.provideMerge(runtime),
       Layer.provide(Constants.defaultLayer),
-      Layer.provide(TestTelemetryLive),
-      Layer.provideMerge(TestVsCode.layer),
-      Layer.provideMerge(TestPythonExtension.layerWith(initialEnvironments)),
+      Layer.provide(TelemetryTest.layer),
+      Layer.provideMerge(VsCodeTest.layer),
+      Layer.provideMerge(PythonExtensionTest.layerWith(initialEnvironments)),
     );
   });
 
@@ -44,14 +44,14 @@ const sameIds = (
 
 /** Sorted IDs of the controllers registered with VS Code. */
 const registered = Effect.gen(function* () {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   return ids(yield* vscode.controllers);
 });
 
 const awaitRegistered = Effect.fn("awaitRegistered")(function* (
   expected: ReadonlyArray<string>,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const sorted = [...expected].toSorted();
   yield* vscode.controllerChanges.pipe(
     Stream.map(ids),
@@ -64,7 +64,7 @@ const addEnvironment = Effect.fn("addEnvironment")(function* (
   environment: py.ResolvedEnvironment,
   expected: ReadonlyArray<string>,
 ) {
-  const python = yield* TestPythonExtension.Service;
+  const python = yield* PythonExtensionTest.Service;
   yield* python.addEnvironment(environment);
   yield* awaitRegistered(expected);
 });
@@ -73,7 +73,7 @@ const removeEnvironment = Effect.fn("removeEnvironment")(function* (
   environment: py.ResolvedEnvironment,
   expected: ReadonlyArray<string>,
 ) {
-  const python = yield* TestPythonExtension.Service;
+  const python = yield* PythonExtensionTest.Service;
   yield* python.removeEnvironment(environment);
   yield* awaitRegistered(expected);
 });
@@ -83,7 +83,7 @@ const select = Effect.fn("select")(function* (
   controllerId: string,
   editor: vscode.NotebookEditor,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const notebooks = yield* NotebookRuntime.Service;
   const notebookId = MarimoNotebookDocument.from(editor.notebook).id;
   const selected = yield* notebooks.controllerChanges.pipe(
@@ -114,7 +114,7 @@ const activate = Effect.fn("activate")(function* (
   editor: vscode.NotebookEditor,
   expectedAffinityUpdates: number,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.setActiveNotebookEditor(Option.some(editor));
   yield* vscode.affinityChanges.pipe(
     Stream.filter((updates) => updates.length >= expectedAffinityUpdates),
@@ -123,7 +123,7 @@ const activate = Effect.fn("activate")(function* (
 });
 
 const affinityUpdates = Effect.gen(function* () {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   return (yield* vscode.snapshot).affinityUpdates;
 });
 
@@ -147,8 +147,8 @@ const scriptNotebookEditor = (uri: string) =>
 
 const globalExecutable = "/usr/local/bin/python3.11";
 const homeExecutable = "/home/user/.venv/bin/python";
-const firstEnvironment = TestPythonExtension.makeVenv(homeExecutable);
-const secondEnvironment = TestPythonExtension.makeGlobalEnv(globalExecutable);
+const firstEnvironment = PythonExtensionTest.makeVenv(homeExecutable);
+const secondEnvironment = PythonExtensionTest.makeGlobalEnv(globalExecutable);
 const controllerIds = (...executables: ReadonlyArray<string>) =>
   [
     ...executables.map((executable) => `marimo-${executable}`),
@@ -274,7 +274,7 @@ Vitest.describe("NotebookControllers", () => {
     it.effect(
       "keeps a selected controller when its Python environment disappears",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         const editor = VsCodeValues.makeNotebookEditor("/test/notebook_mo.py");
         yield* vscode.openNotebook(editor.notebook);
         yield* select(`marimo-${homeExecutable}`, editor);
@@ -344,7 +344,7 @@ Vitest.describe("NotebookControllers", () => {
         const uri = NodePath.join(project.path, "notebook_mo.py");
 
         yield* addEnvironment(
-          TestPythonExtension.makeVenv(executable),
+          PythonExtensionTest.makeVenv(executable),
           controllerIds(executable),
         );
         yield* activate(VsCodeValues.makeNotebookEditor(uri), 2);
@@ -379,7 +379,7 @@ Vitest.describe("NotebookControllers", () => {
         const uri = NodePath.join(project.path, "notebook_mo.py");
 
         yield* addEnvironment(
-          TestPythonExtension.makeVenv(executable),
+          PythonExtensionTest.makeVenv(executable),
           controllerIds(executable),
         );
         yield* activate(scriptNotebookEditor(uri), 2);

@@ -1,15 +1,15 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as TestMarimoClient from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as ThemeSync from "../ThemeSync.ts";
 
-const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
+const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py", {
   data: {
     cells: [
       {
@@ -27,10 +27,10 @@ const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
 const layerWith = (initialColorTheme: "light" | "dark") =>
   ThemeSync.layer.pipe(
     Layer.provide(NotebookEditorRegistry.layer),
-    Layer.provideMerge(TestMarimoClient.layer),
-    Layer.provide(TestTelemetryLive),
+    Layer.provideMerge(MarimoClientTest.layer),
+    Layer.provide(TelemetryTest.layer),
     Layer.provideMerge(
-      TestVsCode.layerWith({
+      VsCodeTest.layerWith({
         initialDocuments: [editor.notebook],
         initialColorTheme,
       }),
@@ -38,7 +38,7 @@ const layerWith = (initialColorTheme: "light" | "dark") =>
   );
 
 const isTheme =
-  (theme: "light" | "dark") => (command: TestMarimoClient.TestCommand) =>
+  (theme: "light" | "dark") => (command: MarimoClientTest.Command) =>
     command.kind === "set-display-theme" && command.theme === theme;
 
 Vitest.describe("ThemeSync", () => {
@@ -48,8 +48,8 @@ Vitest.describe("ThemeSync", () => {
     it.effect(
       "sends set-display-theme on theme change",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
-        const marimo = yield* TestMarimoClient.Service;
+        const vscode = yield* VsCodeTest.Service;
+        const marimo = yield* MarimoClientTest.Service;
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
         yield* marimo.awaitCommands((commands) => commands.length >= 2);
 
@@ -80,8 +80,8 @@ Vitest.describe("ThemeSync", () => {
     it.effect(
       "sends set-display-theme while no marimo notebook is active",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
-        const marimo = yield* TestMarimoClient.Service;
+        const vscode = yield* VsCodeTest.Service;
+        const marimo = yield* MarimoClientTest.Service;
         yield* vscode.setActiveNotebookEditor(Option.none());
         yield* marimo.awaitCommands((commands) => commands.length >= 1);
 
@@ -104,8 +104,8 @@ Vitest.describe("ThemeSync", () => {
     it.effect(
       "syncs theme when a new notebook becomes active",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
-        const marimo = yield* TestMarimoClient.Service;
+        const vscode = yield* VsCodeTest.Service;
+        const marimo = yield* MarimoClientTest.Service;
         yield* vscode.setActiveNotebookEditor(Option.some(editor));
         yield* marimo.awaitCommands((commands) => commands.length >= 2);
 

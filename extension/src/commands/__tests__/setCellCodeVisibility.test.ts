@@ -1,13 +1,13 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import hideCellCode from "../hideCellCode.ts";
 import showCellCode from "../showCellCode.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 it.effect.each([
   {
@@ -20,9 +20,9 @@ it.effect.each([
   },
 ])("persists and applies hide_code=$hidden", ({ hidden, command }) =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
-    const document = TestVsCode.createTestNotebookDocument(uri, {
+    const vscode = yield* VsCodeTest.Service;
+    const uri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
+    const document = VsCodeTest.createTestNotebookDocument(uri, {
       data: {
         cells: [
           { kind: 2, value: "other = 0", languageId: "mo-python" },
@@ -47,7 +47,7 @@ it.effect.each([
     const workspaceEdit = Option.getOrThrow(
       Option.fromNullishOr(snapshot.workspaceEdits.at(-1)),
     );
-    const replacement = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0]
+    const replacement = VsCodeTest.getNotebookEdits(workspaceEdit, uri)[0]
       ?.newCells[0];
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
@@ -72,9 +72,9 @@ it.effect.each([
   { hidden: false, invoke: showCellCode.invoke },
 ])("persists markup hide_code=$hidden while keeping input expanded", (test) =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
-    const document = TestVsCode.createTestNotebookDocument(uri, {
+    const vscode = yield* VsCodeTest.Service;
+    const uri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
+    const document = VsCodeTest.createTestNotebookDocument(uri, {
       data: {
         cells: [
           {
@@ -97,7 +97,7 @@ it.effect.each([
     const workspaceEdit = Option.getOrThrow(
       Option.fromNullishOr(snapshot.workspaceEdits.at(-1)),
     );
-    const replacement = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0]
+    const replacement = VsCodeTest.getNotebookEdits(workspaceEdit, uri)[0]
       ?.newCells[0];
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),

@@ -5,9 +5,9 @@ import * as NodePath from "node:path";
 import * as Vitest from "@effect/vitest";
 import { Effect, Exit, Fiber, Layer, Option, Queue, Ref, Stream } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
@@ -17,7 +17,7 @@ const notebook = notebookId("notebook-a");
 const it = EffectTest.make(Layer.empty);
 
 Vitest.describe("custom language-server failures", () => {
-  const it = EffectTest.make(TestVsCode.layer);
+  const it = EffectTest.make(VsCodeTest.layer);
 
   type Mode = Parameters<
     typeof MarimoClient.makeCustomLspFailureNotifier
@@ -40,7 +40,7 @@ Vitest.describe("custom language-server failures", () => {
   it.effect(
     "prompts once and opens the selected recovery surface",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const logs = { opened: 0 };
       const notify = yield* makeNotify(["configured"], logs);
       yield* vscode.selectErrorMessage("Open Settings");
@@ -63,7 +63,7 @@ Vitest.describe("custom language-server failures", () => {
   it.effect(
     "opens logs when selected",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const logs = { opened: 0 };
       const notify = yield* makeNotify(["configured"], logs);
       yield* vscode.selectErrorMessage("Open Logs");
@@ -78,7 +78,7 @@ Vitest.describe("custom language-server failures", () => {
   it.effect(
     "does not prompt for bundled language servers",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const notify = yield* makeNotify(["wasm", "uv"], { opened: 0 });
 
       yield* notify;
@@ -106,7 +106,7 @@ it.effect(
 it.effect(
   "constructs private commands through named methods",
   Effect.fn(function* () {
-    const calls = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
+    const calls = yield* Ref.make<ReadonlyArray<MarimoClientTest.Command>>([]);
     const responses: Record<string, unknown> = {
       execute: {
         generation: 1,

@@ -1,7 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Cause, Effect, Exit, Fiber, Latch, Ref, Scope } from "effect";
 
-import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
+import { makeScopedResourceCounter } from "../../__tests__/lib/scopedResourceCounter.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import {
   makeNotebookExecutor,

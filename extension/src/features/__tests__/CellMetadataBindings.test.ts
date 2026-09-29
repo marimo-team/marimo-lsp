@@ -2,9 +2,9 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import * as NotebookDatasources from "../../panel/datasources/NotebookDatasources.ts";
 import * as Constants from "../../platform/Constants.ts";
@@ -17,13 +17,13 @@ const it = EffectTest.make(
     Layer.provideMerge(CellMetadataBindings.layer),
     Layer.provide(CellMetadataUIBinding.layer),
     Layer.provide(NotebookDatasources.defaultLayer),
-    Layer.provide(makeTestMarimoClient()),
+    Layer.provide(MarimoClientTest.layerWith()),
     Layer.provide(Constants.defaultLayer),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
-const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
 
 // Mock cell factory
 function createMockCell(
@@ -31,8 +31,8 @@ function createMockCell(
   languageId: string = "python",
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  return TestVsCode.createNotebookCell(
-    TestVsCode.createTestNotebookDocument(uri),
+  return VsCodeTest.createNotebookCell(
+    VsCodeTest.createTestNotebookDocument(uri),
     {
       kind: 1, // Code
       value: "SELECT * FROM table",
@@ -45,7 +45,7 @@ function createMockCell(
 
 it.effect("should register SQL dataframeName binding", () =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const providers = yield* vscode.statusBarProviders;
     Vitest.expect(providers.length).toBeGreaterThan(0);
   }),
@@ -53,7 +53,7 @@ it.effect("should register SQL dataframeName binding", () =>
 
 it.effect("should only show SQL dataframeName binding for SQL cells", () =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const sqlCell = createMockCell(notebookUri, "sql", {});
     const pythonCell = createMockCell(notebookUri, "python", {});
     const providers = yield* vscode.statusBarProviders;
@@ -70,7 +70,7 @@ it.effect("should only show SQL dataframeName binding for SQL cells", () =>
 
 it.effect("should display dataframeName from SQL metadata", () =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const cell = createMockCell(notebookUri, "sql", {
       marimo: {
         sourceProjections: {
@@ -99,7 +99,7 @@ it.effect("should display dataframeName from SQL metadata", () =>
 
 it.effect("should show 'unnamed' for SQL cells without dataframeName", () =>
   Effect.gen(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const cell = createMockCell(notebookUri, "sql", {});
 
     const providers = yield* vscode.statusBarProviders;

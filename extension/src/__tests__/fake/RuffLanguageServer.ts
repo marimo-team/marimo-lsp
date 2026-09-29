@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 
-import { BinarySource } from "../lib/binaryResolution.ts";
-import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
+import { BinarySource } from "../../lib/binaryResolution.ts";
+import * as RuffLanguageServer from "../../lsp/RuffLanguageServer.ts";
 
 /**
  * Test mock for RuffLanguageServer
@@ -9,7 +9,7 @@ import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
  * Provides stub implementations that return empty/null responses,
  * avoiding the need to start an actual `ruff` language server during tests.
  */
-export const TestRuffLanguageServerLive = Layer.effect(
+export const layer = Layer.effect(
   RuffLanguageServer.Service,
   Effect.gen(function* () {
     yield* Effect.logWarning(

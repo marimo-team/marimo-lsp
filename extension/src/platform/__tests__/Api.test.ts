@@ -1,12 +1,12 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as ExtensionContextTest from "../../__tests__/fake/ExtensionContext.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../Api.ts";
 import * as VsCode from "../VsCode.ts";
@@ -14,11 +14,11 @@ import * as VsCode from "../VsCode.ts";
 const it = EffectTest.make(
   Layer.empty.pipe(
     Layer.merge(Api.layer),
-    Layer.provide(makeTestNotebookRuntime()),
-    Layer.provide(TestTelemetryLive),
-    Layer.provide(TestPythonExtension.layer),
-    Layer.provide(TestExtensionContextLive),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provide(NotebookRuntimeTest.layerWith()),
+    Layer.provide(TelemetryTest.layer),
+    Layer.provide(PythonExtensionTest.layer),
+    Layer.provide(ExtensionContextTest.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
@@ -54,7 +54,7 @@ Vitest.describe("Api", () => {
   it.effect(
     "getKernel returns undefined when notebook exists but no controller",
     Effect.fn(function* () {
-      const notebookDoc = TestVsCode.createTestNotebookDocument(
+      const notebookDoc = VsCodeTest.createTestNotebookDocument(
         "file:///test/notebook_mo.py",
         {
           data: {
@@ -72,7 +72,7 @@ Vitest.describe("Api", () => {
         },
       );
 
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(notebookDoc);
       const api = yield* Api.Service;
       const code = yield* VsCode.Service;

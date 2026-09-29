@@ -2,8 +2,8 @@ import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeValues from "../../__tests__/fake/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";

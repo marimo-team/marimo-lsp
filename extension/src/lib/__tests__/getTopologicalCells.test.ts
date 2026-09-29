@@ -1,9 +1,9 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as VsCodeValues from "../../__tests__/fake/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
@@ -61,7 +61,7 @@ const stableId = (cell: { metadata?: unknown }) =>
 const it = EffectTest.make(
   NotebookVariables.layer.pipe(
     Layer.provideMerge(NotebookDocumentSessions.layer),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 

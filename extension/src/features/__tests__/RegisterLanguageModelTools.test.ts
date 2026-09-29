@@ -1,15 +1,15 @@
 import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { SCRATCH_CELL_ID } from "../../constants.ts";
 import { cellId } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import type { CellOperationNotification } from "../../types.ts";
 import * as RegisterLanguageModelTools from "../RegisterLanguageModelTools.ts";
 
-const effectIt = EffectTest.make(TestVsCode.layer);
+const effectIt = EffectTest.make(VsCodeTest.layer);
 
 const makeOp = (
   console: CellOperationNotification["console"],

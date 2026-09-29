@@ -1,11 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option, Result } from "effect";
 
-import {
-  createNotebookCell,
-  createNotebookUri,
-  createTestNotebookDocument,
-} from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -28,8 +24,8 @@ Vitest.describe("MarimoNotebookCell metadata updates", () => {
   ])(
     "defaults hide_code by cell kind: $kind/$hideCode -> $expected",
     ({ kind, hideCode, expected }) => {
-      const rawCell = createNotebookCell(
-        createTestNotebookDocument("file:///test/notebook_mo.py"),
+      const rawCell = VsCodeTest.createNotebookCell(
+        VsCodeTest.createTestNotebookDocument("file:///test/notebook_mo.py"),
         {
           kind,
           value: "",
@@ -64,9 +60,9 @@ Vitest.describe("MarimoNotebookCell metadata updates", () => {
         }),
         foreign: { ownedBy: "another-extension" },
       };
-      const rawCell = createNotebookCell(
-        createTestNotebookDocument(
-          createNotebookUri("file:///test/notebook_mo.py"),
+      const rawCell = VsCodeTest.createNotebookCell(
+        VsCodeTest.createTestNotebookDocument(
+          VsCodeTest.createNotebookUri("file:///test/notebook_mo.py"),
         ),
         { kind: 2, value: "x = 1", languageId: "python", metadata },
         0,
@@ -96,12 +92,15 @@ Vitest.describe("MarimoNotebookCell metadata updates", () => {
   Vitest.it.each([{ misspelled: true }, null])(
     "surfaces invalid notebook metadata to persistence operations",
     (marimo) => {
-      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-        data: {
-          cells: [],
-          metadata: { marimo },
+      const raw = VsCodeTest.createTestNotebookDocument(
+        "file:///test/notebook_mo.py",
+        {
+          data: {
+            cells: [],
+            metadata: { marimo },
+          },
         },
-      });
+      );
       const notebook = MarimoNotebookDocument.from(raw);
 
       Vitest.expect(
@@ -117,22 +116,25 @@ Vitest.describe("MarimoNotebookDocument app options", () => {
   Vitest.it(
     "validates managed options and preserves passthrough options",
     () => {
-      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-        data: {
-          cells: [],
-          metadata: {
-            marimo: {
-              appOptions: {
-                managed: { autoDownload: ["html", "future-format"] },
-                passthrough: {
-                  width: "wide",
-                  future_setting: { answer: 42 },
+      const raw = VsCodeTest.createTestNotebookDocument(
+        "file:///test/notebook_mo.py",
+        {
+          data: {
+            cells: [],
+            metadata: {
+              marimo: {
+                appOptions: {
+                  managed: { autoDownload: ["html", "future-format"] },
+                  passthrough: {
+                    width: "wide",
+                    future_setting: { answer: 42 },
+                  },
                 },
               },
             },
           },
         },
-      });
+      );
 
       const parsed = Effect.runSync(
         MarimoNotebookDocument.from(raw).parseMetadata(),
@@ -159,16 +161,22 @@ Vitest.describe("MarimoNotebookDocument app options", () => {
   Vitest.it(
     "rejects invalid values for the option owned by the extension",
     () => {
-      const raw = createTestNotebookDocument("file:///test/notebook_mo.py", {
-        data: {
-          cells: [],
-          metadata: {
-            marimo: {
-              appOptions: { managed: { autoDownload: [42] }, passthrough: {} },
+      const raw = VsCodeTest.createTestNotebookDocument(
+        "file:///test/notebook_mo.py",
+        {
+          data: {
+            cells: [],
+            metadata: {
+              marimo: {
+                appOptions: {
+                  managed: { autoDownload: [42] },
+                  passthrough: {},
+                },
+              },
             },
           },
         },
-      });
+      );
 
       const result = Effect.runSync(
         Effect.result(MarimoNotebookDocument.from(raw).parseMetadata()),

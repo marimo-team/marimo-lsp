@@ -2,10 +2,10 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
@@ -20,19 +20,19 @@ const it = EffectTest.make(
   CellStatusBarProvider.layer.pipe(
     Layer.provideMerge(CellExecutions.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
-    Layer.provideMerge(TestVsCode.layer),
-    Layer.provide(TestTelemetryLive),
-    Layer.provide(makeTestNotebookRuntime()),
+    Layer.provideMerge(VsCodeTest.layer),
+    Layer.provide(TelemetryTest.layer),
+    Layer.provide(NotebookRuntimeTest.layerWith()),
   ),
 );
 
-const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
 
 function makeCell(
   metadata: typeof Api.CellMetadata.Encoded = {},
 ): vscode.NotebookCell {
-  return TestVsCode.createNotebookCell(
-    TestVsCode.createTestNotebookDocument(notebookUri),
+  return VsCodeTest.createNotebookCell(
+    VsCodeTest.createTestNotebookDocument(notebookUri),
     {
       kind: 1,
       value: "",
@@ -45,7 +45,7 @@ function makeCell(
 
 /** Status bar items every registered provider contributes for the cell. */
 const items = Effect.fn("items")(function* (cell: vscode.NotebookCell) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const providers = yield* vscode.statusBarProviders;
   const provided = yield* Effect.forEach(
     providers,
@@ -110,7 +110,7 @@ Vitest.describe("CellStatusBarProvider", () => {
   it.effect(
     "registers staleness, name, and disabled providers",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       Vitest.expect(yield* vscode.statusBarProviders).toHaveLength(3);
     }),
   );

@@ -2,8 +2,8 @@ import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { CellOutputOperationError } from "../CellOutputOperation.ts";
 import {
@@ -92,7 +92,7 @@ const withBuilders = <A, E>(
   body: (b: ReturnType<typeof builders>) => Effect.Effect<A, E>,
 ) => VsCode.Service.pipe(Effect.flatMap((code) => body(builders(code))));
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("CellOutputProjection", () => {
   it.effect(

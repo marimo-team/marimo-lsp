@@ -3,7 +3,7 @@ import * as NodePath from "node:path";
 
 import type * as vscode from "vscode";
 
-import { NOTEBOOK_TYPE } from "../constants.ts";
+import { NOTEBOOK_TYPE } from "../../constants.ts";
 
 export class NotebookCellData implements vscode.NotebookCellData {
   kind: vscode.NotebookCellKind;
@@ -1146,7 +1146,7 @@ export function replaceTestNotebookCells(
   cells: ReadonlyArray<vscode.NotebookCellData>,
 ): void {
   if (!(notebook instanceof NotebookDocument)) {
-    throw new Error("Expected a TestVsCode NotebookDocument");
+    throw new Error("Expected a VsCodeTest NotebookDocument");
   }
   notebook.replaceCells(cells);
 }

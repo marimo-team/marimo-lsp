@@ -11,8 +11,8 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { createSourceMapping, makeDapProxy } from "../dap-proxy.ts";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ const withTestCtx = Effect.fn(function* (
 
 const CELL_URI = "vscode-notebook-cell://auth/cell-abc123";
 const TEMP_FILE = "/tmp/marimo_12345/__marimo__cell_abc123_.py";
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 /** Take the first chunk from the connection's message stream and parse DAP messages from it. */
 function takeFirstMessage(conn: Connection) {

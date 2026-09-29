@@ -2,34 +2,34 @@ import * as Vitest from "@effect/vitest";
 import { Deferred, Effect, Fiber, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../__mocks__/TestVsCode.ts";
-import { commandId, defineCommand } from "../commands.ts";
-import { MarimoCommands } from "../commands/MarimoCommands.ts";
-import * as VsCode from "../platform/VsCode.ts";
-import { makeActiveNotebookEditorChanges } from "../platform/Window.ts";
-import { makeNotebookLifecycle } from "../platform/Workspace.ts";
-import * as EffectTest from "./__utils__/EffectTest.ts";
+import { commandId, defineCommand } from "../../commands.ts";
+import { MarimoCommands } from "../../commands/MarimoCommands.ts";
+import * as VsCode from "../../platform/VsCode.ts";
+import { makeActiveNotebookEditorChanges } from "../../platform/Window.ts";
+import { makeNotebookLifecycle } from "../../platform/Workspace.ts";
+import * as EffectTest from "../lib/EffectTest.ts";
+import * as VsCodeTest from "./VsCode.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 const initialEditors = [
-  TestVsCode.makeNotebookEditor("/test/foo_mo.py"),
-  TestVsCode.makeNotebookEditor("/test/bar_mo.py"),
+  VsCodeTest.makeNotebookEditor("/test/foo_mo.py"),
+  VsCodeTest.makeNotebookEditor("/test/bar_mo.py"),
 ];
 const initializedIt = EffectTest.make(
-  TestVsCode.layerWith({
+  VsCodeTest.layerWith({
     initialDocuments: initialEditors.map((editor) => editor.notebook),
   }),
 );
 
 // Tests for our VsCode test harness
-Vitest.describe("TestVsCode", () => {
+Vitest.describe("VsCodeTest", () => {
   it.effect(
     "keeps text editor snapshots consistent when activation repeats",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
-      const editor = TestVsCode.createTestTextEditor(
-        TestVsCode.createTestTextDocument("/test/a.py", "python", "x = 1"),
+      const editor = VsCodeTest.createTestTextEditor(
+        VsCodeTest.createTestTextDocument("/test/a.py", "python", "x = 1"),
       );
       yield* test.setActiveTextEditor(Option.some(editor));
       yield* test.setActiveTextEditor(Option.some(editor));
@@ -46,7 +46,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "releases registrations when their scope closes",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -99,7 +99,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "records commands without changing earlier snapshots",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       yield* code.commands.setContext("marimo.notebook.hasKernel", true);
       const before = yield* test.snapshot;
@@ -114,9 +114,9 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "delivers renderer messages and removes disposed listeners",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
-      const editor = TestVsCode.makeNotebookEditor("/test/renderer.py");
+      const editor = VsCodeTest.makeNotebookEditor("/test/renderer.py");
       const channel = yield* code.notebooks.createRendererMessaging("test");
       const received: unknown[] = [];
       const listener = channel.onDidReceiveMessage((message) =>
@@ -145,7 +145,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "scripts input responses and observes prompt cancellation",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       yield* test.respondToInput(Option.some("answer"));
       Vitest.expect(
@@ -171,7 +171,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "defaults to None active editor",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       const editor = yield* code.window.getActiveNotebookEditor;
 
@@ -202,7 +202,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "scripts and records quick-pick interactions",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
 
       yield* test.selectQuickPick("Second");
@@ -250,7 +250,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "records window messages",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
 
       yield* test.selectInformationMessage("Open");
@@ -271,7 +271,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "publishes configuration changes",
     Effect.fn(function* () {
-      const test = yield* TestVsCode.Service;
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       const received = yield* code.workspace.configurationChanges.pipe(
         Stream.take(1),
@@ -291,8 +291,8 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "subscribes before emitting the active notebook editor snapshot",
     Effect.fn(function* () {
-      const initial = TestVsCode.makeNotebookEditor("/test/initial_mo.py");
-      const next = TestVsCode.makeNotebookEditor("/test/next_mo.py");
+      const initial = VsCodeTest.makeNotebookEditor("/test/initial_mo.py");
+      const next = VsCodeTest.makeNotebookEditor("/test/next_mo.py");
       const initialObserved = yield* Deferred.make<void>();
       let listener:
         | ((editor: vscode.NotebookEditor | undefined) => unknown)
@@ -337,8 +337,8 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "keeps notebook lifecycle events and the document snapshot consistent",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
-      const vscode = yield* TestVsCode.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/foo_mo.py");
+      const vscode = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
 
       // Open before subscribing: the document must still appear in the
@@ -373,7 +373,7 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "disposes notebook lifecycle listeners when its consumer ends",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
       let opened: ((document: vscode.NotebookDocument) => unknown) | undefined;
       let closed: ((document: vscode.NotebookDocument) => unknown) | undefined;
       let disposals = 0;
@@ -416,8 +416,8 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "supports setting notebook editor",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/foo_mo.py");
-      const vscode = yield* TestVsCode.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/foo_mo.py");
+      const vscode = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
 
       yield* vscode.openNotebook(editor.notebook);
@@ -432,8 +432,8 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "keeps active and visible notebook state consistent across repeated activation and close",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/active.py");
-      const test = yield* TestVsCode.Service;
+      const editor = VsCodeTest.makeNotebookEditor("/test/active.py");
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       yield* test.openNotebook(editor.notebook);
       yield* test.setActiveNotebookEditor(Option.some(editor));
@@ -461,9 +461,9 @@ Vitest.describe("TestVsCode", () => {
   it.effect(
     "keeps the replacement editor active when an old document closes at the same URI",
     Effect.fn(function* () {
-      const old = TestVsCode.makeNotebookEditor("/test/reopened.py");
-      const replacement = TestVsCode.makeNotebookEditor("/test/reopened.py");
-      const test = yield* TestVsCode.Service;
+      const old = VsCodeTest.makeNotebookEditor("/test/reopened.py");
+      const replacement = VsCodeTest.makeNotebookEditor("/test/reopened.py");
+      const test = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
       yield* test.openNotebook(old.notebook);
       yield* test.setActiveNotebookEditor(Option.some(old));
@@ -488,11 +488,11 @@ Vitest.describe("TestVsCode", () => {
     "should emit changes to active editor stream",
     Effect.fn(function* () {
       const editors = [
-        TestVsCode.makeNotebookEditor("/test/foo_mo1.py"),
-        TestVsCode.makeNotebookEditor("/test/foo_mo2.py"),
-        TestVsCode.makeNotebookEditor("/test/foo_mo3.py"),
+        VsCodeTest.makeNotebookEditor("/test/foo_mo1.py"),
+        VsCodeTest.makeNotebookEditor("/test/foo_mo2.py"),
+        VsCodeTest.makeNotebookEditor("/test/foo_mo3.py"),
       ];
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const code = yield* VsCode.Service;
 
       yield* Effect.forEach(editors, (editor) =>

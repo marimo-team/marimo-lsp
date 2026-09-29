@@ -9,8 +9,8 @@ import {
   Stream,
 } from "effect";
 
-import * as VsCodeValues from "../../../__mocks__/VsCodeValues.ts";
-import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
+import * as VsCodeValues from "../../../__tests__/fake/VsCodeValues.ts";
+import { makeTestNotebookDocumentSession } from "../../../__tests__/lib/notebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { notebookId } from "../../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";

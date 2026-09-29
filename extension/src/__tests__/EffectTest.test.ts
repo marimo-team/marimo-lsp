@@ -1,7 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Logger, Ref } from "effect";
 
-import * as EffectTest from "./__utils__/EffectTest.ts";
+import * as EffectTest from "./lib/EffectTest.ts";
 
 interface CounterService {
   readonly getAndIncrement: Effect.Effect<number>;

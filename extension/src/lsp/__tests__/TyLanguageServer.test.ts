@@ -1,7 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as TyLanguageServer from "../TyLanguageServer.ts";
 import * as TestTyLanguageServer from "./TestTyLanguageServer.ts";
 

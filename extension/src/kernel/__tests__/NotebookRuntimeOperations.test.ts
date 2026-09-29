@@ -13,12 +13,10 @@ import {
   Stream,
 } from "effect";
 
-import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as VsCodeValues from "../../__tests__/fake/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { SCRATCH_CELL_ID } from "../../constants.ts";
-import { makeNotebookExecutor } from "../../kernel/NotebookExecutor.ts";
-import * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import {
   cellId,
   kernelSessionId,
@@ -35,6 +33,8 @@ import type {
   CellOperationNotification,
   KernelNotification,
 } from "../../types.ts";
+import { makeNotebookExecutor } from "../NotebookExecutor.ts";
+import * as NotebookRuntime from "../NotebookRuntime.ts";
 import * as TestNotebookRuntime from "./TestNotebookRuntime.ts";
 
 const ACTIVE_SESSION_ID = kernelSessionId(
@@ -512,8 +512,9 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
           notebook.executeScratchpad("print('first')").pipe(Stream.runDrain),
         );
 
-        const scratchpadCalls = (calls: ReadonlyArray<TestCommand>) =>
-          calls.filter((call) => call.kind === "execute-scratchpad");
+        const scratchpadCalls = (
+          calls: ReadonlyArray<MarimoClientTest.Command>,
+        ) => calls.filter((call) => call.kind === "execute-scratchpad");
 
         yield* ctx.executionChanges.pipe(
           Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
@@ -859,7 +860,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         yield* NotebookRuntime.Service;
         const variables = yield* NotebookVariables.Service;
 
-        const refreshes = (commands: ReadonlyArray<TestCommand>) =>
+        const refreshes = (commands: ReadonlyArray<MarimoClientTest.Command>) =>
           commands.filter((command) => command.kind === "list-sessions").length;
         const before = refreshes(yield* ctx.executions);
         const refreshed = yield* ctx.executionChanges.pipe(

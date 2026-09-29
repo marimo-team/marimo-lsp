@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 
-import * as ExtensionContext from "../platform/ExtensionContext.ts";
-import { Uri } from "./TestVsCode.ts";
+import * as ExtensionContext from "../../platform/ExtensionContext.ts";
+import { Uri } from "./VsCode.ts";
 
 export class Memento {
   #map = new Map<string, unknown>();
@@ -32,9 +32,9 @@ const testExtensionContext = {
   globalStorageUri: Uri.parse("file://test/extension/libs", true),
 };
 
-export const TestExtensionContextLive = Layer.succeed(
+export const layer = Layer.succeed(
   ExtensionContext.Service,
   testExtensionContext,
 );
 
-export const getTestExtensionContext = Effect.succeed(testExtensionContext);
+export const get = Effect.succeed(testExtensionContext);

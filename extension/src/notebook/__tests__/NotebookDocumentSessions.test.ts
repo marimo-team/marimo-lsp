@@ -1,7 +1,7 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Latch, Option, Scope } from "effect";
 
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as TestNotebookDocumentSessions from "./TestNotebookDocumentSessions.ts";
 
 const it = EffectTest.make(TestNotebookDocumentSessions.layer);

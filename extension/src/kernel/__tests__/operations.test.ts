@@ -5,8 +5,8 @@ import * as NodePath from "node:path";
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Option, Ref } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as Config from "../../config/Config.ts";
 import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
 import * as Uv from "../../python/Uv.ts";
@@ -47,7 +47,7 @@ const stateLayer = Layer.effect(
   Effect.gen(function* () {
     const prompts = yield* Ref.make(0);
     const invalidations = yield* Ref.make(0);
-    const editor = TestVsCode.makeNotebookEditor("/project/notebook.py");
+    const editor = VsCodeTest.makeNotebookEditor("/project/notebook.py");
 
     return TestState.of({
       notebook: MarimoNotebookDocument.from(editor.notebook),
@@ -80,7 +80,7 @@ const layerWith = (options: {
   const vscodeLayer = Layer.unwrap(
     TestState.pipe(
       Effect.map((state) =>
-        TestVsCode.layerWith(
+        VsCodeTest.layerWith(
           {},
           {
             window: {

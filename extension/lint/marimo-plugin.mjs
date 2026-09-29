@@ -199,7 +199,7 @@ const effectArchitecture = defineRule({
     const filename = context.filename.replaceAll("\\", "/");
     if (
       !filename.includes("/src/") ||
-      /\/(?:__tests__|__mocks__)\//.test(filename) ||
+      /\/__tests__\//.test(filename) ||
       filename.endsWith(".test.ts")
     ) {
       return {};

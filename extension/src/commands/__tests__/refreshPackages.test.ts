@@ -1,9 +1,9 @@
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Option, Ref } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
@@ -12,8 +12,8 @@ import * as NotebookSessionResources from "../../notebook/NotebookSessionResourc
 import refreshPackages from "../refreshPackages.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
-const document = TestVsCode.createTestNotebookDocument(
-  TestVsCode.Uri.parse(NOTEBOOK_URI),
+const document = VsCodeTest.createTestNotebookDocument(
+  VsCodeTest.Uri.parse(NOTEBOOK_URI),
 );
 
 const controller: NotebookRuntime.NotebookController = {
@@ -44,11 +44,11 @@ const requestTrackerLayer = Layer.effect(
   }),
 );
 
-const vscodeLayer = TestVsCode.layerWith({ initialDocuments: [document] });
+const vscodeLayer = VsCodeTest.layerWith({ initialDocuments: [document] });
 const runtimeLayer = Layer.unwrap(
   RequestTracker.pipe(
     Effect.map((requests) =>
-      makeTestNotebookRuntime({
+      NotebookRuntimeTest.layerWith({
         initialControllers: [{ notebookUri: NOTEBOOK_URI, controller }],
         send: (request) =>
           request.kind === "get-dependency-tree"

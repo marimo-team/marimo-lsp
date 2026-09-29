@@ -11,9 +11,9 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   marimoConfigFixture,
   notebookId,
@@ -25,11 +25,11 @@ import * as ConfigContextManager from "../ConfigContextManager.ts";
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 const NOTEBOOK_URI_2 = notebookId("file:///test/notebook-2.py");
 
-const firstDocument = TestVsCode.createTestNotebookDocument(
-  TestVsCode.Uri.parse(NOTEBOOK_URI),
+const firstDocument = VsCodeTest.createTestNotebookDocument(
+  VsCodeTest.Uri.parse(NOTEBOOK_URI),
 );
-const secondDocument = TestVsCode.createTestNotebookDocument(
-  TestVsCode.Uri.parse(NOTEBOOK_URI_2),
+const secondDocument = VsCodeTest.createTestNotebookDocument(
+  VsCodeTest.Uri.parse(NOTEBOOK_URI_2),
 );
 
 const configurations = new Map([
@@ -72,7 +72,7 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
       const firstWriteStarted = yield* Latch.make();
       const releaseFirstWrite = yield* Latch.make();
 
-      const vscodeLayer = TestVsCode.layerWith(
+      const vscodeLayer = VsCodeTest.layerWith(
         { initialDocuments: [firstDocument, secondDocument] },
         {
           commands: {
@@ -94,7 +94,7 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
           },
         },
       );
-      const runtimeLayer = makeTestNotebookRuntime({
+      const runtimeLayer = NotebookRuntimeTest.layerWith({
         send: Effect.fn(function* (request) {
           if (request.kind !== "get-configuration") {
             return yield* Effect.die(`Unexpected command: ${request.kind}`);
@@ -145,7 +145,7 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
 const activate = Effect.fn("activate")(function* (
   document: vscode.NotebookDocument,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const manager = yield* ConfigContextManager.Service;
   const published = yield* manager.desiredChanges.pipe(
     Stream.filter(Option.exists((session) => session.document === document)),
@@ -153,7 +153,7 @@ const activate = Effect.fn("activate")(function* (
     Effect.forkChild({ startImmediately: true }),
   );
   yield* vscode.setActiveNotebookEditor(
-    Option.some(TestVsCode.createTestNotebookEditor(document)),
+    Option.some(VsCodeTest.createTestNotebookEditor(document)),
   );
   yield* Fiber.join(published);
 });

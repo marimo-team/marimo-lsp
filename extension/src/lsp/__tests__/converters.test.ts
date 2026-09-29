@@ -2,8 +2,8 @@ import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { UNSAFE_castForNegativeTest } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
@@ -56,7 +56,7 @@ const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
     (entry): entry is [string, string] => typeof entry[1] === "string",
   );
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("toVsCodeRange", () => {
   it.effect(
@@ -1530,7 +1530,7 @@ Vitest.describe("toDocumentPositionParams", () => {
     "serializes uri and position",
     Effect.fn(function* () {
       const code = yield* VsCode.Service;
-      const doc = TestVsCode.createTestTextDocument("/x.py", "python", "");
+      const doc = VsCodeTest.createTestTextDocument("/x.py", "python", "");
       const result = toDocumentPositionParams(doc, new code.Position(5, 2));
       Vitest.expect(result).toMatchInlineSnapshot(`
       	{

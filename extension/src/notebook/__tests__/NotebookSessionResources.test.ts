@@ -12,10 +12,10 @@ import {
   Stream,
 } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
+import { makeScopedResourceCounter } from "../../__tests__/lib/scopedResourceCounter.ts";
 import * as NotebookConfiguration from "../../config/NotebookConfiguration.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
@@ -23,7 +23,7 @@ import * as NotebookSessionResources from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
-const runtimeLayer = makeTestNotebookRuntime({
+const runtimeLayer = NotebookRuntimeTest.layerWith({
   send: () => Effect.die("Unexpected marimo request"),
 });
 const it = EffectTest.make(
@@ -31,18 +31,18 @@ const it = EffectTest.make(
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provideMerge(NotebookSessionResources.layer),
     Layer.provide(runtimeLayer),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
 const openDocument = Effect.fn(function* () {
-  const vscode = yield* TestVsCode.Service;
-  const document = TestVsCode.createTestNotebookDocument(
-    TestVsCode.Uri.parse(NOTEBOOK_URI),
+  const vscode = yield* VsCodeTest.Service;
+  const document = VsCodeTest.createTestNotebookDocument(
+    VsCodeTest.Uri.parse(NOTEBOOK_URI),
   );
   yield* vscode.openNotebook(document);
   yield* vscode.setActiveNotebookEditor(
-    Option.some(TestVsCode.createTestNotebookEditor(document)),
+    Option.some(VsCodeTest.createTestNotebookEditor(document)),
   );
   const sessions = yield* NotebookDocumentSessions.Service;
   const session = yield* sessions.active.pipe(

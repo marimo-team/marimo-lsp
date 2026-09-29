@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { Uri } from "../../__mocks__/TestVsCode.ts";
+import { Uri } from "../../__tests__/fake/VsCode.ts";
 import { isProblematicFilename } from "../validateNotebookFilename.ts";
 
 describe("isProblematicFilename", () => {

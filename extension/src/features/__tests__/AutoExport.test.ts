@@ -3,9 +3,10 @@ import { Context, Effect, Fiber, Latch, Layer, Option } from "effect";
 import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as TestMarimoClient from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { kernelSessionId } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
@@ -16,13 +17,13 @@ import {
 import * as AutoExport from "../AutoExport.ts";
 
 Vitest.describe("outputUri", () => {
-  const it = EffectTest.make(TestVsCode.layer);
+  const it = EffectTest.make(VsCodeTest.layer);
 
   it.effect(
     "writes beside the notebook under __marimo__",
     Effect.fn(function* () {
       const code = yield* VsCode.Service;
-      const document = TestVsCode.createTestNotebookDocument("/test/report.py");
+      const document = VsCodeTest.createTestNotebookDocument("/test/report.py");
       const notebook = MarimoNotebookDocument.from(document);
 
       const uri = AutoExport.outputUri(code, notebook, "html");
@@ -55,7 +56,7 @@ const makeEditor = (
   outputs: vscode.NotebookCellOutput[],
   value = "1 + 1",
 ) =>
-  TestVsCode.makeNotebookEditor("/test/report.py", {
+  VsCodeTest.makeNotebookEditor("/test/report.py", {
     data: {
       metadata: MarimoNotebookDocument.createMetadata({
         appOptions: {
@@ -106,7 +107,7 @@ const layerWith = (options: Options = {}) =>
       const editor = makeEditor(formats, cellOutputs);
       const notebook = MarimoNotebookDocument.from(editor.notebook);
 
-      const runtimeLayer = TestMarimoClient.makeTestNotebookRuntime({
+      const runtimeLayer = NotebookRuntimeTest.layerWith({
         initialControllers: [{ notebookUri: notebook.id, controller }],
         runtimeSession:
           options.hasRuntimeSession === false
@@ -131,7 +132,7 @@ const layerWith = (options: Options = {}) =>
         AutoExport.layer.pipe(
           Layer.provideMerge(runtimeLayer),
           Layer.provideMerge(
-            TestVsCode.layerWith({ initialDocuments: [editor.notebook] }),
+            VsCodeTest.layerWith({ initialDocuments: [editor.notebook] }),
           ),
         ),
         Layer.succeed(Notebook, {
@@ -147,7 +148,7 @@ const layerWith = (options: Options = {}) =>
 
 const activate = Effect.gen(function* () {
   const { editor } = yield* Notebook;
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.setActiveNotebookEditor(Option.some(editor));
 });
 
@@ -155,7 +156,7 @@ const tick = TestClock.adjust(AutoExport.interval);
 
 const completeRun = Effect.gen(function* () {
   const { editor } = yield* Notebook;
-  const marimo = yield* TestMarimoClient.Service;
+  const marimo = yield* MarimoClientTest.Service;
   yield* marimo.publishNotification({
     notebookUri: MarimoNotebookDocument.from(editor.notebook).id,
     sessionId,
@@ -166,7 +167,7 @@ const completeRun = Effect.gen(function* () {
 /** Closes the notebook and opens a fresh document at the same path. */
 const reopen = Effect.gen(function* () {
   const { editor, formats, cellOutputs } = yield* Notebook;
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.setActiveNotebookEditor(Option.none());
   yield* vscode.closeNotebook(editor.notebook);
   const reopened = makeEditor(formats, cellOutputs, "2 + 2");
@@ -175,7 +176,7 @@ const reopen = Effect.gen(function* () {
 });
 
 const exportKinds = Effect.gen(function* () {
-  const marimo = yield* TestMarimoClient.Service;
+  const marimo = yield* MarimoClientTest.Service;
   return (yield* marimo.commands).map((request) => request.kind);
 });
 
@@ -185,7 +186,7 @@ Vitest.describe("AutoExport", () => {
   it.effect(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* activate;
       yield* tick;
 
@@ -218,10 +219,10 @@ Vitest.describe("AutoExport", () => {
     "exports a notebook once when it has multiple visible editors",
     Effect.fn(function* () {
       const { editor } = yield* Notebook;
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* activate;
       yield* vscode.setActiveNotebookEditor(
-        Option.some(TestVsCode.createTestNotebookEditor(editor.notebook)),
+        Option.some(VsCodeTest.createTestNotebookEditor(editor.notebook)),
       );
       yield* tick;
 
@@ -238,7 +239,7 @@ Vitest.describe("AutoExport", () => {
     it.effect(
       "exports Markdown to an md file",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         yield* activate;
         yield* tick;
 
@@ -256,7 +257,7 @@ Vitest.describe("AutoExport", () => {
     it.effect(
       "waits for a live runtime session before creating exports",
       Effect.fn(function* () {
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         yield* activate;
         yield* tick;
 

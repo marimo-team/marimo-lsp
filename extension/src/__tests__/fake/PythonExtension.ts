@@ -11,8 +11,8 @@ import {
   Stream,
 } from "effect";
 
-import { Uri } from "../__mocks__/TestVsCode.ts";
-import * as PythonExtension from "../python/PythonExtension.ts";
+import * as PythonExtension from "../../python/PythonExtension.ts";
+import { Uri } from "./VsCode.ts";
 
 export interface Interface {
   readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
@@ -25,8 +25,8 @@ export class Service extends Context.Service<Service, Interface>()(
   "@marimo/test/PythonExtension",
 ) {}
 
-export class TestPythonExtension extends Data.TaggedClass(
-  "TestPythonExtension",
+export class PythonExtensionTest extends Data.TaggedClass(
+  "PythonExtensionTest",
 )<{
   readonly layer: Layer.Layer<PythonExtension.Service | Service>;
   readonly addEnvironment: (env: py.ResolvedEnvironment) => Effect.Effect<void>;
@@ -49,7 +49,7 @@ export class TestPythonExtension extends Data.TaggedClass(
     };
   }
   static makeVenv(venvPath: string): py.ResolvedEnvironment {
-    const env = TestPythonExtension.makeGlobalEnv(venvPath);
+    const env = PythonExtensionTest.makeGlobalEnv(venvPath);
     return {
       ...env,
       environment: {
@@ -117,26 +117,26 @@ export class TestPythonExtension extends Data.TaggedClass(
       });
     const testService = Service.of({ addEnvironment, removeEnvironment });
 
-    return new TestPythonExtension({
+    return new PythonExtensionTest({
       layer: Layer.merge(pythonLayer, Layer.succeed(Service, testService)),
       addEnvironment,
       removeEnvironment,
     });
   });
 
-  static layer = TestPythonExtension.make([]).pipe(
+  static layer = PythonExtensionTest.make([]).pipe(
     Effect.map((py) => py.layer),
     Layer.unwrap,
   );
 }
 
 export const makeGlobalEnv = (path: string) =>
-  TestPythonExtension.makeGlobalEnv(path);
+  PythonExtensionTest.makeGlobalEnv(path);
 
-export const makeVenv = (path: string) => TestPythonExtension.makeVenv(path);
+export const makeVenv = (path: string) => PythonExtensionTest.makeVenv(path);
 
 /** @deprecated Prefer `layer` or `layerWith` and yield `Service` in tests. */
-export const make = TestPythonExtension.make;
+export const make = PythonExtensionTest.make;
 
 export const layerWith = (initialEnvironments: Array<py.ResolvedEnvironment>) =>
   Layer.unwrap(

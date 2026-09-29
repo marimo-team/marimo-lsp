@@ -1,13 +1,13 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as OutputChannel from "../OutputChannel.ts";
 
 const layer = Layer.empty.pipe(
   Layer.provideMerge(OutputChannel.layer),
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 
 Vitest.describe("OutputChannel", () => {

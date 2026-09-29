@@ -1,9 +1,9 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Layer, Option, Result, Schema } from "effect";
 
-import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import { Memento } from "../../__tests__/fake/ExtensionContext.ts";
+import * as VsCodeValues from "../../__tests__/fake/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as ExtensionContext from "../ExtensionContext.ts";
 import * as Storage from "../Storage.ts";
 

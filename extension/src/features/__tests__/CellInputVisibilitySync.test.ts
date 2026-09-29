@@ -2,8 +2,8 @@ import * as Vitest from "@effect/vitest";
 import { Context, Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as CellInputVisibilitySync from "../CellInputVisibilitySync.ts";
 
@@ -33,14 +33,14 @@ const makeEditor = (
   cells: ReadonlyArray<CellState>,
   uri = "/test/notebook_mo.py",
 ) =>
-  TestVsCode.makeNotebookEditor(uri, {
+  VsCodeTest.makeNotebookEditor(uri, {
     data: { cells: cells.map(cellData) },
   });
 
 const cell = (index: number, hideCode: boolean, kind: 1 | 2 = 2) =>
   MarimoNotebookCell.from(
-    TestVsCode.createNotebookCell(
-      TestVsCode.createTestNotebookDocument("/test/notebook_mo.py"),
+    VsCodeTest.createNotebookCell(
+      VsCodeTest.createTestNotebookDocument("/test/notebook_mo.py"),
       cellData({ stableId: `cell-${index}`, hideCode, kind }),
       index,
     ),
@@ -63,7 +63,7 @@ const ranges = Effect.fn("ranges")(function* (
   editor: vscode.NotebookEditor,
   command: VisibilityCommand,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const { executions } = yield* vscode.snapshot;
   return executions
     .filter((execution) => execution.command === command)
@@ -115,7 +115,7 @@ const process = Effect.fn("process")(function* (
 const activate = Effect.fn("activate")(function* (
   editor: vscode.NotebookEditor,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.openNotebook(editor.notebook);
   yield* process(
     vscode.setActiveNotebookEditor(Option.some(editor)),
@@ -125,12 +125,12 @@ const activate = Effect.fn("activate")(function* (
 });
 
 const deactivate = Effect.gen(function* () {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.setActiveNotebookEditor(Option.none());
 });
 
 const close = Effect.fn("close")(function* (document: vscode.NotebookDocument) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* process(
     vscode.closeNotebook(document),
     (processed) =>
@@ -143,16 +143,16 @@ const change = Effect.fn("change")(function* (
   editor: vscode.NotebookEditor,
   cells: ReadonlyArray<CellState>,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const removedCells = Array.from(editor.notebook.getCells());
-  TestVsCode.replaceTestNotebookCells(editor.notebook, cells.map(cellData));
+  VsCodeTest.replaceTestNotebookCells(editor.notebook, cells.map(cellData));
   const event: vscode.NotebookDocumentChangeEvent = {
     notebook: editor.notebook,
     metadata: undefined,
     cellChanges: [],
     contentChanges: [
       {
-        range: new TestVsCode.NotebookRange(0, removedCells.length),
+        range: new VsCodeTest.NotebookRange(0, removedCells.length),
         removedCells,
         addedCells: Array.from(editor.notebook.getCells()),
       },
@@ -166,7 +166,7 @@ const change = Effect.fn("change")(function* (
 
 Vitest.describe("visibility completion observations", () => {
   const it = EffectTest.make(
-    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(TestVsCode.layer)),
+    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(VsCodeTest.layer)),
   );
 
   it.effect(
@@ -174,10 +174,10 @@ Vitest.describe("visibility completion observations", () => {
     () =>
       Effect.gen(function* () {
         const sync = yield* CellInputVisibilitySync.Service;
-        const vscode = yield* TestVsCode.Service;
+        const vscode = yield* VsCodeTest.Service;
         const processed = yield* sync.subscribeProcessed;
         const changes = ["first.py", "second.py"].map((name) => ({
-          notebook: TestVsCode.makeNotebookEditor(`/test/${name}`).notebook,
+          notebook: VsCodeTest.makeNotebookEditor(`/test/${name}`).notebook,
           metadata: undefined,
           cellChanges: [],
           contentChanges: [],
@@ -232,7 +232,7 @@ Vitest.describe("hiddenInputRanges", () => {
 
 Vitest.describe("CellInputVisibilitySync", () => {
   const it = EffectTest.make(
-    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(TestVsCode.layer)),
+    CellInputVisibilitySync.layer.pipe(Layer.provideMerge(VsCodeTest.layer)),
   );
 
   it.effect(
@@ -361,7 +361,7 @@ Vitest.describe("CellInputVisibilitySync", () => {
           Layer.merge(
             CellInputVisibilitySync.layer.pipe(
               Layer.provideMerge(
-                TestVsCode.layerWith(
+                VsCodeTest.layerWith(
                   {},
                   {
                     commands: {

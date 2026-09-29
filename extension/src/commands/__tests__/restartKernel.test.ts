@@ -1,19 +1,19 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { decodeCommandArguments } from "../../commands.ts";
 import restartKernel from "../restartKernel.ts";
 
-const test = EffectTest.make(TestVsCode.layer);
+const test = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("restartKernel invocation", () => {
   test.effect("resolves the notebook referenced by toolbar context", () =>
     Effect.gen(function* () {
-      const target = TestVsCode.makeNotebookEditor("/test/target.py");
-      const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.Service;
+      const target = VsCodeTest.makeNotebookEditor("/test/target.py");
+      const active = VsCodeTest.makeNotebookEditor("/test/active.py");
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(target.notebook);
       yield* vscode.openNotebook(active.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(target));
@@ -29,8 +29,8 @@ Vitest.describe("restartKernel invocation", () => {
 
   test.effect("uses the active notebook without toolbar context", () =>
     Effect.gen(function* () {
-      const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.Service;
+      const active = VsCodeTest.makeNotebookEditor("/test/active.py");
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(active.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
@@ -45,8 +45,8 @@ Vitest.describe("restartKernel invocation", () => {
 
   test.effect("falls back for an incomplete toolbar lifecycle hint", () =>
     Effect.gen(function* () {
-      const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.Service;
+      const active = VsCodeTest.makeNotebookEditor("/test/active.py");
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(active.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
@@ -75,8 +75,8 @@ Vitest.describe("restartKernel invocation", () => {
 
   test.effect("rejects notebook-cell context", () =>
     Effect.gen(function* () {
-      const cell = TestVsCode.createNotebookCell(
-        TestVsCode.createTestNotebookDocument("/test/notebook_mo.py"),
+      const cell = VsCodeTest.createNotebookCell(
+        VsCodeTest.createTestNotebookDocument("/test/notebook_mo.py"),
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
       );

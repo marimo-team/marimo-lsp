@@ -13,13 +13,10 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import {
-  makeTestMarimoClient,
-  type TestCommand,
-} from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
@@ -45,12 +42,14 @@ import { PythonController } from "../PythonController.ts";
 import * as VsCodeCellDrive from "../VsCodeCellDrive.ts";
 
 export interface Interface {
-  readonly vscode: TestVsCode.Interface;
+  readonly vscode: VsCodeTest.Interface;
   readonly editor: vscode.NotebookEditor;
   readonly notebook: MarimoNotebookDocument;
   readonly notebookUri: NotebookId;
-  readonly executions: Effect.Effect<ReadonlyArray<TestCommand>>;
-  readonly executionChanges: Stream.Stream<ReadonlyArray<TestCommand>>;
+  readonly executions: Effect.Effect<ReadonlyArray<MarimoClientTest.Command>>;
+  readonly executionChanges: Stream.Stream<
+    ReadonlyArray<MarimoClientTest.Command>
+  >;
   readonly errors: Effect.Effect<ReadonlyArray<string>>;
   readonly inputRequested: Effect.Effect<void>;
   readonly inputCancelled: Effect.Effect<void>;
@@ -78,7 +77,7 @@ export class Service extends Context.Service<Service, Interface>()(
 export const activate = Effect.fn("TestNotebookRuntime.activate")(function* (
   target: vscode.NotebookEditor,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const sessions = yield* NotebookDocumentSessions.Service;
   const editors = yield* NotebookEditorRegistry.Service;
   const targetId = MarimoNotebookDocument.from(target.notebook).id;
@@ -103,7 +102,7 @@ export const activate = Effect.fn("TestNotebookRuntime.activate")(function* (
 export const open = Effect.fn("TestNotebookRuntime.open")(function* (
   target: vscode.NotebookEditor,
 ) {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   yield* vscode.openNotebook(target.notebook);
   yield* activate(target);
 });
@@ -129,12 +128,12 @@ export const layerWith = (options: Options) =>
       const activeSessionId = options.activeSessionId ?? ACTIVE_SESSION_ID;
       const workspaceEditStarted = yield* Latch.make();
       const executions = yield* SubscriptionRef.make<
-        ReadonlyArray<TestCommand>
+        ReadonlyArray<MarimoClientTest.Command>
       >([]);
       const operations = yield* PubSub.unbounded<KernelNotification>();
       const documentAnalysis = yield* PubSub.unbounded<DocumentAnalysis>();
 
-      const editor = TestVsCode.makeNotebookEditor(
+      const editor = VsCodeTest.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook_mo.py"),
         {
           data: {
@@ -172,7 +171,7 @@ export const layerWith = (options: Options) =>
         ],
       ]);
 
-      const vscodeLayer = TestVsCode.layerWith(
+      const vscodeLayer = VsCodeTest.layerWith(
         {
           initialDocuments: [editor.notebook],
         },
@@ -202,7 +201,7 @@ export const layerWith = (options: Options) =>
         Layer.provideMerge(NotebookVariables.defaultLayer),
         Layer.provideMerge(NotebookDatasources.defaultLayer),
         Layer.provide(
-          makeTestMarimoClient({
+          MarimoClientTest.layerWith({
             send(request) {
               return Effect.gen(function* () {
                 yield* SubscriptionRef.update(executions, (current) => [
@@ -250,8 +249,8 @@ export const layerWith = (options: Options) =>
             documentAnalysis: Stream.fromPubSub(documentAnalysis),
           }),
         ),
-        Layer.provide(TestTelemetryLive),
-        Layer.provide(TestPythonExtension.layer),
+        Layer.provide(TelemetryTest.layer),
+        Layer.provide(PythonExtensionTest.layer),
         Layer.provideMerge(vscodeLayer),
       );
       const environment = Layer.merge(runtimeLayer, cellDriveLayer);
@@ -259,7 +258,7 @@ export const layerWith = (options: Options) =>
       const fixtureLayer = Layer.effect(
         Service,
         Effect.gen(function* () {
-          const vscode = yield* TestVsCode.Service;
+          const vscode = yield* VsCodeTest.Service;
           const code = yield* VsCode.Service;
           const cellDrive = yield* VsCodeCellDrive.Service;
           const runtime = yield* NotebookRuntime.Service;
@@ -315,13 +314,13 @@ export const layerWith = (options: Options) =>
             ),
             workspaceEditStarted: workspaceEditStarted.await,
             activate: activate(editor).pipe(
-              Effect.provideService(TestVsCode.Service, vscode),
+              Effect.provideService(VsCodeTest.Service, vscode),
               Effect.provideService(NotebookDocumentSessions.Service, sessions),
               Effect.provideService(NotebookEditorRegistry.Service, editors),
             ),
             open: (target) =>
               open(target).pipe(
-                Effect.provideService(TestVsCode.Service, vscode),
+                Effect.provideService(VsCodeTest.Service, vscode),
                 Effect.provideService(
                   NotebookDocumentSessions.Service,
                   sessions,
@@ -330,7 +329,7 @@ export const layerWith = (options: Options) =>
               ),
             close: (document) =>
               close(document).pipe(
-                Effect.provideService(TestVsCode.Service, vscode),
+                Effect.provideService(VsCodeTest.Service, vscode),
                 Effect.provideService(
                   NotebookDocumentSessions.Service,
                   sessions,

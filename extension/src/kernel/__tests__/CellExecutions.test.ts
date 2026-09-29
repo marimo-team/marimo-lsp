@@ -13,13 +13,10 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
-import * as CellExecutionsModule from "../../kernel/CellExecutions.ts";
-import { CellCommand } from "../../kernel/CellRunReducer.ts";
-import { buildCellOutputs } from "../../kernel/VsCodeCellOutputs.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   cellId,
   runId,
@@ -35,8 +32,11 @@ import {
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
+import * as CellExecutionsModule from "../CellExecutions.ts";
+import { CellCommand } from "../CellRunReducer.ts";
+import { buildCellOutputs } from "../VsCodeCellOutputs.ts";
 
-const TestNotebookRuntimeLayer = makeTestNotebookRuntime();
+const TestNotebookRuntimeLayer = NotebookRuntimeTest.layerWith();
 const CellExecutions = CellExecutionsModule.Service;
 type Drive = CellExecutionsModule.Drive;
 type NotebookExecutions = CellExecutionsModule.NotebookExecutions;
@@ -46,8 +46,8 @@ const it = EffectTest.make(
     Layer.merge(CellExecutionsModule.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
     Layer.provide(TestNotebookRuntimeLayer),
-    Layer.provide(TestTelemetryLive),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provide(TelemetryTest.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
@@ -1048,10 +1048,10 @@ Vitest.describe("NotebookExecutions", () => {
     document: vscode.NotebookDocument,
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const sessions = yield* NotebookDocumentSessions.Service;
     yield* vscode.setActiveNotebookEditor(
-      Option.some(TestVsCode.createTestNotebookEditor(document)),
+      Option.some(VsCodeTest.createTestNotebookEditor(document)),
     );
     const session = yield* sessions.active.pipe(
       Stream.filter(Option.exists((active) => active.document === document)),
@@ -1100,7 +1100,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "keeps presentation commands on the drive that opened their run",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1114,7 +1114,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1183,7 +1183,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "folds every operation while conflating pending output presentation",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1197,7 +1197,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1344,7 +1344,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "presents terminal output followed by a state-only trailer",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1358,7 +1358,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1430,7 +1430,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "removing a cell closes its run and ignores late operations",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1444,7 +1444,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1531,10 +1531,10 @@ Vitest.describe("NotebookExecutions", () => {
           marimoRuntime: { stableId: "cell-1" },
         }),
       };
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1588,8 +1588,8 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "tracks sources for cells added after the notebook opens",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      const addedCell = TestVsCode.createNotebookCell(
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py");
+      const addedCell = VsCodeTest.createNotebookCell(
         editor.notebook,
         {
           kind: 1,
@@ -1602,7 +1602,7 @@ Vitest.describe("NotebookExecutions", () => {
         0,
       );
       const id = Option.getOrThrow(MarimoNotebookCell.from(addedCell).id);
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1619,7 +1619,7 @@ Vitest.describe("NotebookExecutions", () => {
           cellChanges: [],
           contentChanges: [
             {
-              range: new TestVsCode.NotebookRange(0, 0),
+              range: new VsCodeTest.NotebookRange(0, 0),
               removedCells: [],
               addedCells: [addedCell],
             },
@@ -1652,10 +1652,10 @@ Vitest.describe("NotebookExecutions", () => {
           marimoRuntime: { stableId: "cell-1" },
         }),
       };
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1692,10 +1692,10 @@ Vitest.describe("NotebookExecutions", () => {
           marimoRuntime: { stableId: "cell-1" },
         }),
       };
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1769,10 +1769,10 @@ Vitest.describe("NotebookExecutions", () => {
           }),
         }),
       );
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1816,7 +1816,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "clears kernel invalidation when the cell is submitted again",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1830,7 +1830,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1862,7 +1862,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "marks saved output stale without inventing a live run",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -1876,7 +1876,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1928,10 +1928,10 @@ Vitest.describe("NotebookExecutions", () => {
           marimoRuntime: { stableId: "cell-1" },
         }),
       };
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -1990,7 +1990,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "invalidates accepted sources without consulting an editor",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2004,7 +2004,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2049,7 +2049,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "forgets a never-run cell's source when the cell is removed",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2063,7 +2063,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2086,7 +2086,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "rolls back source provenance when submission fails",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2100,7 +2100,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2124,7 +2124,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "acknowledges multiple submissions for one cell in order",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2138,7 +2138,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2204,10 +2204,10 @@ Vitest.describe("NotebookExecutions", () => {
           marimoRuntime: { stableId: "cell-1" },
         }),
       };
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2268,7 +2268,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "drops source provenance when interrupted before queued",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2282,7 +2282,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2306,7 +2306,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "drops source provenance when compilation fails before queued",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2320,7 +2320,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2355,7 +2355,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "emits the current stale set before later changes",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2369,7 +2369,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2406,7 +2406,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "rejects a tagged operation from an older run before mutation",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2420,7 +2420,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2463,7 +2463,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "keeps the state fold from a rejected operation for the final render",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2477,7 +2477,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2546,7 +2546,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "retains downstream staleness tagged with an ancestor run",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2568,7 +2568,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2617,7 +2617,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "rejects a tagged operation after its run completes",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2631,7 +2631,7 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
@@ -2694,7 +2694,7 @@ Vitest.describe("NotebookExecutions", () => {
   it.effect(
     "an old document session cannot evict its replacement",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -2708,13 +2708,13 @@ Vitest.describe("NotebookExecutions", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const first = yield* openNotebook(executions, editor.notebook);
-        const replacement = TestVsCode.makeNotebookEditor(editor.notebook.uri, {
+        const replacement = VsCodeTest.makeNotebookEditor(editor.notebook.uri, {
           data: {
             cells: [
               {

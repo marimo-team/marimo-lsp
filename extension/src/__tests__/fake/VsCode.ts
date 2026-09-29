@@ -15,14 +15,14 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import { commandId, decodeCommandResult } from "../commands.ts";
-import { acquireDisposable } from "../lib/acquireDisposable.ts";
-import * as Commands from "../platform/Commands.ts";
-import * as Env from "../platform/Env.ts";
-import * as VsCode from "../platform/VsCode.ts";
-import * as Window from "../platform/Window.ts";
-import * as Workspace from "../platform/Workspace.ts";
-import type { RendererCommand, RendererReceiveMessage } from "../types.ts";
+import { commandId, decodeCommandResult } from "../../commands.ts";
+import { acquireDisposable } from "../../lib/acquireDisposable.ts";
+import * as Commands from "../../platform/Commands.ts";
+import * as Env from "../../platform/Env.ts";
+import * as VsCode from "../../platform/VsCode.ts";
+import * as Window from "../../platform/Window.ts";
+import * as Workspace from "../../platform/Workspace.ts";
+import type { RendererCommand, RendererReceiveMessage } from "../../types.ts";
 import {
   NotebookCellData,
   NotebookData,
@@ -944,7 +944,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
                   async replaceOutputItems() {},
                   get cell(): vscode.NotebookCell {
                     throw new Error(
-                      "CellExecution.cell not implemented in TestVsCode.",
+                      "CellExecution.cell not implemented in VsCodeTest.",
                     );
                   },
                 };

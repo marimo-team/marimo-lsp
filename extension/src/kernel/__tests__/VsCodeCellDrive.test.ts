@@ -3,8 +3,8 @@ import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/
 import { Effect, Layer, Option } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -15,14 +15,14 @@ import { CellCommand, runIdFromWire } from "../CellRunReducer.ts";
 import * as VsCodeCellDrive from "../VsCodeCellDrive.ts";
 
 const projectionsLayer = CellOutputProjections.layer.pipe(
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 const cellDriveLayer = VsCodeCellDrive.layer.pipe(
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(VsCodeTest.layer),
   Layer.provide(projectionsLayer),
 );
 const it = EffectTest.make(
-  Layer.mergeAll(TestVsCode.layer, projectionsLayer, cellDriveLayer),
+  Layer.mergeAll(VsCodeTest.layer, projectionsLayer, cellDriveLayer),
 );
 
 const errorState = (): CellRuntimeState => ({
@@ -39,7 +39,7 @@ Vitest.describe("VsCodeCellDrive", () => {
   it.effect(
     "does not update outputs before the execution starts",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {
@@ -116,7 +116,7 @@ Vitest.describe("VsCodeCellDrive", () => {
   it.effect(
     "presents an untracked error in one execution lifecycle",
     Effect.fn(function* () {
-      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
+      const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: {
           cells: [
             {

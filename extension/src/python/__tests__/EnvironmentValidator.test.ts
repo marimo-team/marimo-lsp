@@ -6,14 +6,14 @@ import * as NodeProcess from "node:process";
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Layer, Result } from "effect";
 
-import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
-import * as TestTelemetry from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as EnvironmentValidator from "../../python/EnvironmentValidator.ts";
-import { getVenvPythonPath } from "../../python/getVenvPythonPath.ts";
-import * as PythonEnvInvalidation from "../../python/PythonEnvInvalidation.ts";
-import * as Uv from "../../python/Uv.ts";
+import * as PythonExtensionTest from "../../__tests__/fake/PythonExtension.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
+import * as EnvironmentValidator from "../EnvironmentValidator.ts";
+import { getVenvPythonPath } from "../getVenvPythonPath.ts";
+import * as PythonEnvInvalidation from "../PythonEnvInvalidation.ts";
+import * as Uv from "../Uv.ts";
 
 const isWindows = NodeProcess.platform === "win32";
 
@@ -40,9 +40,9 @@ const layer = Layer.empty.pipe(
   Layer.provideMerge(Uv.layer),
   Layer.provideMerge(EnvironmentValidator.layer),
   Layer.provideMerge(PythonEnvInvalidation.layer),
-  Layer.provide(TestPythonExtension.layer),
-  Layer.provide(TestTelemetry.TestTelemetryLive),
-  Layer.provide(TestVsCode.layer),
+  Layer.provide(PythonExtensionTest.layer),
+  Layer.provide(TelemetryTest.layer),
+  Layer.provide(VsCodeTest.layer),
 );
 
 Vitest.describe("EnvironmentValidator", () => {
@@ -71,7 +71,7 @@ Vitest.describe("EnvironmentValidator", () => {
 
       const result = yield* Effect.result(
         validator.validate(
-          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
+          PythonExtensionTest.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -108,7 +108,7 @@ Vitest.describe("EnvironmentValidator", () => {
 
       const result = yield* Effect.result(
         validator.validate(
-          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
+          PythonExtensionTest.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -148,7 +148,7 @@ Vitest.describe("EnvironmentValidator", () => {
 
       const result = yield* Effect.result(
         validator.validate(
-          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
+          PythonExtensionTest.makeVenv(getVenvPythonPath(venv)),
         ),
       );
 
@@ -169,7 +169,7 @@ Vitest.describe("EnvironmentValidator", () => {
 
       const result = yield* Effect.result(
         validator.validate(
-          TestPythonExtension.makeVenv(getVenvPythonPath(venv)),
+          PythonExtensionTest.makeVenv(getVenvPythonPath(venv)),
         ),
       );
       Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -196,7 +196,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -218,7 +218,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -242,7 +242,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -265,7 +265,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -287,7 +287,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -310,7 +310,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(
@@ -336,7 +336,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");
@@ -362,7 +362,7 @@ Vitest.describe("EnvironmentValidator", () => {
           exitCode: 0,
           countFile,
         });
-        const env = TestPythonExtension.makeGlobalEnv(script);
+        const env = PythonExtensionTest.makeGlobalEnv(script);
 
         const first = yield* validator.validate(env);
         const second = yield* validator.validate(env);
@@ -385,7 +385,7 @@ Vitest.describe("EnvironmentValidator", () => {
           exitCode: 0,
           countFile,
         });
-        const env = TestPythonExtension.makeGlobalEnv(script);
+        const env = PythonExtensionTest.makeGlobalEnv(script);
 
         const first = yield* Effect.result(validator.validate(env));
         const second = yield* Effect.result(validator.validate(env));
@@ -415,7 +415,7 @@ Vitest.describe("EnvironmentValidator", () => {
           exitCode: 0,
           countFile,
         });
-        const env = TestPythonExtension.makeGlobalEnv(script);
+        const env = PythonExtensionTest.makeGlobalEnv(script);
 
         yield* validator.validate(env);
         Vitest.expect(runCount(countFile)).toBe(1);
@@ -438,7 +438,7 @@ Vitest.describe("EnvironmentValidator", () => {
         });
 
         const result = yield* Effect.result(
-          validator.validate(TestPythonExtension.makeGlobalEnv(script)),
+          validator.validate(PythonExtensionTest.makeGlobalEnv(script)),
         );
 
         Vitest.assert(Result.isFailure(result), "Expected validation to fail");

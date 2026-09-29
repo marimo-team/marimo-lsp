@@ -1,15 +1,15 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as CellMetadata from "../CellMetadata.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 const rejectingIt = EffectTest.make(
-  TestVsCode.layerWith(
+  VsCodeTest.layerWith(
     {},
     {
       workspace: { applyEdit: () => Effect.succeed(false) },
@@ -18,7 +18,7 @@ const rejectingIt = EffectTest.make(
 );
 
 const latestWorkspaceEdit = Effect.fn(function* () {
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   return Option.fromNullishOr((yield* vscode.snapshot).workspaceEdits.at(-1));
 });
 
@@ -26,7 +26,7 @@ it.effect(
   "replaces metadata while preserving cell content, outputs, and runtime state",
   Effect.fn(function* () {
     const code = yield* VsCode.Service;
-    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+    const uri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
     const output = new code.NotebookCellOutput([
       code.NotebookCellOutputItem.text("result"),
     ]);
@@ -44,7 +44,7 @@ it.effect(
       }),
       foreign: { ownedBy: "another-extension" },
     };
-    const document = TestVsCode.createTestNotebookDocument(uri, {
+    const document = VsCodeTest.createTestNotebookDocument(uri, {
       data: {
         cells: [
           { kind: 2, value: "a = 0", languageId: "mo-python" },
@@ -68,7 +68,7 @@ it.effect(
     }));
 
     const workspaceEdit = Option.getOrThrow(yield* latestWorkspaceEdit());
-    const notebookEdits = TestVsCode.getNotebookEdits(workspaceEdit, uri);
+    const notebookEdits = VsCodeTest.getNotebookEdits(workspaceEdit, uri);
     Vitest.expect(notebookEdits).toHaveLength(1);
     Vitest.expect(notebookEdits[0]?.range).toMatchObject({ start: 2, end: 3 });
 
@@ -105,8 +105,8 @@ it.effect(
 it.effect(
   "uses metadata defaults for a cell without metadata",
   Effect.fn(function* () {
-    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
-    const document = TestVsCode.createTestNotebookDocument(uri, {
+    const uri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
+    const document = VsCodeTest.createTestNotebookDocument(uri, {
       data: {
         cells: [{ kind: 2, value: "x = 1", languageId: "mo-python" }],
       },
@@ -119,7 +119,7 @@ it.effect(
     }));
 
     const workspaceEdit = Option.getOrThrow(yield* latestWorkspaceEdit());
-    const replacement = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0]
+    const replacement = VsCodeTest.getNotebookEdits(workspaceEdit, uri)[0]
       ?.newCells[0];
     const decoded = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
@@ -131,7 +131,7 @@ it.effect(
 rejectingIt.effect(
   "fails when VS Code rejects the metadata edit",
   Effect.fn(function* () {
-    const document = TestVsCode.createTestNotebookDocument(
+    const document = VsCodeTest.createTestNotebookDocument(
       "/test/notebook_mo.py",
       {
         data: {
@@ -152,8 +152,8 @@ rejectingIt.effect(
 it.effect(
   "resolves a stale cell handle by stable ID",
   Effect.fn(function* () {
-    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
-    const document = TestVsCode.createTestNotebookDocument(uri, {
+    const uri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
+    const document = VsCodeTest.createTestNotebookDocument(uri, {
       data: {
         cells: [
           { kind: 2, value: "other = 0", languageId: "mo-python" },
@@ -170,7 +170,7 @@ it.effect(
       },
     });
     const stale = MarimoNotebookCell.from(
-      TestVsCode.createNotebookCell(
+      VsCodeTest.createNotebookCell(
         document,
         {
           kind: 2,
@@ -192,7 +192,7 @@ it.effect(
     }));
 
     const workspaceEdit = Option.getOrThrow(yield* latestWorkspaceEdit());
-    const notebookEdit = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0];
+    const notebookEdit = VsCodeTest.getNotebookEdits(workspaceEdit, uri)[0];
     Vitest.expect(notebookEdit?.range).toMatchObject({ start: 1, end: 2 });
     Vitest.expect(notebookEdit?.newCells[0]?.value).toBe("latest = 2");
     const decoded = Option.getOrThrow(
@@ -208,8 +208,8 @@ it.effect(
 it.effect(
   "rejects a stale cell handle whose target is gone",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestNotebookDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestNotebookDocument(
       "/test/notebook_mo.py",
       {
         data: {
@@ -218,7 +218,7 @@ it.effect(
       },
     );
     const stale = MarimoNotebookCell.from(
-      TestVsCode.createNotebookCell(
+      VsCodeTest.createNotebookCell(
         document,
         {
           kind: 2,

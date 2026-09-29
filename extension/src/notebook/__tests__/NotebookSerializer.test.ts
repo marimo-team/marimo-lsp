@@ -5,18 +5,18 @@ import { Cause, Duration, Effect, Exit, Fiber, Layer, Result } from "effect";
 import { TestClock } from "effect/testing";
 
 import packageJson from "../../../package.json";
-import { TestMarimoClientProcess } from "../../__mocks__/TestMarimoClient.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as MarimoClientProcessTest from "../../__tests__/fake/MarimoClientProcess.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import * as Constants from "../../platform/Constants.ts";
+import * as NotebookSerializer from "../NotebookSerializer.ts";
 
 const liveLayer = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.layer),
   // These tests intentionally cover the cross-language serialization contract.
-  Layer.provideMerge(TestMarimoClientProcess),
+  Layer.provideMerge(MarimoClientProcessTest.layer),
   Layer.provideMerge(Constants.defaultLayer),
 );
 
@@ -24,7 +24,9 @@ Vitest.describe("when deserialization stalls", () => {
   const it = EffectTest.make(
     Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
-      Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
+      Layer.provideMerge(
+        MarimoClientTest.layerWith({ send: () => Effect.never }),
+      ),
       Layer.provideMerge(Constants.defaultLayer),
     ),
   );
@@ -53,16 +55,18 @@ Vitest.describe("when a registered deserializer stalls", () => {
   const it = EffectTest.make(
     Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
-      Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
+      Layer.provideMerge(
+        MarimoClientTest.layerWith({ send: () => Effect.never }),
+      ),
       Layer.provideMerge(Constants.defaultLayer),
-      Layer.provideMerge(TestVsCode.layer),
+      Layer.provideMerge(VsCodeTest.layer),
     ),
   );
 
   it.effect(
     "registered serializer explains deserialize timeouts",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* NotebookSerializer.Service;
       const registrations = yield* vscode.serializers;
       const registration = registrations[0];
@@ -102,7 +106,7 @@ Vitest.describe("when registered source is not a marimo notebook", () => {
     Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(
-        makeTestMarimoClient({
+        MarimoClientTest.layerWith({
           send: () =>
             Effect.succeed({
               kind: "convertible",
@@ -110,14 +114,14 @@ Vitest.describe("when registered source is not a marimo notebook", () => {
         }),
       ),
       Layer.provideMerge(Constants.defaultLayer),
-      Layer.provideMerge(TestVsCode.layer),
+      Layer.provideMerge(VsCodeTest.layer),
     ),
   );
 
   it.effect(
     "registered serializer explains non-marimo source failures",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* NotebookSerializer.Service;
       const registrations = yield* vscode.serializers;
       const registration = registrations[0];
@@ -543,7 +547,10 @@ if __name__ == "__main__":
       const serializer = yield* NotebookSerializer.Service;
       const source = yield* Effect.tryPromise(() =>
         NodeFs.promises.readFile(
-          new URL(`../../__mocks__/notebooks/${filename}`, import.meta.url),
+          new URL(
+            `../../__tests__/fixtures/notebooks/${filename}`,
+            import.meta.url,
+          ),
           "utf-8",
         ),
       );

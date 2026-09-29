@@ -13,12 +13,12 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import { toVsCodeGlobPattern } from "../connect.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 Vitest.describe("toVsCodeGlobPattern", () => {
   it.effect("passes string globs through unchanged", () =>

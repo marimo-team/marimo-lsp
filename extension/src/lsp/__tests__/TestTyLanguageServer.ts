@@ -1,9 +1,9 @@
 import { Context, Data, Effect, Layer, Option, Ref } from "effect";
 import type * as vscode from "vscode";
 
-import { Memento } from "../../__mocks__/TestExtensionContext.ts";
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import { Memento } from "../../__tests__/fake/ExtensionContext.ts";
+import * as TelemetryTest from "../../__tests__/fake/Telemetry.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
 import * as ExtensionContext from "../../platform/ExtensionContext.ts";
 import * as Storage from "../../platform/Storage.ts";
 import * as VsCode from "../../platform/VsCode.ts";
@@ -27,7 +27,7 @@ export interface Snapshot {
   readonly warningMessages: ReadonlyArray<string>;
   readonly informationMessages: ReadonlyArray<string>;
   readonly errorMessages: ReadonlyArray<string>;
-  readonly executions: ReadonlyArray<TestVsCode.CommandExecution>;
+  readonly executions: ReadonlyArray<VsCodeTest.CommandExecution>;
   readonly telemetry: ReadonlyArray<Telemetry.TySetupAction>;
   readonly storage: Record<string, unknown>;
   readonly storageWrites: number;
@@ -84,7 +84,7 @@ export const layerWith = (scenario: Scenario) =>
       const informationMessages = yield* Ref.make<ReadonlyArray<string>>([]);
       const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
       const executions = yield* Ref.make<
-        ReadonlyArray<TestVsCode.CommandExecution>
+        ReadonlyArray<VsCodeTest.CommandExecution>
       >([]);
       const telemetry = yield* Ref.make<ReadonlyArray<Telemetry.TySetupAction>>(
         [],
@@ -99,7 +99,7 @@ export const layerWith = (scenario: Scenario) =>
         InstallFailure: () => "Install ty Extension",
       });
 
-      const vscodeLayer = TestVsCode.layerWith(
+      const vscodeLayer = VsCodeTest.layerWith(
         {
           installedExtensions: Scenario.$is("Installed")(scenario)
             ? ["astral-sh.ty"]
@@ -155,11 +155,11 @@ export const layerWith = (scenario: Scenario) =>
           Layer.succeed(ExtensionContext.Service, {
             globalState,
             workspaceState: new Memento(),
-            extensionUri: TestVsCode.Uri.parse(
+            extensionUri: VsCodeTest.Uri.parse(
               "file:///test/extension/path",
               true,
             ),
-            globalStorageUri: TestVsCode.Uri.parse(
+            globalStorageUri: VsCodeTest.Uri.parse(
               "file://test/extension/libs",
               true,
             ),
@@ -167,7 +167,7 @@ export const layerWith = (scenario: Scenario) =>
         ),
       );
       const telemetryBase = yield* Telemetry.Service.pipe(
-        Effect.provide(TestTelemetryLive),
+        Effect.provide(TelemetryTest.layer),
       );
       const telemetryLayer = Layer.succeed(Telemetry.Service, {
         ...telemetryBase,
@@ -183,7 +183,7 @@ export const layerWith = (scenario: Scenario) =>
         Service,
         Effect.gen(function* () {
           const context = yield* Effect.context<
-            | TestVsCode.Service
+            | VsCodeTest.Service
             | Storage.Service
             | Telemetry.Service
             | VsCode.Service

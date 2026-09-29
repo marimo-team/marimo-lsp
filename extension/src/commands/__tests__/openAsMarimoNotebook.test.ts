@@ -2,14 +2,14 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 import { vi } from "vitest";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import openAsMarimoNotebook from "../openAsMarimoNotebook.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 const fileIt = EffectTest.make(
-  TestVsCode.layerWith({
+  VsCodeTest.layerWith({
     fileSystem: new Map([
       [
         "file:///test/notebook.py",
@@ -22,8 +22,8 @@ const fileIt = EffectTest.make(
 fileIt.effect(
   "opens a native VS Code URI passed by an editor action",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const uri = TestVsCode.Uri.file("/test/notebook.py");
+    const vscode = yield* VsCodeTest.Service;
+    const uri = VsCodeTest.Uri.file("/test/notebook.py");
 
     yield* openAsMarimoNotebook.invoke(uri);
 
@@ -39,7 +39,7 @@ fileIt.effect(
 fileIt.effect(
   "parses and opens a URI string passed by a programmatic caller",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
 
     yield* openAsMarimoNotebook.invoke("file:///test/notebook.py");
 
@@ -56,14 +56,14 @@ fileIt.effect(
 it.effect(
   "opens the active editor when called without an argument",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestTextDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestTextDocument(
       "/test/notebook.py",
       "python",
       "app = marimo.App()",
     );
     yield* vscode.setActiveTextEditor(
-      Option.some(TestVsCode.createTestTextEditor(document)),
+      Option.some(VsCodeTest.createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook.invoke();
@@ -80,8 +80,8 @@ it.effect(
 it.effect(
   "saves an unsaved buffer before opening it from a URI string (#531)",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestTextDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestTextDocument(
       "/test/notebook.py",
       "python",
       "app = marimo.App()\nx = 1",
@@ -89,7 +89,7 @@ it.effect(
     Object.defineProperty(document, "isDirty", { value: true });
     const save = vi.spyOn(document, "save").mockResolvedValue(true);
     yield* vscode.setActiveTextEditor(
-      Option.some(TestVsCode.createTestTextEditor(document)),
+      Option.some(VsCodeTest.createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook.invoke(document.uri.toString());
@@ -107,15 +107,15 @@ it.effect(
 it.effect(
   "does not save a clean active buffer before opening it as a notebook",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestTextDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestTextDocument(
       "/test/notebook.py",
       "python",
       "app = marimo.App()",
     );
     const save = vi.spyOn(document, "save");
     yield* vscode.setActiveTextEditor(
-      Option.some(TestVsCode.createTestTextEditor(document)),
+      Option.some(VsCodeTest.createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook.invoke();
@@ -127,8 +127,8 @@ it.effect(
 it.effect(
   "does not open the notebook when saving the dirty buffer fails",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const document = TestVsCode.createTestTextDocument(
+    const vscode = yield* VsCodeTest.Service;
+    const document = VsCodeTest.createTestTextDocument(
       "/test/notebook.py",
       "python",
       "app = marimo.App()\nx = 1",
@@ -136,7 +136,7 @@ it.effect(
     Object.defineProperty(document, "isDirty", { value: true });
     const save = vi.spyOn(document, "save").mockResolvedValue(false);
     yield* vscode.setActiveTextEditor(
-      Option.some(TestVsCode.createTestTextEditor(document)),
+      Option.some(VsCodeTest.createTestTextEditor(document)),
     );
 
     yield* openAsMarimoNotebook.invoke();

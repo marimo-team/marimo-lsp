@@ -1,14 +1,14 @@
 import { Effect, Layer } from "effect";
 
-import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as ExtensionContextTest from "../../__tests__/fake/ExtensionContext.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import * as Telemetry from "../Telemetry.ts";
 
 const it = EffectTest.make(
   Telemetry.layer.pipe(
     Layer.provide(
-      TestVsCode.layerWith(
+      VsCodeTest.layerWith(
         {},
         {
           env: {
@@ -37,7 +37,7 @@ const it = EffectTest.make(
         },
       ),
     ),
-    Layer.provide(TestExtensionContextLive),
+    Layer.provide(ExtensionContextTest.layer),
   ),
 );
 

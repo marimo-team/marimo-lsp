@@ -2,24 +2,24 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import { commandId } from "../../commands.ts";
 import { MarimoCommands } from "../../commands/MarimoCommands.ts";
 import * as CellMetadataBindings from "../../features/CellMetadataBindings.ts";
-import * as CellMetadataUIBinding from "../../notebook/CellMetadataUIBinding.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
+import * as CellMetadataUIBinding from "../CellMetadataUIBinding.ts";
 
 const it = EffectTest.make(
   CellMetadataUIBinding.layer.pipe(
     Layer.provideMerge(Constants.defaultLayer),
-    Layer.provideMerge(TestVsCode.layer),
+    Layer.provideMerge(VsCodeTest.layer),
   ),
 );
 
-const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = VsCodeTest.createNotebookUri("file:///test/notebook_mo.py");
 
 // Mock cell factory
 function createMockCell(
@@ -27,8 +27,8 @@ function createMockCell(
   languageId: string = "python",
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  return TestVsCode.createNotebookCell(
-    TestVsCode.createTestNotebookDocument(uri),
+  return VsCodeTest.createNotebookCell(
+    VsCodeTest.createTestNotebookDocument(uri),
     {
       kind: 1, // Code
       value: "print('test')",
@@ -42,7 +42,7 @@ function createMockCell(
 it.effect("should register a binding and create status bar provider", () =>
   Effect.gen(function* () {
     const service = yield* CellMetadataUIBinding.Service;
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
 
     const binding: CellMetadataUIBinding.MetadataBinding = {
       id: "test.field",
@@ -66,7 +66,7 @@ it.effect(
   "should show status bar item based on shouldShow predicate",
   Effect.fn(function* () {
     const service = yield* CellMetadataUIBinding.Service;
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
     const { LanguageId } = yield* Constants.Service;
 
     const binding: CellMetadataUIBinding.MetadataBinding = {
@@ -106,7 +106,7 @@ it.effect(
 it.effect("should display value from cell metadata", () =>
   Effect.gen(function* () {
     const service = yield* CellMetadataUIBinding.Service;
-    const vscode = yield* TestVsCode.Service;
+    const vscode = yield* VsCodeTest.Service;
 
     const binding: CellMetadataUIBinding.MetadataBinding = {
       id: "test.metadata",

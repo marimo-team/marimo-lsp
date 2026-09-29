@@ -14,9 +14,10 @@ import {
 } from "effect";
 import type * as vscode from "vscode";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as TestMarimoClient from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   marimoConfigFixture,
   mergeMarimoConfig,
@@ -79,14 +80,14 @@ const layerWith = (initialConfigs: ReadonlyMap<NotebookId, MarimoConfig>) =>
           (notebookId) =>
             [
               notebookId,
-              TestVsCode.createTestNotebookDocument(
-                TestVsCode.Uri.parse(notebookId),
+              VsCodeTest.createTestNotebookDocument(
+                VsCodeTest.Uri.parse(notebookId),
               ),
             ] as const,
         ),
       );
 
-      const runtimeLayer = TestMarimoClient.makeTestNotebookRuntime({
+      const runtimeLayer = NotebookRuntimeTest.layerWith({
         send: Effect.fn(function* (request) {
           if (request.kind === "get-configuration") {
             const id = notebookId(request.notebookUri);
@@ -132,7 +133,7 @@ const layerWith = (initialConfigs: ReadonlyMap<NotebookId, MarimoConfig>) =>
           Layer.provideMerge(runtimeLayer),
           Layer.provideMerge(NotebookDocumentSessions.layer),
           Layer.provideMerge(
-            TestVsCode.layerWith({ initialDocuments: [...documents.values()] }),
+            VsCodeTest.layerWith({ initialDocuments: [...documents.values()] }),
           ),
         ),
         Layer.succeed(Server, {
@@ -193,14 +194,14 @@ const documentFor = Effect.fn(function* (notebookId: NotebookId) {
 /** Opens a new document at the same URI and waits for it to become active. */
 const replaceDocument = Effect.fn(function* (notebookId: NotebookId) {
   const server = yield* Server;
-  const vscode = yield* TestVsCode.Service;
+  const vscode = yield* VsCodeTest.Service;
   const sessions = yield* NotebookDocumentSessions.Service;
-  const replacement = TestVsCode.createTestNotebookDocument(
-    TestVsCode.Uri.parse(notebookId),
+  const replacement = VsCodeTest.createTestNotebookDocument(
+    VsCodeTest.Uri.parse(notebookId),
   );
   yield* vscode.openNotebook(replacement);
   yield* vscode.setActiveNotebookEditor(
-    Option.some(TestVsCode.createTestNotebookEditor(replacement)),
+    Option.some(VsCodeTest.createTestNotebookEditor(replacement)),
   );
   yield* sessions.active.pipe(
     Stream.filter(Option.exists((session) => session.document === replacement)),
@@ -277,7 +278,7 @@ const configurationChanges = (
   );
 
 const requestCount = Effect.fn(function* (kind: string) {
-  const marimo = yield* TestMarimoClient.Service;
+  const marimo = yield* MarimoClientTest.Service;
   return (yield* marimo.commands).filter((request) => request.kind === kind)
     .length;
 });
@@ -415,7 +416,7 @@ Vitest.describe("NotebookConfiguration", () => {
   it.effect(
     "evicts resources when a document session ends",
     Effect.fn(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       const document = yield* documentFor(NOTEBOOK_URI);
       Vitest.expect(yield* getConfig(NOTEBOOK_URI)).toEqual(AUTORUN_CONFIG);
 

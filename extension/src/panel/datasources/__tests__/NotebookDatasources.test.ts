@@ -2,21 +2,21 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Fiber, Option } from "effect";
 import { TestClock } from "effect/testing";
 
-import * as EffectTest from "../../../__tests__/__utils__/EffectTest.ts";
-import { makeScopedResourceCounter } from "../../../__tests__/__utils__/scopedResourceCounter.ts";
-import type { TestCommand } from "../../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../../__tests__/fake/MarimoClient.ts";
+import * as EffectTest from "../../../__tests__/lib/EffectTest.ts";
+import { makeScopedResourceCounter } from "../../../__tests__/lib/scopedResourceCounter.ts";
 import { requestId } from "../../../lib/__tests__/branded.ts";
 import type { SqlTableListPreviewNotification } from "../../../types.ts";
 import * as TestNotebookDatasources from "./TestNotebookDatasources.ts";
 
-const schemaRequest = (request: TestCommand) => {
+const schemaRequest = (request: MarimoClientTest.Command) => {
   if (request.kind !== "list-sql-schemas") {
     throw new Error(`Expected list-sql-schemas, received ${request.kind}`);
   }
   return request;
 };
 
-const tableRequest = (request: TestCommand) => {
+const tableRequest = (request: MarimoClientTest.Command) => {
   if (request.kind !== "list-sql-tables") {
     throw new Error(`Expected list-sql-tables, received ${request.kind}`);
   }

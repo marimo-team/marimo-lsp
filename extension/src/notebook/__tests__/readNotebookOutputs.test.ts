@@ -2,7 +2,10 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
+import {
+  createTestNotebookDocument,
+  Uri,
+} from "../../__tests__/fake/VsCode.ts";
 import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
 import { conventionalSessionCachePath } from "../readNotebookOutputs.ts";
 

@@ -12,12 +12,9 @@ import {
   Stream,
 } from "effect";
 
-import * as VsCodeValues from "../../../__mocks__/VsCodeValues.ts";
-import {
-  makeTestMarimoClient,
-  type TestCommand,
-} from "../../../__tests__/__utils__/TestMarimoClient.ts";
-import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
+import * as MarimoClientTest from "../../../__tests__/fake/MarimoClient.ts";
+import * as VsCodeValues from "../../../__tests__/fake/VsCodeValues.ts";
+import { makeTestNotebookDocumentSession } from "../../../__tests__/lib/notebookDocumentSession.ts";
 import { NOTEBOOK_TYPE } from "../../../constants.ts";
 import { kernelSessionId, notebookId } from "../../../lib/__tests__/branded.ts";
 import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
@@ -50,8 +47,8 @@ export interface Interface extends NotebookDatasources.Interface {
   readonly selectReplacement: Effect.Effect<void>;
   readonly closeCurrent: Effect.Effect<void>;
   readonly closeDisplaced: Effect.Effect<void>;
-  readonly requests: Effect.Effect<ReadonlyArray<TestCommand>>;
-  readonly nextRequest: Effect.Effect<TestCommand>;
+  readonly requests: Effect.Effect<ReadonlyArray<MarimoClientTest.Command>>;
+  readonly nextRequest: Effect.Effect<MarimoClientTest.Command>;
   readonly sendStarted: Effect.Effect<void>;
   readonly sendFinalized: Effect.Effect<void>;
   readonly releaseSend: Effect.Effect<void>;
@@ -116,18 +113,20 @@ export const layerWith = (scenario: Scenario) =>
       let current = makeSession();
       let replacement: NotebookDocumentSessions.Session | undefined;
       let displaced: NotebookDocumentSessions.Session | undefined;
-      const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-      const requestQueue = yield* Queue.unbounded<TestCommand>();
+      const requests = yield* Ref.make<ReadonlyArray<MarimoClientTest.Command>>(
+        [],
+      );
+      const requestQueue = yield* Queue.unbounded<MarimoClientTest.Command>();
       const sendStarted = yield* Latch.make();
       const sendFinalized = yield* Latch.make();
       const releaseSend = yield* Latch.make();
 
-      const record = (request: TestCommand) =>
+      const record = (request: MarimoClientTest.Command) =>
         Ref.update(requests, (all) => [...all, request]).pipe(
           Effect.andThen(Queue.offer(requestQueue, request)),
           Effect.asVoid,
         );
-      const send = (request: TestCommand) =>
+      const send = (request: MarimoClientTest.Command) =>
         Scenario.$is("BlockedSend")(scenario)
           ? sendStarted.open.pipe(
               Effect.andThen(releaseSend.await),
@@ -147,7 +146,7 @@ export const layerWith = (scenario: Scenario) =>
         subscribeLifecycle: Effect.succeed(Stream.empty),
       });
       const environment = NotebookDatasources.layer.pipe(
-        Layer.provide([makeTestMarimoClient({ send }), documentSessions]),
+        Layer.provide([MarimoClientTest.layerWith({ send }), documentSessions]),
       );
       const testService = Layer.effect(
         Service,

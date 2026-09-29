@@ -6,7 +6,7 @@ import * as Vitest from "@effect/vitest";
 import { Effect, Exit, Option } from "effect";
 import type * as vscode from "vscode";
 
-import { Uri } from "../../__mocks__/TestVsCode.ts";
+import { Uri } from "../../__tests__/fake/VsCode.ts";
 import { resolveNotebookFileRoot } from "../NotebookFileRoot.ts";
 
 const folder = (path: string) =>

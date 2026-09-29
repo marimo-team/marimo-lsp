@@ -11,9 +11,10 @@ import {
   Stream,
 } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
-import * as TestMarimoClient from "../../__tests__/__utils__/TestMarimoClient.ts";
+import * as MarimoClientTest from "../../__tests__/fake/MarimoClient.ts";
+import * as NotebookRuntimeTest from "../../__tests__/fake/NotebookRuntime.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
 import { notebookId } from "../../lib/__tests__/branded.ts";
 import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
@@ -42,10 +43,10 @@ class Gate extends Context.Service<
 >()("@marimo/test/NotebookDependencies/Gate") {}
 
 type Responder = (
-  request: TestMarimoClient.TestCommand,
+  request: MarimoClientTest.Command,
   context: {
     readonly gate: Gate["Service"];
-    readonly commands: ReadonlyArray<TestMarimoClient.TestCommand>;
+    readonly commands: ReadonlyArray<MarimoClientTest.Command>;
   },
 ) => Effect.Effect<unknown, Schema.SchemaError>;
 
@@ -82,9 +83,9 @@ const layerWith = (options: Options = {}) =>
       };
       const respond = options.respond ?? (() => Effect.succeed({ tree: TREE }));
       const documents = (options.notebooks ?? [NOTEBOOK_URI]).map((uri) =>
-        TestVsCode.createTestNotebookDocument(TestVsCode.Uri.parse(uri)),
+        VsCodeTest.createTestNotebookDocument(VsCodeTest.Uri.parse(uri)),
       );
-      const runtimeLayer = TestMarimoClient.makeTestNotebookRuntime({
+      const runtimeLayer = NotebookRuntimeTest.layerWith({
         initialControllers: options.controllers ?? [scriptController],
         send: (request, commands) => respond(request, { gate, commands }),
       });
@@ -93,7 +94,7 @@ const layerWith = (options: Options = {}) =>
           Layer.provideMerge(runtimeLayer),
           Layer.provideMerge(NotebookDocumentSessions.layer),
           Layer.provideMerge(
-            TestVsCode.layerWith({ initialDocuments: documents }),
+            VsCodeTest.layerWith({ initialDocuments: documents }),
           ),
         ),
         Layer.succeed(Gate, gate),
@@ -158,7 +159,7 @@ const refresh = (id: NotebookId = NOTEBOOK_URI) =>
   );
 
 const requests = Effect.gen(function* () {
-  const marimo = yield* TestMarimoClient.Service;
+  const marimo = yield* MarimoClientTest.Service;
   return yield* marimo.commands;
 });
 

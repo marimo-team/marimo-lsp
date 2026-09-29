@@ -1,8 +1,8 @@
 import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
-import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as VsCodeTest from "../../__tests__/fake/VsCode.ts";
+import * as EffectTest from "../../__tests__/lib/EffectTest.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -12,7 +12,7 @@ import {
   mergeAutoDownloadFormats,
 } from "../configureAutoExport.ts";
 
-const it = EffectTest.make(TestVsCode.layer);
+const it = EffectTest.make(VsCodeTest.layer);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,7 +24,7 @@ const appOptions = (
 ) => ({ managed: { autoDownload: [...autoDownload] }, passthrough });
 
 const notebookFor = (
-  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+  editor: ReturnType<typeof VsCodeTest.makeNotebookEditor>,
 ) => MarimoNotebookDocument.tryFrom(editor.notebook);
 
 Vitest.describe("mergeAutoDownloadFormats", () => {
@@ -51,8 +51,8 @@ Vitest.describe("mergeAutoDownloadFormats", () => {
 it.effect(
   "applies and saves selected automatic export formats",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         metadata: MarimoNotebookDocument.createMetadata({
           appOptions: appOptions(["html"]),
@@ -85,8 +85,8 @@ it.effect(
 it.effect(
   "does not save when the selected formats are unchanged",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
@@ -106,8 +106,8 @@ it.effect(
 it.effect(
   "reports when all automatic exports are disabled",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
@@ -129,7 +129,7 @@ it.effect(
 Vitest.it.effect(
   "merges the selection into metadata changed while the picker is open",
   Effect.fn(function* () {
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
@@ -137,7 +137,7 @@ Vitest.it.effect(
         }),
       },
     });
-    const layer = TestVsCode.layerWith(
+    const layer = VsCodeTest.layerWith(
       {
         initialDocuments: [editor.notebook],
       },
@@ -166,7 +166,7 @@ Vitest.it.effect(
     );
 
     const snapshot = yield* Effect.gen(function* () {
-      const vscode = yield* TestVsCode.Service;
+      const vscode = yield* VsCodeTest.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* configureAutoExport(notebookFor(editor));
       return yield* vscode.snapshot;
@@ -175,14 +175,14 @@ Vitest.it.effect(
     const edit = Option.getOrThrow(
       Option.fromNullishOr(snapshot.workspaceEdits[0]),
     );
-    const notebookEdits = TestVsCode.getNotebookEdits(
+    const notebookEdits = VsCodeTest.getNotebookEdits(
       edit,
       editor.notebook.uri,
     );
     const metadata = Option.getOrThrow(
       Option.fromNullishOr(notebookEdits[0]?.newNotebookMetadata),
     );
-    const updated = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const updated = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: { cells: [], metadata },
     });
     const parsed = yield* MarimoNotebookDocument.from(
@@ -206,8 +206,8 @@ Vitest.it.effect(
 it.effect(
   "reports an error instead of success when the notebook cannot be saved",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
@@ -234,8 +234,8 @@ it.effect(
 it.effect(
   "reports an error instead of failing when saving rejects",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.Service;
-    const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
+    const vscode = yield* VsCodeTest.Service;
+    const editor = VsCodeTest.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
         metadata: MarimoNotebookDocument.createMetadata({
