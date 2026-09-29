@@ -547,6 +547,18 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
         Stream.changesWith((left, right) => left === right),
         Stream.drop(1),
       ),
+      subscribeActiveTextEditorChanges: Effect.gen(function* () {
+        const queue =
+          yield* Queue.unbounded<Option.Option<vscode.TextEditor>>();
+        yield* SubscriptionRef.changes(textEditors).pipe(
+          Stream.map((state) => state.active),
+          Stream.changesWith((left, right) => left === right),
+          Stream.drop(1),
+          Stream.runForEach((active) => Queue.offer(queue, active)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+        return Stream.fromQueue(queue);
+      }),
       colorThemeChanges:
         behavior.window?.colorThemeChanges ?? Stream.make("light" as const),
       closeTextEditorTab: () => Effect.void,

@@ -114,6 +114,12 @@ export interface Interface {
   readonly activeTextEditorChanges: Stream.Stream<
     Option.Option<vscode.TextEditor>
   >;
+  /** Acquires the listener before returning, buffering changes until consumed. */
+  readonly subscribeActiveTextEditorChanges: Effect.Effect<
+    Stream.Stream<Option.Option<vscode.TextEditor>>,
+    never,
+    Scope.Scope
+  >;
   readonly showNotebookDocument: (
     doc: vscode.NotebookDocument,
     options?: vscode.NotebookDocumentShowOptions,
@@ -408,6 +414,16 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      subscribeActiveTextEditorChanges: Effect.gen(function* () {
+        const queue =
+          yield* Queue.unbounded<Option.Option<vscode.TextEditor>>();
+        yield* acquireDisposable(() =>
+          api.onDidChangeActiveTextEditor((e) =>
+            Queue.offerUnsafe(queue, Option.fromNullishOr(e)),
+          ),
+        );
+        return Stream.fromQueue(queue);
+      }),
       showNotebookDocument,
       showTextDocument,
       withProgress,
