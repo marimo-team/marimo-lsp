@@ -30,7 +30,7 @@ import * as TelemetryTest from "../fake/Telemetry.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import { cellId, kernelSessionId, notebookId } from "../lib/branded.ts";
 import * as EffectTest from "../lib/EffectTest.ts";
-import * as Runtime from "./runtime.ts";
+import * as NotebookRuntimeHarness from "./notebookRuntimeHarness.ts";
 
 const notebook = notebookId("notebook-a");
 const it = EffectTest.make(Layer.empty);
@@ -145,7 +145,7 @@ it.effect(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      yield* Runtime.open(editor);
+      yield* NotebookRuntimeHarness.open(editor);
       const first = yield* notebooks.forNotebook(id);
       const second = yield* notebooks.forNotebook(id);
       const document = yield* notebooks.forDocument(editor.notebook);
@@ -312,7 +312,7 @@ it.effect(
         ),
       };
 
-      yield* Runtime.open(editor);
+      yield* NotebookRuntimeHarness.open(editor);
       const document = yield* runtime.forDocument(editor.notebook);
       yield* document.execute({ cells: [] }, "/usr/bin/python");
       const notebook = yield* runtime.forNotebook(id);
@@ -532,7 +532,7 @@ it.effect(
       yield* Deferred.await(requestStarted);
 
       const replacement = VsCodeTest.makeNotebookEditor(first.notebook.uri);
-      yield* Runtime.open(replacement);
+      yield* NotebookRuntimeHarness.open(replacement);
       const replacementDocument = yield* runtime.forDocument(
         replacement.notebook,
       );
@@ -612,7 +612,7 @@ it.live("tracks RuntimeSession until a successful kernel close", () =>
 
         yield* Effect.gen(function* () {
           const runtime = yield* NotebookRuntime.Service;
-          yield* Runtime.activate(editor);
+          yield* NotebookRuntimeHarness.activate(editor);
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.execute({ cells: [] }, "/python-one");
 
@@ -625,7 +625,7 @@ it.live("tracks RuntimeSession until a successful kernel close", () =>
             }),
           );
 
-          yield* Runtime.close(editor.notebook);
+          yield* NotebookRuntimeHarness.close(editor.notebook);
           Vitest.expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
@@ -638,7 +638,7 @@ it.live("tracks RuntimeSession until a successful kernel close", () =>
           const reopened = VsCodeTest.makeNotebookEditor(
             NodePath.join(temporary.path, "notebook.py"),
           );
-          yield* Runtime.open(reopened);
+          yield* NotebookRuntimeHarness.open(reopened);
           const secondDocument = yield* runtime.forDocument(reopened.notebook);
           yield* secondDocument.execute({ cells: [] }, "/python-two");
           const notebook = yield* runtime.forNotebook(id);
@@ -789,7 +789,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
-      yield* Runtime.activate(editor);
+      yield* NotebookRuntimeHarness.activate(editor);
       const id = notebookId(editor.notebook.uri.toString());
       yield* notebooks.forDocument(editor.notebook);
       yield* notebooks.attachController(id, controller);
@@ -898,11 +898,11 @@ it.effect(
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
       const vscode = yield* VsCodeTest.Service;
-      yield* Runtime.open(editor);
+      yield* NotebookRuntimeHarness.open(editor);
       yield* notebooks.attachController(id, controller);
       Vitest.expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
-      yield* Runtime.close(editor.notebook);
+      yield* NotebookRuntimeHarness.close(editor.notebook);
 
       // Closing has completed the document session; resolve a new handle
       // instead of reading the old session's captured controller.

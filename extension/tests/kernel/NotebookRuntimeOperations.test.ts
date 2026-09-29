@@ -36,14 +36,14 @@ import {
   variableName,
 } from "../lib/branded.ts";
 import * as EffectTest from "../lib/EffectTest.ts";
-import * as Runtime from "./runtime.ts";
+import * as NotebookRuntimeHarness from "./notebookRuntimeHarness.ts";
 
 const ACTIVE_SESSION_ID = kernelSessionId(
   "00000000-0000-4000-8000-000000000001",
 );
-const it = EffectTest.make(Runtime.layer);
+const it = EffectTest.make(NotebookRuntimeHarness.layer);
 const cancellationIt = EffectTest.make(
-  Runtime.layerWith({ suspendWorkspaceEdits: true }),
+  NotebookRuntimeHarness.layerWith({ suspendWorkspaceEdits: true }),
 );
 
 function makeIdleCellOperation(
@@ -189,13 +189,13 @@ Vitest.describe("NotebookRuntime operation processing", () => {
   cancellationIt.effect(
     "does not report session cancellation as an operation failure",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
 
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
@@ -217,7 +217,7 @@ Vitest.describe("NotebookRuntime operation processing", () => {
         });
         yield* ctx.workspaceEditStarted.await;
 
-        yield* Runtime.close(ctx.editor.notebook);
+        yield* NotebookRuntimeHarness.close(ctx.editor.notebook);
 
         Vitest.expect((yield* vscode.snapshot).errorMessages).toEqual([]);
       });
@@ -229,14 +229,14 @@ Vitest.describe("NotebookRuntime cell identity", () => {
   it.effect(
     "notifies marimo when a cell is deleted",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
 
         const cell = ctx.editor.notebook.cellAt(0);
-        yield* Runtime.changeNotebook({
+        yield* NotebookRuntimeHarness.changeNotebook({
           notebook: ctx.editor.notebook,
           metadata: undefined,
           cellChanges: [],
@@ -269,14 +269,14 @@ Vitest.describe("NotebookRuntime cell identity", () => {
   it.effect(
     "does not delete a cell that moved within the notebook",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
 
         const cell = ctx.editor.notebook.cellAt(0);
-        yield* Runtime.changeNotebook({
+        yield* NotebookRuntimeHarness.changeNotebook({
           notebook: ctx.editor.notebook,
           metadata: undefined,
           cellChanges: [],
@@ -312,7 +312,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
     "prompts for input on stdin cell-op and sends response",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const vscode = yield* VsCodeTest.Service;
 
@@ -321,7 +321,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const cellId = Option.getOrThrow(cell.id);
 
         // Set active editor so NotebookEditorRegistry can find it
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
 
         // Push a cell-op with stdin console output
         yield* marimo.publishNotification(
@@ -337,7 +337,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Runtime.inputRequested;
+        yield* NotebookRuntimeHarness.inputRequested;
 
         // Provide the input (unblocks showInputBox)
         yield* vscode.respondToInput(Option.some("foo"));
@@ -364,7 +364,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
     "does not send command when user cancels input",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const vscode = yield* VsCodeTest.Service;
 
@@ -372,7 +372,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
         const cell = ctx.notebook.cellAt(0);
         const cellId = Option.getOrThrow(cell.id);
 
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
 
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -387,7 +387,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Runtime.inputRequested;
+        yield* NotebookRuntimeHarness.inputRequested;
 
         // User cancels the input box
         yield* vscode.respondToInput(Option.none());
@@ -417,13 +417,13 @@ Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
     "cancels an in-flight prompt when its notebook session closes",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
 
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -438,10 +438,10 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Runtime.inputRequested;
+        yield* NotebookRuntimeHarness.inputRequested;
 
         yield* vscode.closeNotebook(ctx.editor.notebook);
-        yield* Runtime.inputCancelled;
+        yield* NotebookRuntimeHarness.inputCancelled;
 
         Vitest.expect(
           (yield* marimo.commands).some(
@@ -455,14 +455,14 @@ Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
     "does not send an old prompt response to a replacement kernel",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
         const cellId = Option.getOrThrow(ctx.notebook.cellAt(0).id);
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
 
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
@@ -477,7 +477,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
             ],
           }),
         );
-        yield* Runtime.inputRequested;
+        yield* NotebookRuntimeHarness.inputRequested;
 
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
         yield* notebook.restart;
@@ -515,7 +515,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "runs one scratchpad at a time within a notebook",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
@@ -595,7 +595,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "allows scratchpad execution in separate notebooks",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
       const otherEditor = VsCodeValues.makeNotebookEditor(
         NodePath.join(process.cwd(), "other_notebook_mo.py"),
@@ -604,7 +604,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
-        yield* Runtime.open(otherEditor);
+        yield* NotebookRuntimeHarness.open(otherEditor);
         yield* ctx.attachController(otherNotebook.id);
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
@@ -673,14 +673,14 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "streams scratch + cascade console ops until the matching completed-run",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
         // Route cell-op notifications through processSessionOperation.
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -768,13 +768,13 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "interrupts the kernel when the stream is abandoned before completed-run",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -819,13 +819,13 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   it.effect(
     "does not interrupt the kernel after a normal completed-run",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
-        yield* Runtime.activate(ctx.editor);
+        yield* NotebookRuntimeHarness.activate(ctx.editor);
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -872,7 +872,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
       const staleSessionId = kernelSessionId(
         "00000000-0000-4000-8000-000000000002",
       );
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
@@ -913,7 +913,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
   it.effect(
     "evicts variables and datasource state when a notebook closes",
     Effect.fn(function* () {
-      const ctx = yield* Runtime.Notebook;
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
       yield* Effect.gen(function* () {
@@ -921,7 +921,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         const variables = yield* NotebookVariables.Service;
         const datasources = yield* NotebookDatasources.Service;
 
-        yield* Runtime.publishAnalysis({
+        yield* NotebookRuntimeHarness.publishAnalysis({
           notebookUri: ctx.notebookUri,
           analysis: {
             op: "variables",
@@ -957,7 +957,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
           Option.isSome(yield* datasources.getDatasets(ctx.notebookUri)),
         ).toBe(true);
 
-        yield* Runtime.close(ctx.editor.notebook);
+        yield* NotebookRuntimeHarness.close(ctx.editor.notebook);
         Vitest.expect(yield* variables.getVariables(ctx.notebookUri)).toEqual(
           Option.none(),
         );
@@ -967,7 +967,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
 
         // Notifications already queued, or delivered late by the old kernel
         // session, must not recreate state after eviction.
-        yield* Runtime.publishAnalysis({
+        yield* NotebookRuntimeHarness.publishAnalysis({
           notebookUri: ctx.notebookUri,
           analysis: {
             op: "variables",
@@ -992,8 +992,8 @@ Vitest.describe("NotebookRuntime state eviction", () => {
             notebookType: ctx.editor.notebook.notebookType,
           }),
         );
-        yield* Runtime.open(replacement);
-        yield* Runtime.publishAnalysis({
+        yield* NotebookRuntimeHarness.open(replacement);
+        yield* NotebookRuntimeHarness.publishAnalysis({
           notebookUri: ctx.notebookUri,
           analysis: { op: "variables", variables: [] },
         });
@@ -1007,7 +1007,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
 
         // A delayed close from the old document must not clear replacement
         // session state.
-        yield* Runtime.close(ctx.editor.notebook);
+        yield* NotebookRuntimeHarness.close(ctx.editor.notebook);
         Vitest.expect(
           Option.isSome(yield* variables.getVariables(ctx.notebookUri)),
         ).toBe(true);

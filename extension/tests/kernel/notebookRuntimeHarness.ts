@@ -227,7 +227,7 @@ export const layerWith = (options: Options) =>
 export const layer = layerWith({});
 
 /** Makes the editor active and waits for the session and registry to agree. */
-export const activate = Effect.fn("Runtime.activate")(function* (
+export const activate = Effect.fn("NotebookRuntimeHarness.activate")(function* (
   target: vscode.NotebookEditor,
 ) {
   const vscode = yield* VsCodeTest.Service;
@@ -252,7 +252,7 @@ export const activate = Effect.fn("Runtime.activate")(function* (
   });
 });
 
-export const open = Effect.fn("Runtime.open")(function* (
+export const open = Effect.fn("NotebookRuntimeHarness.open")(function* (
   target: vscode.NotebookEditor,
 ) {
   const vscode = yield* VsCodeTest.Service;
@@ -278,9 +278,9 @@ export const inputRequested = awaitInput("pending");
 export const inputCancelled = awaitInput("cancelled");
 
 /** Publishes document analysis and waits until the runtime dispatched it. */
-export const publishAnalysis = Effect.fn("Runtime.publishAnalysis")(function* (
-  analysis: DocumentAnalysis,
-) {
+export const publishAnalysis = Effect.fn(
+  "NotebookRuntimeHarness.publishAnalysis",
+)(function* (analysis: DocumentAnalysis) {
   const runtime = yield* NotebookRuntime.Service;
   const marimo = yield* MarimoClientTest.Service;
   const dispatched = yield* runtime.subscribeInputProgress;
@@ -298,9 +298,9 @@ export const publishAnalysis = Effect.fn("Runtime.publishAnalysis")(function* (
 }, Effect.scoped);
 
 /** Applies a notebook change and waits until the runtime synchronized it. */
-export const changeNotebook = Effect.fn("Runtime.changeNotebook")(function* (
-  event: vscode.NotebookDocumentChangeEvent,
-) {
+export const changeNotebook = Effect.fn(
+  "NotebookRuntimeHarness.changeNotebook",
+)(function* (event: vscode.NotebookDocumentChangeEvent) {
   const runtime = yield* NotebookRuntime.Service;
   const vscode = yield* VsCodeTest.Service;
   const progress = yield* runtime.subscribeInputProgress;
