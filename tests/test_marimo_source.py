@@ -104,3 +104,47 @@ def test_prepare_cleans_before_building(
         ("pnpm", "install", "--frozen-lockfile")
     )
     assert checked == [tmp_path]
+
+
+def test_prepare_fetches_a_tag_into_an_existing_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = tmp_path / "remote"
+    checkout = tmp_path / "checkout"
+    remote.mkdir()
+    checkout.mkdir()
+    git = marimo_source._require_command("git")
+    run = marimo_source._run
+    run(git, "init", cwd=remote)
+    run(
+        git,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "release",
+        cwd=remote,
+    )
+    run(git, "tag", "0.24.2", cwd=remote)
+    run(git, "init", cwd=checkout)
+    run(git, "remote", "add", "origin", str(remote), cwd=checkout)
+
+    def run_without_build(
+        *args: str, cwd: Path = marimo_version.ROOT, capture: bool = False
+    ) -> str:
+        if args[0] == git:
+            return run(*args, cwd=cwd, capture=capture)
+        return "0.24.2"  # uv version; pnpm output is unused
+
+    monkeypatch.setattr(marimo_source, "MARIMO_REPOSITORY", str(remote))
+    monkeypatch.setattr(marimo_source.marimo_version, "check", _policy)
+    monkeypatch.setattr(marimo_source, "_run", run_without_build)
+
+    marimo_source.prepare(checkout)
+    marimo_source.check(checkout)

@@ -56,7 +56,12 @@ def parse_notebook(source: str) -> protocol.ParseNotebookResult:
     if not ir.valid:
         return _classify_convertible(source)
 
-    notebook = msgspec.to_builtins(convert_from_ir_to_notebook_v1(ir))
+    notebook_v1 = convert_from_ir_to_notebook_v1(ir)
+    # marimo 0.25's converter omits expand_output despite supporting it in IR.
+    for cell, cell_ir in zip(notebook_v1["cells"], ir.cells, strict=True):
+        if "expand_output" in cell_ir.options:
+            cell["config"]["expand_output"] = cell_ir.options["expand_output"]
+    notebook = msgspec.to_builtins(notebook_v1)
     if not isinstance(notebook, dict):
         msg = "marimo notebook conversion did not produce an object"
         raise TypeError(msg)
@@ -87,6 +92,7 @@ def _document_to_ir(
                     "column": cell.get("config", {}).get("column"),
                     "disabled": cell.get("config", {}).get("disabled", False),
                     "hide_code": cell.get("config", {}).get("hide_code", False),
+                    "expand_output": cell.get("config", {}).get("expand_output", False),
                 },
             )
             for cell in document.cells

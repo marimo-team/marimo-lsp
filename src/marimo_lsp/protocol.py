@@ -60,6 +60,7 @@ class NotebookCellConfig(typing.TypedDict, total=False):
     column: int | None
     disabled: bool | None
     hide_code: bool | None
+    expand_output: bool | None
 
 
 class NotebookCell(typing.TypedDict):

@@ -758,7 +758,12 @@ async def test_execute_scratchpad_binds_code_mode_and_emits_transaction(
             "cellId": "<minted>",
             "code": "z = 1",
             "name": "",
-            "config": {"column": None, "disabled": False, "hide_code": True},
+            "config": {
+                "column": None,
+                "disabled": False,
+                "hide_code": True,
+                "expand_output": False,
+            },
             "before": None,
             "after": None,
         }
@@ -850,6 +855,7 @@ async def test_code_mode_edit_cell_config_on_existing_cell(
             "column": None,
             "disabled": False,
             "hideCode": True,
+            "expandOutput": False,
         }
     )
 

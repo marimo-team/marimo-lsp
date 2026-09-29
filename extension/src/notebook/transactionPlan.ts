@@ -26,6 +26,7 @@ const PlanCellConfig = Schema.Struct({
   column: Schema.NullOr(Schema.Number),
   disabled: Schema.Boolean,
   hide_code: Schema.Boolean,
+  expand_output: Schema.Boolean,
 });
 
 /** A minimal, `vscode`-free view of a notebook cell for transaction planning. */
@@ -77,6 +78,7 @@ const normalizeConfig = (config: CellConfig): typeof PlanCellConfig.Type => ({
   column: config.column ?? null,
   disabled: config.disabled ?? false,
   hide_code: config.hide_code ?? false,
+  expand_output: config.expand_output ?? false,
 });
 
 function retainSourceProjections(
@@ -181,6 +183,7 @@ export function computeDesiredCells(
               column: change.column,
               disabled: change.disabled,
               hide_code: change.hideCode,
+              expand_output: change.expandOutput ?? false,
             },
           };
         }

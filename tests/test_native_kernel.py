@@ -6,7 +6,7 @@ import asyncio
 import threading
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -29,7 +29,8 @@ def _manager(notebook: Path, working_directory: str) -> Manager:
     return manager
 
 
-def test_supplied_working_directory_reaches_launch_kernel(
+@pytest.mark.asyncio
+async def test_supplied_working_directory_reaches_launch_kernel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     launch = Mock(return_value=Mock())
@@ -38,13 +39,14 @@ def test_supplied_working_directory_reaches_launch_kernel(
     selected.mkdir()
 
     manager = _manager(tmp_path / "notebook.py", str(selected))
-    manager.start_kernel()
+    await manager.start_kernel()
 
     assert launch.call_args.kwargs["cwd"] == str(selected)
 
 
 @pytest.mark.parametrize("kind", ["relative", "missing", "file"])
-def test_invalid_working_directory_is_rejected(
+@pytest.mark.asyncio
+async def test_invalid_working_directory_is_rejected(
     kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     launch = Mock(return_value=Mock())
@@ -60,7 +62,7 @@ def test_invalid_working_directory_is_rejected(
 
     manager = _manager(tmp_path / "notebook.py", selected)
     with pytest.raises(ValueError, match="working directory"):
-        manager.start_kernel()
+        await manager.start_kernel()
 
     launch.assert_not_called()
 
@@ -72,7 +74,7 @@ async def test_failed_launch_closes_queues_without_a_started_kernel(
     queue_manager = Mock()
     manager = Mock()
     manager.kernel_task = None
-    manager.start_kernel.side_effect = RuntimeError("launch failed")
+    manager.start_kernel = AsyncMock(side_effect=RuntimeError("launch failed"))
 
     monkeypatch.setattr(
         "marimo_lsp.kernels.native.IpcQueues.create",

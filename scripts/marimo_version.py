@@ -26,7 +26,7 @@ BASE_PACKAGE = "marimo-base"
 FULL_PACKAGE = "marimo"
 MARIMO_REPOSITORY = "marimo-team/marimo"
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-SOURCE_PATTERN = re.compile(r"(?m)^marimo-source\s*=\s*\{[^}\n]*\}\s*$")
+SOURCE_PATTERN = re.compile(r"(?m)^marimo-source[^\S\n]*=[^\S\n]*\{[^}\n]*\}[^\S\n]*$")
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
 
 

@@ -50,6 +50,7 @@ function toPlanCell(cell: MarimoNotebookCell): Option.Option<PlanCell> {
       column: typeof options.column === "number" ? options.column : null,
       disabled: options.disabled === true,
       hide_code: options.hide_code === true,
+      expand_output: options.expand_output === true,
     },
     sourceProjections,
   });

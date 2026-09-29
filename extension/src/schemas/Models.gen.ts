@@ -400,6 +400,7 @@ export type NotebookMetadata = typeof NotebookMetadata.Type;
 export const NotebookCellConfig = Schema.Struct({
   column: Schema.optional(Schema.NullOr(Schema.Int)),
   disabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  expand_output: Schema.optional(Schema.NullOr(Schema.Boolean)),
   hide_code: Schema.optional(Schema.NullOr(Schema.Boolean)),
 }).annotate({ identifier: "NotebookCellConfig" });
 export type NotebookCellConfig = typeof NotebookCellConfig.Type;
@@ -1422,8 +1423,10 @@ export type PackageManagementConfig = typeof PackageManagementConfig.Type;
  *     `PYTHONPATH` environment variable, the directories will be included in
  *     where Python will look for imported modules.
  * - `dotenv`: a list of paths to `.env` files to load.
- *     If the file does not exist, it will be silently ignored.
- *     The default is `[".env"]` if a pyproject.toml is found, otherwise `[]`.
+ *     If the file does not exist, it will be silently ignored. Relative
+ *     paths resolve against the directory holding the `pyproject.toml`,
+ *     or the notebook's directory when there is none. The default is
+ *     `[".env"]`.
  * - `default_sql_output`: the default output format for SQL queries. Can be one of:
  *     `"auto"`, `"native"`, `"polars"`, `"lazy-polars"`, or `"pandas"`.
  *     The default is `"auto"`.

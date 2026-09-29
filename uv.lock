@@ -417,7 +417,7 @@ wheels = [
 
 [[package]]
 name = "marimo-base"
-version = "0.24.2"
+version = "0.25.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click", marker = "sys_platform != 'emscripten'" },
@@ -440,9 +440,9 @@ dependencies = [
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
     { name = "websockets", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ad/8b/8978cded223a7cc6832cc10a674ea003a6b145a460898b9519feb1ca2e6c/marimo_base-0.24.2.tar.gz", hash = "sha256:61f77f4d3682d69ce2ea6ab88f6908df90fceda3c266c3ca2faf00f1f861dcf0", size = 1678204, upload-time = "2026-09-11T16:56:09.289Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/bd/59a367e198c2337e260c234975b94d00d76b12246118b60a96dd34a08977/marimo_base-0.25.0.tar.gz", hash = "sha256:7306767fc99e92dd595697111ca349966fc600cdc13b2e46c650bf53800cd12b", size = 1745535, upload-time = "2026-09-23T21:46:12.918Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/52/d12623587fe80b49cd5afe9e739e0359ea1b6fc9f11dfff1ac812fbfaf7f/marimo_base-0.24.2-py3-none-any.whl", hash = "sha256:1e72c9ad4f4d289acddf6c14ce985e48d487716f15afa5eb40f9df157cfb6921", size = 1927971, upload-time = "2026-09-11T16:56:07.571Z" },
+    { url = "https://files.pythonhosted.org/packages/73/2e/3ebf59bd2b4f9a885d8e98be7a0ff892faf0ff2196a0d1935a4752f26c98/marimo_base-0.25.0-py3-none-any.whl", hash = "sha256:a2207884c0109d91773151fcdd386cd8c0d814bd0ec2825cf69f013e5d8827dc", size = 2006487, upload-time = "2026-09-23T21:46:11.439Z" },
 ]
 
 [[package]]
@@ -472,7 +472,7 @@ dev = [
 requires-dist = [
     { name = "jupytext", specifier = "==1.19.5" },
     { name = "lsprotocol", specifier = "==2025.0.0" },
-    { name = "marimo-base", specifier = "==0.24.2" },
+    { name = "marimo-base", specifier = "==0.25.0" },
     { name = "pygls", specifier = "==2.1.1" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
 ]

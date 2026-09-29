@@ -115,7 +115,11 @@ def prepare(checkout: Path = CHECKOUT) -> None:
         "--depth=1",
         "--force",
         "origin",
-        policy.source_ref,
+        (
+            f"refs/tags/{policy.source_ref}:refs/tags/{policy.source_ref}"
+            if policy.source.kind == "tag"
+            else policy.source_ref
+        ),
         cwd=checkout,
     )
     _run(git, "checkout", "--detach", "--force", "FETCH_HEAD", cwd=checkout)

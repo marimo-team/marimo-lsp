@@ -8,7 +8,7 @@ authors = [{ name = "Trevor Manz", email = "trevor.j.manz@gmail.com" }]
 dependencies = [
   "jupytext==1.19.5",
   "lsprotocol==2025.0.0",
-  "marimo-base==0.24.2",
+  "marimo-base==0.25.0",
   "pygls==2.1.1",
   "typing-extensions>=4.15.0",
 ]
@@ -39,7 +39,7 @@ build-backend = "uv_build"
 # compatibility floor we claim to support for user kernels and is bumped
 # manually when we intentionally drop support for an older release.
 minimum-kernel-version = "0.23.3"
-marimo-source = { tag = "0.24.2" }
+marimo-source = { tag = "0.25.0" }
 
 [tool.ty.src]
 exclude = ["extension/tutorials/**"]

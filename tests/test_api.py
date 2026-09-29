@@ -470,6 +470,30 @@ if __name__ == "__main__":
 
 
 @pytest.mark.asyncio
+async def test_parse_and_print_preserve_expanded_output() -> None:
+    source = """\
+import marimo
+
+app = marimo.App()
+
+@app.cell(expand_output=True)
+def _():
+    42
+    return
+"""
+    result = await parse_notebook(
+        _context(MagicMock()), protocol.ParseNotebook(source=source)
+    )
+    assert isinstance(result, protocol.ParseNotebookSuccess)
+    assert result.document.cells[0]["config"]["expand_output"] is True
+
+    printed = await print_notebook(
+        _context(MagicMock()), protocol.PrintNotebook(document=result.document)
+    )
+    assert "@app.cell(expand_output=True)" in printed.source
+
+
+@pytest.mark.asyncio
 async def test_parse_recovers_syntax_error_inside_cell() -> None:
     source = """\
 import marimo
