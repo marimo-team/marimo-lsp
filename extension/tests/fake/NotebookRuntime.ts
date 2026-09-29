@@ -95,8 +95,9 @@ function makeRuntimeLayer(options: Options, client: MarimoClient.Interface) {
             restart: client
               .restartSession({
                 notebookUri: notebookId,
-                executable: "",
-                workingDirectory: "",
+                executable: options.runtimeSession?.executable ?? "",
+                workingDirectory:
+                  options.runtimeSession?.workingDirectory ?? "",
               })
               .pipe(Effect.as(undefined)),
             close: client

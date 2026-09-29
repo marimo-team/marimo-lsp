@@ -152,9 +152,10 @@ Beside the mirror, `tests/fake` holds fakes of external boundaries,
 data, and `tests/vscode` holds the extension-host suite. Read a neighbouring
 test for the conventions; the rules below are the ones a test file cannot show.
 
-- Fake only external boundaries: VS Code, the marimo language server, the
-  Python extension, telemetry. Everything else runs the production layer. A
-  fake earns a module under `tests/fake` when it has a second consumer.
+- Fake only external boundaries, such as VS Code, the language servers, the
+  Python extension, and telemetry; `tests/fake` is the current list.
+  Everything else runs the production layer. A fake earns a module under
+  `tests/fake` when it has a second consumer.
 - Observe through the fakes. Do not add observation ports to production
   services for tests; if a fake cannot see a behavior, extend the fake.
 - Per-test state that a fake must see is created inside

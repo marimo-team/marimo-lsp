@@ -5,7 +5,16 @@
  */
 import * as NodePath from "node:path";
 
-import { Context, Effect, Fiber, Latch, Layer, Option, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  Latch,
+  Layer,
+  Logger,
+  Option,
+  Stream,
+} from "effect";
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../../src/constants.ts";
@@ -49,6 +58,8 @@ export class Notebook extends Context.Service<
     readonly notebook: MarimoNotebookDocument;
     readonly notebookUri: NotebookId;
     readonly workspaceEditStarted: Latch.Latch;
+    /** Messages the runtime logged at error level, in order. */
+    readonly errorLogs: ReadonlyArray<string>;
     readonly attachController: (notebook: NotebookId) => Effect.Effect<void>;
   }
 >()("@marimo/test/NotebookRuntime/Notebook") {}
@@ -65,6 +76,12 @@ export const layerWith = (options: Options) =>
     Effect.gen(function* () {
       const activeSessionId = options.activeSessionId ?? ACTIVE_SESSION_ID;
       const workspaceEditStarted = yield* Latch.make();
+      const errorLogs: string[] = [];
+      const captureErrors = Logger.make(({ logLevel, message }) => {
+        if (logLevel === "Error" || logLevel === "Fatal") {
+          errorLogs.push(String(message));
+        }
+      });
 
       const editor = VsCodeTest.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook_mo.py"),
@@ -134,7 +151,7 @@ export const layerWith = (options: Options) =>
         Layer.provideMerge(
           MarimoClientTest.layerWith({
             send(request) {
-              return Effect.sync(() => {
+              return Effect.suspend(() => {
                 if (
                   request.kind === "execute-scratchpad" ||
                   request.kind === "execute"
@@ -164,12 +181,12 @@ export const layerWith = (options: Options) =>
                 return ["list-sessions", "execute", "restart-session"].includes(
                   request.kind,
                 )
-                  ? {
+                  ? Effect.succeed({
                       generation: 1,
                       revision: ++revision,
                       sessions: [...serverSessions.values()],
-                    }
-                  : null;
+                    })
+                  : MarimoClientTest.defaultResponse(request);
               });
             },
           }),
@@ -177,6 +194,7 @@ export const layerWith = (options: Options) =>
         Layer.provide(TelemetryTest.layer),
         Layer.provide(PythonExtensionTest.layer),
         Layer.provideMerge(vscodeLayer),
+        Layer.provide(Logger.layer([Logger.tracerLogger, captureErrors])),
       );
       const environment = Layer.merge(runtimeLayer, cellDriveLayer);
 
@@ -214,6 +232,7 @@ export const layerWith = (options: Options) =>
             notebook,
             notebookUri,
             workspaceEditStarted,
+            errorLogs,
             attachController: (id) =>
               runtime.attachController(id, testController),
           };

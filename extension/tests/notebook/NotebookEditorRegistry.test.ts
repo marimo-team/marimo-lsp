@@ -116,12 +116,12 @@ it.effect(
     const stream = registry.streamActiveNotebookChanges;
     const mockEditor = VsCodeTest.createTestNotebookEditor(
       VsCodeTest.createTestNotebookDocument(
-        VsCodeTest.Uri.file("file:///test/notebook_mo.py"),
+        VsCodeTest.Uri.file("/test/notebook_mo.py"),
       ),
     );
     const otherEditor = VsCodeTest.createTestNotebookEditor(
       VsCodeTest.createTestNotebookDocument(
-        VsCodeTest.Uri.file("file:///test/notebook_other.py"),
+        VsCodeTest.Uri.file("/test/notebook_other.py"),
       ),
     );
 
@@ -150,27 +150,27 @@ it.effect(
 
     const collected = yield* Fiber.join(streamResult);
     Vitest.expect(collected).toMatchInlineSnapshot(`
-          [
-            {
-              "_id": "Option",
-              "_tag": "Some",
-              "value": "file:///file:///test/notebook_mo.py",
-            },
-            {
-              "_id": "Option",
-              "_tag": "None",
-            },
-            {
-              "_id": "Option",
-              "_tag": "Some",
-              "value": "file:///file:///test/notebook_other.py",
-            },
-            {
-              "_id": "Option",
-              "_tag": "Some",
-              "value": "file:///file:///test/notebook_mo.py",
-            },
-          ]
-        `);
+      [
+        {
+          "_id": "Option",
+          "_tag": "Some",
+          "value": "file:///test/notebook_mo.py",
+        },
+        {
+          "_id": "Option",
+          "_tag": "None",
+        },
+        {
+          "_id": "Option",
+          "_tag": "Some",
+          "value": "file:///test/notebook_other.py",
+        },
+        {
+          "_id": "Option",
+          "_tag": "Some",
+          "value": "file:///test/notebook_mo.py",
+        },
+      ]
+    `);
   }),
 );

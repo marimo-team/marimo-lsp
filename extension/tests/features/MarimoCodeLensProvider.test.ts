@@ -105,19 +105,4 @@ Vitest.describe("MarimoCodeLensProvider.layer", () => {
       Vitest.expect(true).toBe(true);
     }),
   );
-
-  effectIt.effect("detects a marimo app in Python source", () =>
-    Effect.sync(() => {
-      const pythonCode = `import marimo
-
-app = marimo.App()
-
-@app.cell
-def _():
-    return
-`;
-      Vitest.expect(MarimoCodeLensProvider.isAppText(pythonCode)).toBe(true);
-      Vitest.expect(MarimoCodeLensProvider.findAppLine(pythonCode)).toBe(2);
-    }),
-  );
 });

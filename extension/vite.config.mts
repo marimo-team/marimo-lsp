@@ -37,7 +37,7 @@ export default vite.defineConfig({
     watch: false,
     pool: "threads",
     isolate: false,
-    // Unit tests live in src/
+    // Unit tests live in tests/, mirroring src/
     include: ["tests/**/*.test.ts"],
     // The VS Code extension-host suite runs through /test-cli.
     exclude: ["tests/vscode/**"],

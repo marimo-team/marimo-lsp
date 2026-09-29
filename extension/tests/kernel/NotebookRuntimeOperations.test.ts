@@ -191,7 +191,6 @@ Vitest.describe("NotebookRuntime operation processing", () => {
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
-      const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         yield* NotebookRuntime.Service;
@@ -219,7 +218,7 @@ Vitest.describe("NotebookRuntime operation processing", () => {
 
         yield* NotebookRuntimeHarness.close(ctx.editor.notebook);
 
-        Vitest.expect((yield* vscode.snapshot).errorMessages).toEqual([]);
+        Vitest.expect(ctx.errorLogs).toEqual([]);
       });
     }),
   );

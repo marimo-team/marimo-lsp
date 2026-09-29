@@ -78,7 +78,10 @@ const layerWith = (options: Options = {}) =>
     }),
   );
 
-/** Notifies `times` times from a fresh notifier, as a new session would. */
+/**
+ * Runs a fresh notifier `times` times, as one new session would. The notifier
+ * is cached per session, so calls after the first exercise the suppression path.
+ */
 const notifyInNewSession = Effect.fn("notifyInNewSession")(function* (
   times = 1,
 ) {

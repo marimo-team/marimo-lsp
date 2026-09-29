@@ -72,17 +72,21 @@ const it = EffectTest.make(
   ),
 );
 
+/** Opens and activates a marimo notebook, then waits for the item to show. */
+const showForMarimoNotebook = Effect.gen(function* () {
+  const vscode = yield* VsCodeTest.Service;
+  const visibility = yield* Visibility;
+  const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
+  yield* vscode.openNotebook(marimoEditor.notebook);
+  yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
+  yield* visibility.await(true);
+  Vitest.expect(yield* visibility.current).toBe(true);
+});
+
 it.effect(
   "should show status bar when marimo notebook is active",
   Effect.fn(function* () {
-    const vscode = yield* VsCodeTest.Service;
-    const visibility = yield* Visibility;
-    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
-    yield* vscode.openNotebook(marimoEditor.notebook);
-    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
-
-    yield* visibility.await(true);
-    Vitest.expect(yield* visibility.current).toBe(true);
+    yield* showForMarimoNotebook;
   }),
 );
 
@@ -91,12 +95,7 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* VsCodeTest.Service;
     const visibility = yield* Visibility;
-    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
-    yield* vscode.openNotebook(marimoEditor.notebook);
-    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
-
-    yield* visibility.await(true);
-    Vitest.expect(yield* visibility.current).toBe(true);
+    yield* showForMarimoNotebook;
 
     const jupyterEditor = VsCodeTest.makeNotebookEditor(
       "/test/notebook.ipynb",
@@ -115,12 +114,7 @@ it.effect(
   Effect.fn(function* () {
     const vscode = yield* VsCodeTest.Service;
     const visibility = yield* Visibility;
-    const marimoEditor = VsCodeTest.makeNotebookEditor("/test/notebook_mo.py");
-    yield* vscode.openNotebook(marimoEditor.notebook);
-    yield* vscode.setActiveNotebookEditor(Option.some(marimoEditor));
-
-    yield* visibility.await(true);
-    Vitest.expect(yield* visibility.current).toBe(true);
+    yield* showForMarimoNotebook;
 
     yield* vscode.setActiveNotebookEditor(Option.none());
 

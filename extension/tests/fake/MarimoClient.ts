@@ -168,8 +168,12 @@ export const make = Effect.fn("MarimoClientTest.make")(function* (
   return { client, controls };
 });
 
-/** Canned responses that satisfy every command's response schema. */
-function defaultResponse(request: Command): Effect.Effect<unknown> {
+/**
+ * Canned responses for the commands tests drive by default. Other commands
+ * answer `null`, which only decodes for commands with a null response schema;
+ * supply `send` for anything else.
+ */
+export function defaultResponse(request: Command): Effect.Effect<unknown> {
   switch (request.kind) {
     case "list-sessions":
       return Effect.succeed({ generation: 1, revision: 1, sessions: [] });
