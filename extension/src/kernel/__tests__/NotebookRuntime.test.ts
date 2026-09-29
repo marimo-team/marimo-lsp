@@ -71,10 +71,10 @@ const makeTestLayer = (
   });
   const client = makeTestMarimoClient({
     ...options,
-    send: (request) =>
+    send: (request, commands) =>
       Effect.gen(function* () {
         const before = snapshot();
-        const result = yield* send(request);
+        const result = yield* send(request, commands);
         switch (request.kind) {
           case "list-sessions":
             return before;

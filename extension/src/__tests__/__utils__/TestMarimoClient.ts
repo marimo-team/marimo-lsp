@@ -29,9 +29,13 @@ import type {
 export type TestCommand = typeof Command.Encoded;
 
 export interface Options {
-  /** Responds to commands. Every command is recorded before this runs. */
+  /**
+   * Responds to commands. Every command is recorded before this runs, and
+   * `commands` holds the recording so far, ending with `request`.
+   */
   readonly send?: (
     request: TestCommand,
+    commands: ReadonlyArray<TestCommand>,
   ) => Effect.Effect<unknown, Schema.SchemaError>;
   /** Replaces the kernel notification channel; disables `publishNotification`. */
   readonly kernelNotifications?: Stream.Stream<KernelNotification>;
@@ -277,10 +281,10 @@ const makeClient = Effect.fn("TestMarimoClient.make")(function* (
     restart: Effect.void,
     ...MarimoClient.makeCommands({
       send: (request) =>
-        SubscriptionRef.update(commands, (current) => [
-          ...current,
-          request,
-        ]).pipe(Effect.andThen(() => respond(request))),
+        SubscriptionRef.modify(commands, (current) => {
+          const next = [...current, request];
+          return [next, next];
+        }).pipe(Effect.flatMap((recorded) => respond(request, recorded))),
       kernelNotifications: channel(
         kernelNotifications,
         options.kernelNotifications,
