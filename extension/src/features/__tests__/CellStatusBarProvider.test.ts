@@ -1,13 +1,105 @@
 import * as Vitest from "@effect/vitest";
-import { Effect } from "effect";
+import { Effect, Layer, Option } from "effect";
+import type * as vscode from "vscode";
 
+import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { commandId } from "../../commands.ts";
 import enableCell from "../../commands/enableCell.ts";
 import runStale from "../../commands/runStale.ts";
-import * as TestCellStatusBarProvider from "./TestCellStatusBarProvider.ts";
+import * as CellExecutions from "../../kernel/CellExecutions.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
+import type * as Api from "../../schemas/Models.gen.ts";
+import * as CellStatusBarProvider from "../CellStatusBarProvider.ts";
 
-const it = EffectTest.make(TestCellStatusBarProvider.layer);
+const it = EffectTest.make(
+  CellStatusBarProvider.layer.pipe(
+    Layer.provideMerge(CellExecutions.defaultLayer),
+    Layer.provideMerge(NotebookDocumentSessions.layer),
+    Layer.provideMerge(TestVsCode.layer),
+    Layer.provide(TestTelemetryLive),
+    Layer.provide(makeTestNotebookRuntime()),
+  ),
+);
+
+const notebookUri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+
+function makeCell(
+  metadata: typeof Api.CellMetadata.Encoded = {},
+): vscode.NotebookCell {
+  return TestVsCode.createNotebookCell(
+    TestVsCode.createTestNotebookDocument(notebookUri),
+    {
+      kind: 1,
+      value: "",
+      languageId: "python",
+      metadata: MarimoNotebookCell.createMetadata(metadata),
+    },
+    0,
+  );
+}
+
+/** Status bar items every registered provider contributes for the cell. */
+const items = Effect.fn("items")(function* (cell: vscode.NotebookCell) {
+  const vscode = yield* TestVsCode.Service;
+  const providers = yield* vscode.statusBarProviders;
+  const provided = yield* Effect.forEach(
+    providers,
+    (provider) => provider.provideCellStatusBarItems(cell),
+    { concurrency: "unbounded" },
+  );
+  return provided.flat();
+});
+
+const openExecutions = Effect.fn("openExecutions")(function* (
+  cell: vscode.NotebookCell,
+) {
+  const executions = yield* CellExecutions.Service;
+  const sessions = yield* NotebookDocumentSessions.Service;
+  yield* DocumentLifecycle.transition(cell.notebook, "opened");
+  const session = sessions.forDocument(cell.notebook);
+  if (Option.isNone(session)) {
+    return yield* Effect.die("Expected an open notebook document session");
+  }
+  return yield* executions
+    .open(session.value, { getDrive: Effect.succeed(Option.none()) })
+    .pipe(Effect.orDie);
+});
+
+const markExecuted = Effect.fn("markExecuted")(function* (
+  cell: vscode.NotebookCell,
+) {
+  const notebook = yield* openExecutions(cell);
+  const cellId = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+  yield* notebook.submit([{ cellId, source: "" }], Effect.void);
+  yield* notebook.apply({
+    op: "cell-op",
+    cell_id: cellId,
+    status: "queued",
+    run_id: "run-1",
+  });
+  yield* notebook.apply({
+    op: "cell-op",
+    cell_id: cellId,
+    status: "idle",
+    run_id: "run-1",
+  });
+}, Effect.orDie);
+
+const markStale = Effect.fn("markStale")(function* (cell: vscode.NotebookCell) {
+  const notebook = yield* openExecutions(cell);
+  const cellId = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+  yield* notebook.apply({
+    op: "cell-op",
+    cell_id: cellId,
+    status: "idle",
+    stale_inputs: true,
+  });
+}, Effect.orDie);
 
 const contains = (
   items: ReadonlyArray<{ readonly text: string }>,
@@ -18,54 +110,47 @@ Vitest.describe("CellStatusBarProvider", () => {
   it.effect(
     "registers staleness, name, and disabled providers",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      Vitest.expect(yield* statusBar.providerCount).toBe(3);
+      const vscode = yield* TestVsCode.Service;
+      Vitest.expect(yield* vscode.statusBarProviders).toHaveLength(3);
     }),
   );
 
   it.effect(
     "does not show staleness before a cell has executed",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
+      const cell = makeCell({
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      Vitest.expect(contains(yield* statusBar.items(cell), "Stale")).toBe(
-        false,
-      );
+      Vitest.expect(contains(yield* items(cell), "Stale")).toBe(false);
     }),
   );
 
   it.effect(
     "does not show staleness after execution",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
+      const cell = makeCell({
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
 
-      yield* statusBar.markExecuted(cell);
+      yield* markExecuted(cell);
 
-      Vitest.expect(contains(yield* statusBar.items(cell), "Stale")).toBe(
-        false,
-      );
+      Vitest.expect(contains(yield* items(cell), "Stale")).toBe(false);
     }),
   );
 
   it.effect(
     "shows staleness after invalidation",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
+      const cell = makeCell({
         marimo: { name: "test_cell" },
         marimoRuntime: { stableId: "cell-1" },
       });
-      yield* statusBar.markStale(cell);
+      yield* markStale(cell);
 
-      const stale = (yield* statusBar.items(cell)).find((item) =>
+      const stale = (yield* items(cell)).find((item) =>
         item.text.includes("Stale"),
       );
 
@@ -82,24 +167,18 @@ Vitest.describe("CellStatusBarProvider", () => {
   it.effect(
     "does not show the default cell name",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
-        marimo: { name: "_" },
-      });
+      const cell = makeCell({ marimo: { name: "_" } });
 
-      Vitest.expect(yield* statusBar.items(cell)).toEqual([]);
+      Vitest.expect(yield* items(cell)).toEqual([]);
     }),
   );
 
   it.effect(
     "shows a custom cell name",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
-        marimo: { name: "my_custom_cell" },
-      });
+      const cell = makeCell({ marimo: { name: "my_custom_cell" } });
 
-      const item = (yield* statusBar.items(cell)).find((item) =>
+      const item = (yield* items(cell)).find((item) =>
         item.text.includes("my_custom_cell"),
       );
       Vitest.expect(item?.text).toContain("my_custom_cell");
@@ -110,12 +189,9 @@ Vitest.describe("CellStatusBarProvider", () => {
   it.effect(
     "shows the setup cell with a gear icon",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
-        marimo: { name: "setup" },
-      });
+      const cell = makeCell({ marimo: { name: "setup" } });
 
-      const item = (yield* statusBar.items(cell)).find((item) =>
+      const item = (yield* items(cell)).find((item) =>
         item.text.includes("setup"),
       );
       Vitest.expect(item?.text).toContain("$(gear)");
@@ -126,43 +202,38 @@ Vitest.describe("CellStatusBarProvider", () => {
   it.effect(
     "shows no items for a cell without metadata",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell();
-
-      Vitest.expect(yield* statusBar.items(cell)).toEqual([]);
+      Vitest.expect(yield* items(makeCell())).toEqual([]);
     }),
   );
 
   it.effect(
     "shows staleness and name simultaneously",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const cell = TestCellStatusBarProvider.makeCell({
+      const cell = makeCell({
         marimo: { name: "my_cell" },
         marimoRuntime: { stableId: "cell-2" },
       });
-      yield* statusBar.markStale(cell);
+      yield* markStale(cell);
 
-      const items = yield* statusBar.items(cell);
-      Vitest.expect(contains(items, "Stale")).toBe(true);
-      Vitest.expect(contains(items, "my_cell")).toBe(true);
+      const provided = yield* items(cell);
+      Vitest.expect(contains(provided, "Stale")).toBe(true);
+      Vitest.expect(contains(provided, "my_cell")).toBe(true);
     }),
   );
 
   it.effect(
     "shows an enable action only for disabled cells",
     Effect.fn(function* () {
-      const statusBar = yield* TestCellStatusBarProvider.Service;
-      const enabled = TestCellStatusBarProvider.makeCell({
+      const enabled = makeCell({
         marimo: { options: { disabled: false } },
         marimoRuntime: { stableId: "enabled" },
       });
-      const disabled = TestCellStatusBarProvider.makeCell({
+      const disabled = makeCell({
         marimo: { options: { disabled: true } },
         marimoRuntime: { stableId: "disabled" },
       });
 
-      const enabledItems = yield* statusBar.items(enabled);
+      const enabledItems = yield* items(enabled);
       Vitest.expect(
         enabledItems.some(
           (item) =>
@@ -171,7 +242,7 @@ Vitest.describe("CellStatusBarProvider", () => {
         ),
       ).toBe(false);
 
-      const item = (yield* statusBar.items(disabled)).find(
+      const item = (yield* items(disabled)).find(
         (item) =>
           typeof item.command !== "string" &&
           item.command?.command === commandId(enableCell.command),
