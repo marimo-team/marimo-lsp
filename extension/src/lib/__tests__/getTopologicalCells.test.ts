@@ -1,9 +1,13 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Effect, Layer, Option } from "effect";
 
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -11,7 +15,6 @@ import {
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
 import { cellId, variableName } from "./branded.ts";
-import * as TestTopologicalCells from "./TestTopologicalCells.ts";
 
 function createMockVariablesOp(
   vars: Array<{
@@ -55,7 +58,26 @@ const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
     ?.marimoRuntime.stableId ?? undefined;
 
-const it = EffectTest.make(TestTopologicalCells.layer);
+const it = EffectTest.make(
+  NotebookVariables.layer.pipe(
+    Layer.provideMerge(NotebookDocumentSessions.layer),
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
+
+/** Opens the notebook, if needed, and records a variables notification. */
+const updateVariables = Effect.fn("updateVariables")(function* (
+  notebook: MarimoNotebookDocument,
+  notification: VariablesNotification,
+) {
+  const sessions = yield* NotebookDocumentSessions.Service;
+  const variables = yield* NotebookVariables.Service;
+  if (Option.isNone(sessions.current(notebook.id))) {
+    yield* DocumentLifecycle.transition(notebook.rawNotebookDocument, "opened");
+  }
+  const session = Option.getOrThrow(sessions.current(notebook.id));
+  yield* variables.updateVariables(session, notification);
+});
 
 Vitest.describe("getTopologicalCells", () => {
   it.effect("returns empty array for notebook with no cells", () =>
@@ -95,9 +117,7 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const cells = yield* TestTopologicalCells.Service;
-
-      yield* cells.updateVariables(
+      yield* updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -123,9 +143,7 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const cells = yield* TestTopologicalCells.Service;
-
-      yield* cells.updateVariables(
+      yield* updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -178,9 +196,7 @@ Vitest.describe("getTopologicalCells", () => {
       });
       const doc = MarimoNotebookDocument.from(raw);
 
-      const cells = yield* TestTopologicalCells.Service;
-
-      yield* cells.updateVariables(
+      yield* updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
@@ -205,10 +221,8 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-c", code: "z = 3" },
       ]);
 
-      const cells = yield* TestTopologicalCells.Service;
-
       // Each cell defines its own variable, no cross-cell dependencies
-      yield* cells.updateVariables(
+      yield* updateVariables(
         doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: [] },
@@ -239,9 +253,7 @@ Vitest.describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" },
       ]);
 
-      const cells = yield* TestTopologicalCells.Service;
-
-      yield* cells.updateVariables(
+      yield* updateVariables(
         doc,
         createMockVariablesOp([
           {
