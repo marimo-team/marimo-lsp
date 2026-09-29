@@ -1,6 +1,6 @@
 import * as Vitest from "@effect/vitest";
 import type { Vitest as EffectVitest } from "@effect/vitest";
-import { Effect, Layer, Logger, Scope } from "effect";
+import { type Duration, Effect, Layer, Logger, Scope } from "effect";
 
 export interface Interface<R> {
   readonly effect: Test<R | Scope.Scope>;
@@ -66,5 +66,7 @@ export const make = <R, E>(layer: Layer.Layer<R, E>): Interface<R> => ({
  * Use this for expensive resources whose state may safely be shared by the
  * tests in the suite. The layer is built once and released after the suite.
  */
-export const layer = <R, E>(testLayer: Layer.Layer<R, E>) =>
-  Vitest.layer(configure(testLayer));
+export const layer = <R, E>(
+  testLayer: Layer.Layer<R, E>,
+  options?: { readonly timeout?: Duration.Input },
+) => Vitest.layer(configure(testLayer), options);

@@ -150,7 +150,11 @@ Vitest.describe("when registered source is not a marimo notebook", () => {
   );
 });
 
-EffectTest.layer(liveLayer)("NotebookSerializer", (it) => {
+// Building the layer starts a marimo-lsp process through `uv run`; a cold
+// Windows runner regularly needs more than the default 10 second hook budget.
+const live = EffectTest.layer(liveLayer, { timeout: "60 seconds" });
+
+live("NotebookSerializer", (it) => {
   Vitest.it("NOTEBOOK_TYPE matches package.json notebook type", () => {
     const notebookConfig = packageJson.contributes.notebooks.find(
       (nb) => nb.type === NOTEBOOK_TYPE,
