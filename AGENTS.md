@@ -60,3 +60,8 @@ Do not update or conflate them unless the task explicitly requires it.
 - TypeScript tests: `just test-ts [args]`
 - User-facing VS Code behavior: `just test-vscode [args]`
 - Full lint: `just lint`
+
+Extension tests live in `extension/tests` and mirror `extension/src`, with
+fakes in `tests/fake`, helpers in `tests/lib`, data in `tests/fixtures`, and
+the extension-host suite in `tests/vscode`. See the Testing section of
+`docs/effect-guide.md` before adding a test.

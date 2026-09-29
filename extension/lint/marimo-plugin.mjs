@@ -1,7 +1,15 @@
 // @ts-check
+import * as NodePath from "node:path";
+import * as NodeUrl from "node:url";
+
 import { definePlugin, defineRule } from "@oxlint/plugins";
 
 import pkg from "../package.json" with { type: "json" };
+
+const extensionRoot = NodePath.resolve(
+  NodePath.dirname(NodeUrl.fileURLToPath(import.meta.url)),
+  "..",
+);
 
 const marimoCommandIds = new Set(
   pkg.contributes.commands.map(({ command }) => command),
@@ -197,11 +205,12 @@ const effectArchitecture = defineRule({
   },
   create(context) {
     const filename = context.filename.replaceAll("\\", "/");
-    if (
-      !filename.includes("/src/") ||
-      /\/(?:__tests__|__mocks__)\//.test(filename) ||
-      filename.endsWith(".test.ts")
-    ) {
+    // Production code only; tests live outside src/.
+    const relative = NodePath.relative(
+      extensionRoot,
+      context.filename,
+    ).replaceAll("\\", "/");
+    if (!relative.startsWith("src/")) {
       return {};
     }
     const imports = new Map();

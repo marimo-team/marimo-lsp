@@ -146,26 +146,24 @@ narrow adapters.
 
 ## Testing
 
-- Test observable behavior through the service interface.
-- Use `it.effect` for tests that use Effect's test services and `it.live` when
-  the behavior intentionally depends on the live clock, filesystem, processes,
-  watchers, or servers.
-- Use `it.layer` when a test group has a stable dependency graph. A layer is
-  shared by every test in that `it.layer` block, including its mutable state and
-  scope. Put stateful layers in a one-test block or provide them inside the test
-  when each test needs a fresh instance.
-- Use `EffectTest.make(layer)` when several tests need the same stateful graph
-  with a fresh layer build and scope for every test. Put observations and named
-  controls on a test service instead of returning the layer, refs,
-  queues, or pub/sub handles to each test.
-- Import `@effect/vitest` as the `Vitest` namespace and qualify its exports,
-  such as `Vitest.describe`, `Vitest.expect`, and `Vitest.it`. When a file uses
-  `EffectTest.make`, name the bound runner `it` and use `Vitest.it` for tests
-  outside the bound layer.
-- When one suite needs several configured layers, put each configuration in a
-  nested `Vitest.describe` and name its locally scoped runner `it`. The nested
-  suite describes where the configuration applies; each test still receives a
-  fresh layer build from `EffectTest.make`.
+Tests live in `extension/tests` and mirror `extension/src` one level deep.
+Beside the mirror, `tests/fake` holds fakes of external boundaries,
+`tests/lib` holds the runner and shared helpers, `tests/fixtures` holds
+data, and `tests/vscode` holds the extension-host suite. Read a neighbouring
+test for the conventions; the rules below are the ones a test file cannot show.
+
+- Fake only external boundaries, such as VS Code, the language servers, the
+  Python extension, and telemetry; `tests/fake` is the current list.
+  Everything else runs the production layer. A fake earns a module under
+  `tests/fake` when it has a second consumer.
+- Observe through the fakes. Do not add observation ports to production
+  services for tests; if a fake cannot see a behavior, extend the fake.
+- Per-test state that a fake must see is created inside
+  `Layer.unwrap(Effect.gen(...))` and exposed through a test-local
+  `Context.Service` in the same file. `EffectTest.make` rebuilds the layer
+  for every test, so that is the only place such state can live.
+- Use `it.live` only when the behavior depends on the live clock, filesystem,
+  processes, watchers, or servers.
 
 ## Verification
 

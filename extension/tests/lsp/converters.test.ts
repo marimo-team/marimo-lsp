@@ -1,0 +1,2329 @@
+import * as Vitest from "@effect/vitest";
+import { Effect } from "effect";
+import * as lsp from "vscode-languageserver-protocol";
+
+import {
+  toCodeAction,
+  toCodeActionKind,
+  toCompletionItem,
+  toCompletionItemKind,
+  toDocumentHighlight,
+  toDocumentHighlightKind,
+  toDocumentPositionParams,
+  toDocumentSymbol,
+  toDocumentation,
+  toFoldingRange,
+  toHoverContent,
+  toInlayHint,
+  toLocation,
+  toLocationLink,
+  toLocationResult,
+  toLspCodeAction,
+  toLspCodeActionContext,
+  toLspCodeActionTriggerKind,
+  toLspCompletionItem,
+  toLspCompletionItemKind,
+  toLspCompletionTriggerKind,
+  toLspDiagnostic,
+  toLspDiagnosticSeverity,
+  toLspFoldingRangeKind,
+  toLspInlayHint,
+  toLspRange,
+  toSelectionRange,
+  toSignatureHelp,
+  toSymbolKind,
+  toTextEdit,
+  toTooltip,
+  toVsCodeDiagnosticSeverity,
+  toVsCodeRange,
+  toWorkspaceEdit,
+} from "../../src/lsp/converters.ts";
+import * as VsCode from "../../src/platform/VsCode.ts";
+import * as VsCodeTest from "../fake/VsCode.ts";
+import { UNSAFE_castForNegativeTest } from "../lib/branded.ts";
+import * as EffectTest from "../lib/EffectTest.ts";
+
+const numericEntries = <E extends Record<string, unknown>>(
+  e: E,
+): Array<[string, Extract<E[keyof E], number>]> =>
+  Object.entries(e).filter(
+    (entry): entry is [string, Extract<E[keyof E], number>] =>
+      typeof entry[1] === "number",
+  );
+
+const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
+  Object.entries(e).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
+
+const it = EffectTest.make(VsCodeTest.layer);
+
+Vitest.describe("toVsCodeRange", () => {
+  it.effect(
+    "converts LSP range to VS Code range",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const range = toVsCodeRange(code, {
+        start: { line: 1, character: 5 },
+        end: { line: 3, character: 10 },
+      });
+      Vitest.expect(range).toMatchInlineSnapshot(`
+        Range {
+          "end": Position {
+            "character": 10,
+            "line": 3,
+          },
+          "start": Position {
+            "character": 5,
+            "line": 1,
+          },
+        }
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toHoverContent", () => {
+  it.effect(
+    "converts plain string",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toHoverContent(code, "hello");
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        MarkdownString {
+          "baseUri": undefined,
+          "isTrusted": undefined,
+          "supportHtml": undefined,
+          "supportThemeIcons": undefined,
+          "value": "hello",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts MarkupContent",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toHoverContent(code, {
+        kind: lsp.MarkupKind.Markdown,
+        value: "# Title",
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        MarkdownString {
+          "baseUri": undefined,
+          "isTrusted": undefined,
+          "supportHtml": undefined,
+          "supportThemeIcons": undefined,
+          "value": "# Title",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts MarkedString array",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toHoverContent(code, [
+        "plain text",
+        { language: "python", value: "x = 1" },
+      ]);
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        [
+          MarkdownString {
+            "baseUri": undefined,
+            "isTrusted": undefined,
+            "supportHtml": undefined,
+            "supportThemeIcons": undefined,
+            "value": "plain text",
+          },
+          MarkdownString {
+            "baseUri": undefined,
+            "isTrusted": undefined,
+            "supportHtml": undefined,
+            "supportThemeIcons": undefined,
+            "value": "
+        \`\`\`python
+        x = 1
+        \`\`\`
+        ",
+          },
+        ]
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLocationResult", () => {
+  it.effect(
+    "returns undefined for null",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      Vitest.expect(toLocationResult(code, null)).toBeUndefined();
+    }),
+  );
+
+  it.effect(
+    "converts single Location",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationResult(code, {
+        uri: "file:///test.py",
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        Location {
+          "range": Range {
+            "end": Position {
+              "character": 5,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+          "uri": {
+            "authority": "",
+            "fragment": "",
+            "path": "/test.py",
+            "query": "",
+            "scheme": "file",
+          },
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts Location array",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationResult(code, [
+        {
+          uri: "file:///a.py",
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 1 },
+          },
+        },
+        {
+          uri: "file:///b.py",
+          range: {
+            start: { line: 1, character: 0 },
+            end: { line: 1, character: 1 },
+          },
+        },
+      ]);
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        [
+          Location {
+            "range": Range {
+              "end": Position {
+                "character": 1,
+                "line": 0,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 0,
+              },
+            },
+            "uri": {
+              "authority": "",
+              "fragment": "",
+              "path": "/a.py",
+              "query": "",
+              "scheme": "file",
+            },
+          },
+          Location {
+            "range": Range {
+              "end": Position {
+                "character": 1,
+                "line": 1,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 1,
+              },
+            },
+            "uri": {
+              "authority": "",
+              "fragment": "",
+              "path": "/b.py",
+              "query": "",
+              "scheme": "file",
+            },
+          },
+        ]
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts LocationLink array",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationResult(code, [
+        {
+          targetUri: "file:///target.py",
+          targetRange: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 5 },
+          },
+          targetSelectionRange: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 3 },
+          },
+        },
+      ]);
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        [
+          {
+            "originSelectionRange": undefined,
+            "targetRange": Range {
+              "end": Position {
+                "character": 5,
+                "line": 0,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 0,
+              },
+            },
+            "targetSelectionRange": Range {
+              "end": Position {
+                "character": 3,
+                "line": 0,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 0,
+              },
+            },
+            "targetUri": {
+              "authority": "",
+              "fragment": "",
+              "path": "/target.py",
+              "query": "",
+              "scheme": "file",
+            },
+          },
+        ]
+      `);
+    }),
+  );
+
+  it.effect(
+    "returns empty array for empty input",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationResult(code, []);
+      Vitest.expect(result).toMatchInlineSnapshot(`[]`);
+    }),
+  );
+});
+
+Vitest.describe("toDocumentHighlight", () => {
+  it.effect(
+    "converts with kind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toDocumentHighlight(code, {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 5 },
+        },
+        kind: lsp.DocumentHighlightKind.Write,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        DocumentHighlight {
+          "kind": 2,
+          "range": Range {
+            "end": Position {
+              "character": 5,
+              "line": 1,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 1,
+            },
+          },
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts without kind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toDocumentHighlight(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 3 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        DocumentHighlight {
+          "kind": undefined,
+          "range": Range {
+            "end": Position {
+              "character": 3,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
+    }),
+  );
+});
+
+// Data-driven snapshots over LSP/VS Code enum tables. Iterating the source
+// enum means adding a new enum value anywhere upstream surfaces here as a
+// snapshot diff (or an exhaustiveness throw), with no manual list to keep
+// in sync.
+
+Vitest.describe("toSymbolKind", () => {
+  Vitest.it.effect("maps every lsp.SymbolKind", () =>
+    Effect.sync(() => {
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.SymbolKind).map(([name, value]) => [
+          name,
+          toSymbolKind(value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Array": 17,
+      	  "Boolean": 16,
+      	  "Class": 4,
+      	  "Constant": 13,
+      	  "Constructor": 8,
+      	  "Enum": 9,
+      	  "EnumMember": 21,
+      	  "Event": 23,
+      	  "Field": 7,
+      	  "File": 0,
+      	  "Function": 11,
+      	  "Interface": 10,
+      	  "Key": 19,
+      	  "Method": 5,
+      	  "Module": 1,
+      	  "Namespace": 2,
+      	  "Null": 20,
+      	  "Number": 15,
+      	  "Object": 18,
+      	  "Operator": 24,
+      	  "Package": 3,
+      	  "Property": 6,
+      	  "String": 14,
+      	  "Struct": 22,
+      	  "TypeParameter": 25,
+      	  "Variable": 12,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toCompletionItemKind", () => {
+  it.effect(
+    "maps every lsp.CompletionItemKind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.CompletionItemKind).map(([name, value]) => [
+          name,
+          toCompletionItemKind(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Class": 6,
+      	  "Color": 15,
+      	  "Constant": 20,
+      	  "Constructor": 3,
+      	  "Enum": 12,
+      	  "EnumMember": 19,
+      	  "Event": 22,
+      	  "Field": 4,
+      	  "File": 16,
+      	  "Folder": 18,
+      	  "Function": 2,
+      	  "Interface": 7,
+      	  "Keyword": 13,
+      	  "Method": 1,
+      	  "Module": 8,
+      	  "Operator": 23,
+      	  "Property": 9,
+      	  "Reference": 17,
+      	  "Snippet": 14,
+      	  "Struct": 21,
+      	  "Text": 0,
+      	  "TypeParameter": 24,
+      	  "Unit": 10,
+      	  "Value": 11,
+      	  "Variable": 5,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLspCompletionItemKind", () => {
+  // Iterate the VS Code side so User/Issue (no LSP equivalent) show up as
+  // explicit rows collapsed to Text.
+  it.effect(
+    "maps every vscode.CompletionItemKind (User/Issue → Text)",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CompletionItemKind).map(([name, value]) => [
+          name,
+          toLspCompletionItemKind(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Class": 7,
+      	  "Color": 16,
+      	  "Constant": 21,
+      	  "Constructor": 4,
+      	  "Enum": 13,
+      	  "EnumMember": 20,
+      	  "Event": 23,
+      	  "Field": 5,
+      	  "File": 17,
+      	  "Folder": 19,
+      	  "Function": 3,
+      	  "Interface": 8,
+      	  "Issue": 1,
+      	  "Keyword": 14,
+      	  "Method": 2,
+      	  "Module": 9,
+      	  "Operator": 24,
+      	  "Property": 10,
+      	  "Reference": 18,
+      	  "Snippet": 15,
+      	  "Struct": 22,
+      	  "Text": 1,
+      	  "TypeParameter": 25,
+      	  "Unit": 11,
+      	  "User": 1,
+      	  "Value": 12,
+      	  "Variable": 6,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toVsCodeDiagnosticSeverity", () => {
+  it.effect(
+    "maps every lsp.DiagnosticSeverity",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.DiagnosticSeverity).map(([name, value]) => [
+          name,
+          toVsCodeDiagnosticSeverity(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Error": 0,
+      	  "Hint": 3,
+      	  "Information": 2,
+      	  "Warning": 1,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLspDiagnosticSeverity", () => {
+  it.effect(
+    "maps every vscode.DiagnosticSeverity",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(code.DiagnosticSeverity).map(([name, value]) => [
+          name,
+          toLspDiagnosticSeverity(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Error": 1,
+      	  "Hint": 4,
+      	  "Information": 3,
+      	  "Warning": 2,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toDocumentHighlightKind", () => {
+  Vitest.it.effect("maps every lsp.DocumentHighlightKind", () =>
+    Effect.sync(() => {
+      const mapping = Object.fromEntries(
+        numericEntries(lsp.DocumentHighlightKind).map(([name, value]) => [
+          name,
+          toDocumentHighlightKind(value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Read": 1,
+      	  "Text": 0,
+      	  "Write": 2,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLspFoldingRangeKind", () => {
+  // LSP FoldingRangeKind is a string namespace, extensible by servers.
+  // Iterate the known values plus one unknown to lock in the undefined fallback.
+  Vitest.it.effect(
+    "maps every lsp.FoldingRangeKind plus an unknown fallback",
+    () =>
+      Effect.sync(() => {
+        const mapping: Record<string, unknown> = {};
+        for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
+          mapping[name] = toLspFoldingRangeKind(value);
+        }
+        mapping.__unknown__ = toLspFoldingRangeKind("unknown-server-kind");
+        Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Comment": 1,
+      	  "Imports": 2,
+      	  "Region": 3,
+      	  "__unknown__": undefined,
+      	}
+      `);
+      }),
+  );
+});
+
+Vitest.describe("toLspCompletionTriggerKind", () => {
+  it.effect(
+    "maps every vscode.CompletionTriggerKind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CompletionTriggerKind).map(([name, value]) => [
+          name,
+          toLspCompletionTriggerKind(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Invoke": 1,
+      	  "TriggerCharacter": 2,
+      	  "TriggerForIncompleteCompletions": 3,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLspCodeActionTriggerKind", () => {
+  it.effect(
+    "maps every vscode.CodeActionTriggerKind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const mapping = Object.fromEntries(
+        numericEntries(code.CodeActionTriggerKind).map(([name, value]) => [
+          name,
+          toLspCodeActionTriggerKind(code, value),
+        ]),
+      );
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
+      	{
+      	  "Automatic": 2,
+      	  "Invoke": 1,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toDocumentSymbol", () => {
+  it.effect(
+    "converts with children",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toDocumentSymbol(code, {
+        name: "MyClass",
+        detail: "A class",
+        kind: lsp.SymbolKind.Class,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 10, character: 0 },
+        },
+        selectionRange: {
+          start: { line: 0, character: 6 },
+          end: { line: 0, character: 13 },
+        },
+        children: [
+          {
+            name: "method",
+            detail: "",
+            kind: lsp.SymbolKind.Method,
+            range: {
+              start: { line: 2, character: 4 },
+              end: { line: 5, character: 0 },
+            },
+            selectionRange: {
+              start: { line: 2, character: 8 },
+              end: { line: 2, character: 14 },
+            },
+          },
+        ],
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        DocumentSymbol {
+          "children": [
+            DocumentSymbol {
+              "children": [],
+              "detail": "",
+              "kind": 5,
+              "name": "method",
+              "range": Range {
+                "end": Position {
+                  "character": 0,
+                  "line": 5,
+                },
+                "start": Position {
+                  "character": 4,
+                  "line": 2,
+                },
+              },
+              "selectionRange": Range {
+                "end": Position {
+                  "character": 14,
+                  "line": 2,
+                },
+                "start": Position {
+                  "character": 8,
+                  "line": 2,
+                },
+              },
+              "tags": undefined,
+            },
+          ],
+          "detail": "A class",
+          "kind": 4,
+          "name": "MyClass",
+          "range": Range {
+            "end": Position {
+              "character": 0,
+              "line": 10,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+          "selectionRange": Range {
+            "end": Position {
+              "character": 13,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 6,
+              "line": 0,
+            },
+          },
+          "tags": undefined,
+        }
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toFoldingRange", () => {
+  it.effect(
+    "converts with kind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toFoldingRange(code, {
+        startLine: 0,
+        endLine: 10,
+        kind: lsp.FoldingRangeKind.Imports,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        FoldingRange {
+          "end": 10,
+          "kind": 2,
+          "start": 0,
+        }
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toSelectionRange", () => {
+  it.effect(
+    "converts nested selection ranges",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toSelectionRange(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 5, character: 0 },
+        },
+        parent: {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 10, character: 0 },
+          },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        SelectionRange {
+          "parent": SelectionRange {
+            "parent": undefined,
+            "range": Range {
+              "end": Position {
+                "character": 0,
+                "line": 10,
+              },
+              "start": Position {
+                "character": 0,
+                "line": 0,
+              },
+            },
+          },
+          "range": Range {
+            "end": Position {
+              "character": 0,
+              "line": 5,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toTextEdit", () => {
+  it.effect(
+    "converts LSP TextEdit",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toTextEdit(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+        newText: "hello",
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        TextEdit {
+          "newEol": undefined,
+          "newText": "hello",
+          "range": Range {
+            "end": Position {
+              "character": 5,
+              "line": 0,
+            },
+            "start": Position {
+              "character": 0,
+              "line": 0,
+            },
+          },
+        }
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toSignatureHelp", () => {
+  it.effect(
+    "converts with signatures and parameters",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toSignatureHelp(code, {
+        signatures: [
+          {
+            label: "fn(x: int, y: str)",
+            documentation: {
+              kind: lsp.MarkupKind.Markdown,
+              value: "A function",
+            },
+            parameters: [
+              { label: "x: int", documentation: "The x param" },
+              {
+                label: "y: str",
+                documentation: {
+                  kind: lsp.MarkupKind.Markdown,
+                  value: "The y param",
+                },
+              },
+            ],
+          },
+        ],
+        activeSignature: 0,
+        activeParameter: 1,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        SignatureHelp {
+          "activeParameter": 1,
+          "activeSignature": 0,
+          "signatures": [
+            SignatureInformation {
+              "activeParameter": undefined,
+              "documentation": MarkdownString {
+                "baseUri": undefined,
+                "isTrusted": undefined,
+                "supportHtml": undefined,
+                "supportThemeIcons": undefined,
+                "value": "A function",
+              },
+              "label": "fn(x: int, y: str)",
+              "parameters": [
+                ParameterInformation {
+                  "documentation": "The x param",
+                  "label": "x: int",
+                },
+                ParameterInformation {
+                  "documentation": MarkdownString {
+                    "baseUri": undefined,
+                    "isTrusted": undefined,
+                    "supportHtml": undefined,
+                    "supportThemeIcons": undefined,
+                    "value": "The y param",
+                  },
+                  "label": "y: str",
+                },
+              ],
+            },
+          ],
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "defaults activeParameter to 0 when undefined",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toSignatureHelp(code, {
+        signatures: [{ label: "fn()" }],
+        activeSignature: 0,
+      });
+      Vitest.expect(result.activeParameter).toBe(0);
+    }),
+  );
+
+  // The LSP protocol allows null for activeParameter (meaning "no active
+  // parameter") even though our TypeScript types don't model it. Servers
+  // can send this at runtime.
+  it.effect(
+    "maps null activeParameter to -1",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toSignatureHelp(code, {
+        signatures: [{ label: "fn()" }],
+        activeSignature: 0,
+        activeParameter: UNSAFE_castForNegativeTest<number>(null),
+      });
+      Vitest.expect(result.activeParameter).toBe(-1);
+    }),
+  );
+});
+
+Vitest.describe("toInlayHint", () => {
+  it.effect(
+    "converts string label",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toInlayHint(code, {
+        position: { line: 1, character: 10 },
+        label: ": int",
+        kind: lsp.InlayHintKind.Type,
+        paddingLeft: true,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        InlayHint {
+          "kind": 1,
+          "label": ": int",
+          "paddingLeft": true,
+          "paddingRight": undefined,
+          "position": Position {
+            "character": 10,
+            "line": 1,
+          },
+          "textEdits": undefined,
+          "tooltip": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts label parts with location",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 5 },
+        label: [
+          {
+            value: "int",
+            location: {
+              uri: "file:///builtins.pyi",
+              range: {
+                start: { line: 10, character: 0 },
+                end: { line: 10, character: 3 },
+              },
+            },
+          },
+        ],
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        InlayHint {
+          "kind": undefined,
+          "label": [
+            InlayHintLabelPart {
+              "command": undefined,
+              "location": Location {
+                "range": Range {
+                  "end": Position {
+                    "character": 3,
+                    "line": 10,
+                  },
+                  "start": Position {
+                    "character": 0,
+                    "line": 10,
+                  },
+                },
+                "uri": {
+                  "authority": "",
+                  "fragment": "",
+                  "path": "/builtins.pyi",
+                  "query": "",
+                  "scheme": "file",
+                },
+              },
+              "tooltip": undefined,
+              "value": "int",
+            },
+          ],
+          "paddingLeft": undefined,
+          "paddingRight": undefined,
+          "position": Position {
+            "character": 5,
+            "line": 0,
+          },
+          "textEdits": undefined,
+          "tooltip": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "stashes data for resolve round-trip",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 0 },
+        label: "hint",
+        data: { id: 42 },
+      });
+      // data is stashed via WeakMap, not visible in snapshot
+      Vitest.expect(result.label).toBe("hint");
+    }),
+  );
+});
+
+Vitest.describe("toCompletionItem", () => {
+  it.effect(
+    "converts basic item with kind offset",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "my_var",
+        kind: lsp.CompletionItemKind.Variable,
+        detail: "int",
+        documentation: {
+          kind: lsp.MarkupKind.Markdown,
+          value: "A variable",
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        CompletionItem {
+          "additionalTextEdits": undefined,
+          "command": undefined,
+          "commitCharacters": undefined,
+          "detail": "int",
+          "documentation": MarkdownString {
+            "baseUri": undefined,
+            "isTrusted": undefined,
+            "supportHtml": undefined,
+            "supportThemeIcons": undefined,
+            "value": "A variable",
+          },
+          "filterText": undefined,
+          "insertText": undefined,
+          "keepWhitespace": undefined,
+          "kind": 5,
+          "label": "my_var",
+          "preselect": undefined,
+          "range": undefined,
+          "sortText": undefined,
+          "tags": undefined,
+          "textEdit": undefined,
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts item with textEdit",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "print",
+        kind: lsp.CompletionItemKind.Function,
+        textEdit: {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 3 },
+          },
+          newText: "print",
+        },
+      });
+      Vitest.expect(result.insertText).toBe("print");
+      Vitest.expect(result.range).toBeDefined();
+    }),
+  );
+
+  it.effect(
+    "converts snippet insertTextFormat",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "for",
+        kind: lsp.CompletionItemKind.Snippet,
+        insertText: "for ${1:item} in ${2:iterable}:\n\t$0",
+        insertTextFormat: lsp.InsertTextFormat.Snippet,
+      });
+      // Should be wrapped in SnippetString
+      Vitest.expect(result.insertText).toMatchInlineSnapshot(`
+        SnippetString {
+          "value": "for \${1:item} in \${2:iterable}:
+        	$0",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts labelDetails",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "foo",
+        labelDetails: {
+          detail: "(x: int)",
+          description: "module.foo",
+        },
+        kind: lsp.CompletionItemKind.Function,
+      });
+      Vitest.expect(result.label).toMatchInlineSnapshot(`
+        {
+          "description": "module.foo",
+          "detail": "(x: int)",
+          "label": "foo",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts deprecated tag",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "old_fn",
+        tags: [lsp.CompletionItemTag.Deprecated],
+      });
+      Vitest.expect(result.tags).toMatchInlineSnapshot(`
+        [
+          1,
+        ]
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toCodeActionKind", () => {
+  it.effect(
+    "builds from dotted string",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const kind = toCodeActionKind(code, "notebook.source.fixAll");
+      Vitest.expect(kind.value).toBe("notebook.source.fixAll");
+    }),
+  );
+
+  it.effect(
+    "builds simple kind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const kind = toCodeActionKind(code, "quickfix");
+      Vitest.expect(kind.value).toBe("quickfix");
+    }),
+  );
+});
+
+Vitest.describe("toCodeAction", () => {
+  it.effect(
+    "converts basic code action",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Fix import",
+        kind: "quickfix",
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        CodeAction {
+          "command": undefined,
+          "diagnostics": undefined,
+          "disabled": undefined,
+          "edit": undefined,
+          "isPreferred": undefined,
+          "kind": CodeActionKind {
+            "value": "quickfix",
+          },
+          "title": "Fix import",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "converts with edit and diagnostics",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Organize imports",
+        kind: "source.organizeImports",
+        isPreferred: true,
+        edit: {
+          changes: {
+            "file:///test.py": [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 2, character: 0 },
+                },
+                newText: "import os\n",
+              },
+            ],
+          },
+        },
+        diagnostics: [
+          {
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 10 },
+            },
+            message: "Unused import",
+            severity: lsp.DiagnosticSeverity.Warning,
+            source: "ruff",
+          },
+        ],
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+        CodeAction {
+          "command": undefined,
+          "diagnostics": [
+            Diagnostic {
+              "code": undefined,
+              "message": "Unused import",
+              "range": Range {
+                "end": Position {
+                  "character": 10,
+                  "line": 1,
+                },
+                "start": Position {
+                  "character": 0,
+                  "line": 1,
+                },
+              },
+              "relatedInformation": undefined,
+              "severity": 1,
+              "source": "ruff",
+              "tags": undefined,
+            },
+          ],
+          "disabled": undefined,
+          "edit": WorkspaceEdit {},
+          "isPreferred": true,
+          "kind": CodeActionKind {
+            "value": "source.organizeImports",
+          },
+          "title": "Organize imports",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    // LSP 3.18 widened Diagnostic.message to `string | MarkupContent`; we
+    // normalize to the plain string for VS Code's Diagnostic constructor.
+    "normalizes a MarkupContent diagnostic message to plain text",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Organize imports",
+        kind: "quickfix",
+        diagnostics: [
+          {
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 10 },
+            },
+            message: {
+              kind: lsp.MarkupKind.Markdown,
+              value: "Unused import",
+            },
+            severity: lsp.DiagnosticSeverity.Warning,
+            source: "ruff",
+          },
+        ],
+      });
+      Vitest.expect(result.diagnostics?.[0]?.message).toBe("Unused import");
+    }),
+  );
+
+  it.effect(
+    "converts disabled action",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Extract variable",
+        kind: "refactor.extract",
+        disabled: { reason: "No expression selected" },
+      });
+      Vitest.expect(result.disabled).toMatchInlineSnapshot(`
+        {
+          "reason": "No expression selected",
+        }
+      `);
+    }),
+  );
+
+  it.effect(
+    "stashes data for resolve",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Fix all",
+        kind: "source.fixAll",
+        data: { uri: "file:///test.py" },
+      });
+      Vitest.expect(result.title).toBe("Fix all");
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Trivial LSP-side converters
+// ---------------------------------------------------------------------------
+
+Vitest.describe("toLspRange", () => {
+  it.effect(
+    "extracts start and end",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      Vitest.expect(toLspRange(new code.Range(1, 2, 3, 4)))
+        .toMatchInlineSnapshot(`
+      	{
+      	  "end": {
+      	    "character": 4,
+      	    "line": 3,
+      	  },
+      	  "start": {
+      	    "character": 2,
+      	    "line": 1,
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLocation", () => {
+  it.effect(
+    "parses uri and converts range",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocation(code, {
+        uri: "file:///a.py",
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	Location {
+      	  "range": Range {
+      	    "end": Position {
+      	      "character": 5,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "uri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/a.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLocationLink", () => {
+  it.effect(
+    "converts with originSelectionRange",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationLink(code, {
+        targetUri: "file:///t.py",
+        targetRange: {
+          start: { line: 1, character: 0 },
+          end: { line: 2, character: 0 },
+        },
+        targetSelectionRange: {
+          start: { line: 1, character: 4 },
+          end: { line: 1, character: 10 },
+        },
+        originSelectionRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 3 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "originSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 3,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetRange": Range {
+      	    "end": Position {
+      	      "character": 0,
+      	      "line": 2,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 1,
+      	    },
+      	  },
+      	  "targetSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 10,
+      	      "line": 1,
+      	    },
+      	    "start": Position {
+      	      "character": 4,
+      	      "line": 1,
+      	    },
+      	  },
+      	  "targetUri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/t.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "omits originSelectionRange when absent",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLocationLink(code, {
+        targetUri: "file:///t.py",
+        targetRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+        targetSelectionRange: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "originSelectionRange": undefined,
+      	  "targetRange": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetSelectionRange": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "targetUri": {
+      	    "authority": "",
+      	    "fragment": "",
+      	    "path": "/t.py",
+      	    "query": "",
+      	    "scheme": "file",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toDocumentPositionParams", () => {
+  it.effect(
+    "serializes uri and position",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const doc = VsCodeTest.createTestTextDocument("/x.py", "python", "");
+      const result = toDocumentPositionParams(doc, new code.Position(5, 2));
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "position": {
+      	    "character": 2,
+      	    "line": 5,
+      	  },
+      	  "textDocument": {
+      	    "uri": "file:///x.py",
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Structural converters with branching logic
+// ---------------------------------------------------------------------------
+
+Vitest.describe("toDocumentation", () => {
+  it.effect(
+    "returns undefined for undefined",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      Vitest.expect(toDocumentation(code, undefined)).toBeUndefined();
+    }),
+  );
+
+  it.effect(
+    "passes through strings unchanged",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      Vitest.expect(toDocumentation(code, "plain")).toBe("plain");
+    }),
+  );
+
+  it.effect(
+    "wraps MarkupContent in MarkdownString",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toDocumentation(code, {
+        kind: lsp.MarkupKind.Markdown,
+        value: "# Heading",
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	MarkdownString {
+      	  "baseUri": undefined,
+      	  "isTrusted": undefined,
+      	  "supportHtml": undefined,
+      	  "supportThemeIcons": undefined,
+      	  "value": "# Heading",
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toTooltip", () => {
+  it.effect(
+    "passes through strings",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      Vitest.expect(toTooltip(code, "hi")).toBe("hi");
+    }),
+  );
+
+  it.effect(
+    "wraps MarkupContent",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toTooltip(code, {
+        kind: lsp.MarkupKind.Markdown,
+        value: "**bold**",
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	MarkdownString {
+      	  "baseUri": undefined,
+      	  "isTrusted": undefined,
+      	  "supportHtml": undefined,
+      	  "supportThemeIcons": undefined,
+      	  "value": "**bold**",
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toWorkspaceEdit", () => {
+  it.effect(
+    "converts changes map",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toWorkspaceEdit(code, {
+        changes: {
+          "file:///a.py": [
+            {
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 3 },
+              },
+              newText: "foo",
+            },
+          ],
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+    }),
+  );
+
+  it.effect(
+    "converts documentChanges with textDocument",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toWorkspaceEdit(code, {
+        documentChanges: [
+          {
+            textDocument: { uri: "file:///b.py", version: 1 },
+            edits: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 1 },
+                },
+                newText: "x",
+              },
+            ],
+          },
+        ],
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+    }),
+  );
+});
+
+Vitest.describe("toLspDiagnostic", () => {
+  it.effect(
+    "maps scalar string code, severity, source",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Warning,
+      );
+      d.code = "E501";
+      d.source = "ruff";
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": "E501",
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 2,
+      	  "source": "ruff",
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "maps numeric code",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Error,
+      );
+      d.code = 42;
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": 42,
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 1,
+      	  "source": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "unwraps object code via .value",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const d = new code.Diagnostic(
+        new code.Range(0, 0, 0, 1),
+        "msg",
+        code.DiagnosticSeverity.Information,
+      );
+      d.code = { value: "F401", target: code.Uri.parse("https://x") };
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      	{
+      	  "code": "F401",
+      	  "message": "msg",
+      	  "range": {
+      	    "end": {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	  "severity": 3,
+      	  "source": undefined,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toLspCodeActionContext", () => {
+  it.effect(
+    "maps trigger kind, diagnostics, and single `only` kind",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLspCodeActionContext(code, {
+        diagnostics: [
+          new code.Diagnostic(
+            new code.Range(0, 0, 0, 5),
+            "unused",
+            code.DiagnosticSeverity.Warning,
+          ),
+        ],
+        only: code.CodeActionKind.Empty.append("quickfix"),
+        triggerKind: code.CodeActionTriggerKind.Automatic,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "diagnostics": [
+      	    {
+      	      "code": undefined,
+      	      "message": "unused",
+      	      "range": {
+      	        "end": {
+      	          "character": 5,
+      	          "line": 0,
+      	        },
+      	        "start": {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "severity": 2,
+      	      "source": undefined,
+      	    },
+      	  ],
+      	  "only": [
+      	    "quickfix",
+      	  ],
+      	  "triggerKind": 2,
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "omits `only` when absent",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toLspCodeActionContext(code, {
+        only: undefined,
+        diagnostics: [],
+        triggerKind: code.CodeActionTriggerKind.Invoke,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	{
+      	  "diagnostics": [],
+      	  "triggerKind": 1,
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Branches missing from previously-tested converters
+// ---------------------------------------------------------------------------
+
+Vitest.describe("toFoldingRange without kind", () => {
+  it.effect(
+    "leaves kind undefined",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toFoldingRange(code, { startLine: 0, endLine: 3 });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	FoldingRange {
+      	  "end": 3,
+      	  "kind": undefined,
+      	  "start": 0,
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toSelectionRange leaf", () => {
+  it.effect(
+    "converts range without parent",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toSelectionRange(code, {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	SelectionRange {
+      	  "parent": undefined,
+      	  "range": Range {
+      	    "end": Position {
+      	      "character": 1,
+      	      "line": 0,
+      	    },
+      	    "start": Position {
+      	      "character": 0,
+      	      "line": 0,
+      	    },
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toCompletionItem additional branches", () => {
+  it.effect(
+    "converts InsertReplaceEdit textEdit into insert/replace range",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "print",
+        textEdit: {
+          newText: "print",
+          insert: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 3 },
+          },
+          replace: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 5 },
+          },
+        },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	CompletionItem {
+      	  "additionalTextEdits": undefined,
+      	  "command": undefined,
+      	  "commitCharacters": undefined,
+      	  "detail": undefined,
+      	  "documentation": undefined,
+      	  "filterText": undefined,
+      	  "insertText": "print",
+      	  "keepWhitespace": undefined,
+      	  "kind": undefined,
+      	  "label": "print",
+      	  "preselect": undefined,
+      	  "range": {
+      	    "inserting": Range {
+      	      "end": Position {
+      	        "character": 3,
+      	        "line": 0,
+      	      },
+      	      "start": Position {
+      	        "character": 0,
+      	        "line": 0,
+      	      },
+      	    },
+      	    "replacing": Range {
+      	      "end": Position {
+      	        "character": 5,
+      	        "line": 0,
+      	      },
+      	      "start": Position {
+      	        "character": 0,
+      	        "line": 0,
+      	      },
+      	    },
+      	  },
+      	  "sortText": undefined,
+      	  "tags": undefined,
+      	  "textEdit": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "maps additionalTextEdits, commitCharacters, filterText, sortText, preselect, command",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "x",
+        filterText: "xx",
+        sortText: "000",
+        preselect: true,
+        commitCharacters: [".", "("],
+        additionalTextEdits: [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 0 },
+            },
+            newText: "import os\n",
+          },
+        ],
+        command: { title: "Log", command: "log", arguments: [1] },
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	CompletionItem {
+      	  "additionalTextEdits": [
+      	    TextEdit {
+      	      "newEol": undefined,
+      	      "newText": "import os
+      	",
+      	      "range": Range {
+      	        "end": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	        "start": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	    },
+      	  ],
+      	  "command": {
+      	    "arguments": [
+      	      1,
+      	    ],
+      	    "command": "log",
+      	    "title": "Log",
+      	  },
+      	  "commitCharacters": [
+      	    ".",
+      	    "(",
+      	  ],
+      	  "detail": undefined,
+      	  "documentation": undefined,
+      	  "filterText": "xx",
+      	  "insertText": undefined,
+      	  "keepWhitespace": undefined,
+      	  "kind": undefined,
+      	  "label": "x",
+      	  "preselect": true,
+      	  "range": undefined,
+      	  "sortText": "000",
+      	  "tags": undefined,
+      	  "textEdit": undefined,
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "maps legacy deprecated boolean to Deprecated tag",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCompletionItem(code, {
+        label: "old",
+        deprecated: true,
+      });
+      Vitest.expect(result.tags).toMatchInlineSnapshot(`
+      	[
+      	  1,
+      	]
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toInlayHint additional branches", () => {
+  it.effect(
+    "maps tooltip, paddingRight, label part command",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toInlayHint(code, {
+        position: { line: 0, character: 0 },
+        label: [
+          {
+            value: "foo",
+            command: { title: "Go", command: "go", arguments: ["a"] },
+            tooltip: { kind: lsp.MarkupKind.Markdown, value: "**f**" },
+          },
+        ],
+        tooltip: "plain tip",
+        paddingRight: true,
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	InlayHint {
+      	  "kind": undefined,
+      	  "label": [
+      	    InlayHintLabelPart {
+      	      "command": {
+      	        "arguments": [
+      	          "a",
+      	        ],
+      	        "command": "go",
+      	        "title": "Go",
+      	      },
+      	      "location": undefined,
+      	      "tooltip": MarkdownString {
+      	        "baseUri": undefined,
+      	        "isTrusted": undefined,
+      	        "supportHtml": undefined,
+      	        "supportThemeIcons": undefined,
+      	        "value": "**f**",
+      	      },
+      	      "value": "foo",
+      	    },
+      	  ],
+      	  "paddingLeft": undefined,
+      	  "paddingRight": true,
+      	  "position": Position {
+      	    "character": 0,
+      	    "line": 0,
+      	  },
+      	  "textEdits": undefined,
+      	  "tooltip": "plain tip",
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("toCodeAction additional branches", () => {
+  it.effect(
+    "maps command and passes through scalar diagnostic code",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const result = toCodeAction(code, {
+        title: "Run",
+        command: { title: "Do it", command: "do", arguments: [42] },
+        diagnostics: [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 1 },
+            },
+            message: "m",
+            code: "E501",
+          },
+        ],
+      });
+      Vitest.expect(result).toMatchInlineSnapshot(`
+      	CodeAction {
+      	  "command": {
+      	    "arguments": [
+      	      42,
+      	    ],
+      	    "command": "do",
+      	    "title": "Do it",
+      	  },
+      	  "diagnostics": [
+      	    Diagnostic {
+      	      "code": "E501",
+      	      "message": "m",
+      	      "range": Range {
+      	        "end": Position {
+      	          "character": 1,
+      	          "line": 0,
+      	        },
+      	        "start": Position {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "relatedInformation": undefined,
+      	      "severity": 0,
+      	      "source": undefined,
+      	      "tags": undefined,
+      	    },
+      	  ],
+      	  "disabled": undefined,
+      	  "edit": undefined,
+      	  "isPreferred": undefined,
+      	  "kind": undefined,
+      	  "title": "Run",
+      	}
+      `);
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip tests: LSP → VS Code → LSP. The opaque `data` payload survives
+// via a WeakMap keyed on the VS Code object, so resolve requests can send it
+// back to the server.
+// ---------------------------------------------------------------------------
+
+Vitest.describe("inlay hint round-trip", () => {
+  it.effect(
+    "preserves data and core fields",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const data = { id: 99, server: "ty" };
+      const back = toLspInlayHint(
+        toInlayHint(code, {
+          position: { line: 2, character: 4 },
+          label: ": int",
+          kind: lsp.InlayHintKind.Type,
+          paddingLeft: true,
+          data,
+        }),
+      );
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "data": {
+      	    "id": 99,
+      	    "server": "ty",
+      	  },
+      	  "kind": 1,
+      	  "label": ": int",
+      	  "paddingLeft": true,
+      	  "position": {
+      	    "character": 4,
+      	    "line": 2,
+      	  },
+      	}
+      `);
+    }),
+  );
+
+  it.effect(
+    "round-trips label parts with command",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const back = toLspInlayHint(
+        toInlayHint(code, {
+          position: { line: 0, character: 0 },
+          label: [
+            {
+              value: "x",
+              command: { title: "t", command: "c", arguments: [1] },
+            },
+          ],
+        }),
+      );
+      Vitest.expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "label": [
+      	    {
+      	      "command": {
+      	        "arguments": [
+      	          1,
+      	        ],
+      	        "command": "c",
+      	        "title": "t",
+      	      },
+      	      "value": "x",
+      	    },
+      	  ],
+      	  "position": {
+      	    "character": 0,
+      	    "line": 0,
+      	  },
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("completion item round-trip", () => {
+  it.effect(
+    "preserves data and flattens labelDetails/markdown docs",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const data = { resolveId: "abc" };
+      const back = toLspCompletionItem(
+        code,
+        toCompletionItem(code, {
+          label: "foo",
+          labelDetails: { detail: "(x)", description: "mod.foo" },
+          kind: lsp.CompletionItemKind.Function,
+          detail: "desc",
+          documentation: { kind: lsp.MarkupKind.Markdown, value: "**doc**" },
+          filterText: "for",
+          sortText: "0",
+          preselect: true,
+          insertText: "foo()",
+          data,
+        }),
+      );
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "data": {
+      	    "resolveId": "abc",
+      	  },
+      	  "detail": "desc",
+      	  "documentation": "**doc**",
+      	  "filterText": "for",
+      	  "insertText": "foo()",
+      	  "kind": 3,
+      	  "label": "foo",
+      	  "preselect": true,
+      	  "sortText": "0",
+      	}
+      `);
+    }),
+  );
+});
+
+Vitest.describe("code action round-trip", () => {
+  it.effect(
+    "preserves data, kind, command, diagnostics, isPreferred, disabled",
+    Effect.fn(function* () {
+      const code = yield* VsCode.Service;
+      const data = { token: "xyz" };
+      const back = toLspCodeAction(
+        code,
+        toCodeAction(code, {
+          title: "Fix",
+          kind: "quickfix",
+          isPreferred: true,
+          disabled: { reason: "nope" },
+          command: { title: "Log", command: "log" },
+          diagnostics: [
+            {
+              range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 1 },
+              },
+              message: "m",
+              severity: lsp.DiagnosticSeverity.Error,
+              source: "ruff",
+              code: "E501",
+            },
+          ],
+          data,
+        }),
+      );
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
+      	{
+      	  "command": {
+      	    "arguments": undefined,
+      	    "command": "log",
+      	    "title": "Log",
+      	  },
+      	  "data": {
+      	    "token": "xyz",
+      	  },
+      	  "diagnostics": [
+      	    {
+      	      "code": "E501",
+      	      "message": "m",
+      	      "range": {
+      	        "end": {
+      	          "character": 1,
+      	          "line": 0,
+      	        },
+      	        "start": {
+      	          "character": 0,
+      	          "line": 0,
+      	        },
+      	      },
+      	      "severity": 1,
+      	      "source": "ruff",
+      	    },
+      	  ],
+      	  "disabled": {
+      	    "reason": "nope",
+      	  },
+      	  "edit": undefined,
+      	  "isPreferred": true,
+      	  "kind": "quickfix",
+      	  "title": "Fix",
+      	}
+      `);
+    }),
+  );
+});
