@@ -1,26 +1,21 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Ref } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { openExternalUrl } from "../openExternalUrl.ts";
 
-it.effect(
+const test = EffectTest.make(TestVsCode.layer);
+
+test.effect(
   "opens a parsed HTTPS URL externally",
   Effect.fn(function* () {
-    const opened = yield* Ref.make<ReadonlyArray<string>>([]);
-    const vscode = yield* TestVsCode.make({
-      env: {
-        openExternal: (uri) =>
-          Ref.update(opened, (urls) => [...urls, uri.toString(true)]).pipe(
-            Effect.as(true),
-          ),
-      },
-    });
+    const vscode = yield* TestVsCode.Service;
 
-    yield* openExternalUrl("https://marimo.io/discord").pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* openExternalUrl("https://marimo.io/discord");
 
-    expect(yield* Ref.get(opened)).toEqual(["https://marimo.io/discord"]);
+    Vitest.expect((yield* vscode.snapshot).openedExternalUris).toEqual([
+      "https://marimo.io/discord",
+    ]);
   }),
 );

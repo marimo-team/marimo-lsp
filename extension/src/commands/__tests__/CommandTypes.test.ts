@@ -1,4 +1,4 @@
-import { expect, expectTypeOf, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
@@ -51,10 +51,12 @@ const typecheckedUsage = (cell: vscode.NotebookCell) =>
     );
   });
 
-it("keeps registration and bindings statically compatible", () => {
-  expect(typecheckedUsage).toBeDefined();
+Vitest.it("keeps registration and bindings statically compatible", () => {
+  Vitest.expect(typecheckedUsage).toBeDefined();
 });
 
-it("catalogs every typed built-in command exactly once", () => {
-  expectTypeOf<keyof VscodeCommandMap>().toEqualTypeOf<VscodeBuiltinCommand>();
+Vitest.it("catalogs every typed built-in command exactly once", () => {
+  Vitest.expectTypeOf<
+    keyof VscodeCommandMap
+  >().toEqualTypeOf<VscodeBuiltinCommand>();
 });

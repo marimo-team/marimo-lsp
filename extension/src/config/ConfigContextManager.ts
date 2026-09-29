@@ -1,4 +1,12 @@
-import { Effect, Layer, Option, Scope, Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  Effect,
+  Layer,
+  Option,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import * as NotebookDocumentSessions from "../notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../notebook/NotebookSessionResources.ts";
@@ -6,21 +14,39 @@ import * as VsCode from "../platform/VsCode.ts";
 import type { MarimoConfig } from "../types.ts";
 import * as NotebookConfiguration from "./NotebookConfiguration.ts";
 
+export interface Interface {
+  /** The session whose configuration has entered the ordered write pipeline. */
+  readonly desiredChanges: Stream.Stream<
+    Option.Option<NotebookDocumentSessions.Session>
+  >;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/ConfigContextManager",
+) {}
+
 /**
  * Mirrors kernel configuration into VS Code context keys for UI:
  * - "marimo.config.runtime.on_cell_change" - Current on_cell_change mode ("autorun" | "lazy")
  * - "marimo.config.runtime.auto_reload" - Current auto_reload mode ("off" | "lazy" | "autorun")
  *
- * Pure side effect: nothing consumes this as a service.
+ * The service exposes desired-configuration progress so callers can observe
+ * when an active-session change has entered the ordered write pipeline.
  */
-export const layer = Layer.effectDiscard(
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
     const documentSessions = yield* NotebookDocumentSessions.Service;
     const sessionResources = yield* NotebookSessionResources.Service;
-    const desiredConfiguration = yield* SubscriptionRef.make(
-      Option.none<MarimoConfig>(),
-    );
+    const desiredConfiguration = yield* SubscriptionRef.make({
+      session: Option.none<NotebookDocumentSessions.Session>(),
+      configuration: Option.none<MarimoConfig>(),
+    });
+    const publishDesired = (
+      session: Option.Option<NotebookDocumentSessions.Session>,
+      configuration: Option.Option<MarimoConfig>,
+    ) => SubscriptionRef.set(desiredConfiguration, { session, configuration });
 
     const updateContext = (configuration: Option.Option<MarimoConfig>) => {
       const onCellChange = Option.map(
@@ -57,12 +83,7 @@ export const layer = Layer.effectDiscard(
       Stream.switchMap(
         Option.match({
           onNone: () =>
-            Stream.fromEffect(
-              SubscriptionRef.set(
-                desiredConfiguration,
-                Option.none<MarimoConfig>(),
-              ),
-            ),
+            Stream.fromEffect(publishDesired(Option.none(), Option.none())),
           onSome: (session) =>
             Stream.fromEffect(
               sessionResources
@@ -71,8 +92,8 @@ export const layer = Layer.effectDiscard(
                   NotebookConfiguration.Service.pipe(
                     Effect.flatMap((configuration) =>
                       configuration.changes.pipe(
-                        Stream.runForEach((value) =>
-                          SubscriptionRef.set(desiredConfiguration, value),
+                        Stream.runForEach((configuration) =>
+                          publishDesired(Option.some(session), configuration),
                         ),
                       ),
                     ),
@@ -96,9 +117,18 @@ export const layer = Layer.effectDiscard(
     // VS Code command. One manager-owned consumer preserves write order.
     yield* Effect.forkScoped(
       SubscriptionRef.changes(desiredConfiguration).pipe(
-        Stream.runForEach(updateContext),
+        Stream.runForEach(({ configuration }) => updateContext(configuration)),
       ),
+      { startImmediately: true },
     );
-    yield* Effect.forkScoped(publishActiveConfiguration);
+    yield* Effect.forkScoped(publishActiveConfiguration, {
+      startImmediately: true,
+    });
+
+    return Service.of({
+      desiredChanges: SubscriptionRef.changes(desiredConfiguration).pipe(
+        Stream.map(({ session }) => session),
+      ),
+    });
   }).pipe(Effect.withSpan("ConfigContextManager.layer")),
 );

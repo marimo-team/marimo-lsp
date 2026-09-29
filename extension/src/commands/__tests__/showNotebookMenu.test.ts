@@ -1,7 +1,8 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Option, Ref, Scope } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import { marimoConfigFixture } from "../../lib/__tests__/branded.ts";
@@ -43,14 +44,9 @@ const runtimeLayer = makeTestNotebookRuntime({
       : Effect.die("not implemented"),
 });
 
-const serializerLayer = Layer.succeed(
-  NotebookSerializer.Service,
-  NotebookSerializer.Service.of({
-    notebookType: NOTEBOOK_TYPE,
-    serializeEffect: () => Effect.die("not implemented"),
-    deserializeEffect: () => Effect.die("not implemented"),
-  }),
-);
+const serializerLayer = Layer.mock(NotebookSerializer.Service, {
+  notebookType: NOTEBOOK_TYPE,
+});
 
 const githubLayer = Layer.succeed(
   GitHubClient.Service,
@@ -70,114 +66,101 @@ const targetFor = (
     editor,
   }));
 
-const testLayer = (
-  vscode: TestVsCode,
+const layerWith = (
   runtime: ReturnType<typeof makeTestNotebookRuntime> = runtimeLayer,
 ) => {
   const documentSessions = NotebookDocumentSessions.layer.pipe(
-    Layer.provide(vscode.layer),
+    Layer.provide(TestVsCode.layer),
   );
   const sessionResources = NotebookSessionResources.layer.pipe(
     Layer.provide(documentSessions),
     Layer.provide(runtime),
   );
   return Layer.mergeAll(
-    vscode.layer,
+    TestVsCode.layer,
     documentSessions,
     sessionResources,
     constantsLayer,
     runtime,
     serializerLayer,
     githubLayer,
-    OutputChannel.layer.pipe(Layer.provide(vscode.layer)),
+    OutputChannel.layer.pipe(Layer.provide(TestVsCode.layer)),
   );
 };
 
-describe("showNotebookMenu", () => {
-  it.effect("offers a focused four-item notebook menu", () =>
-    Effect.gen(function* () {
-      const labels = yield* Ref.make<ReadonlyArray<string>>([]);
-      const vscode = yield* TestVsCode.make({
-        window: {
-          showQuickPickItems: (items) =>
-            Ref.set(
-              labels,
-              items.map((item) => item.label),
-            ).pipe(Effect.as(Option.none())),
-        },
-      });
+const it = EffectTest.make(layerWith());
+const menuLabel = (value: (typeof NOTEBOOK_MENU_ITEMS)[number]["value"]) =>
+  Option.getOrThrow(
+    Option.fromNullishOr(
+      NOTEBOOK_MENU_ITEMS.find((item) => item.value === value)?.label,
+    ),
+  );
 
-      yield* showNotebookMenu
-        .invoke(Option.none())
-        .pipe(Effect.provide(testLayer(vscode)));
+const openSession = Effect.fn(function* (
+  vscode: TestVsCode.Interface,
+  editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
+) {
+  yield* vscode.openNotebook(editor.notebook);
+  yield* vscode.setActiveNotebookEditor(Option.some(editor));
+  const sessions = yield* NotebookDocumentSessions.Service;
+  return yield* sessions.active.pipe(
+    Stream.filter(
+      Option.exists((session) => session.document === editor.notebook),
+    ),
+    Stream.runHead,
+    Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+  );
+});
 
-      expect(yield* Ref.get(labels)).toEqual(
-        NOTEBOOK_MENU_ITEMS.map((item) => item.label),
-      );
-      expect(yield* Ref.get(vscode.executions)).toEqual([]);
+Vitest.describe("showNotebookMenu", () => {
+  it.effect(
+    "offers a focused four-item notebook menu",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
+      yield* showNotebookMenu.invoke(Option.none());
+
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(
+        snapshot.quickPicks[0]?.items.map((item) => item.label),
+      ).toEqual(NOTEBOOK_MENU_ITEMS.map((item) => item.label));
+      Vitest.expect(snapshot.executions).toEqual([]);
     }),
   );
 
-  it.effect("creates a setup cell in the normalized target notebook", () =>
-    Effect.gen(function* () {
-      const applied = yield* Ref.make(false);
+  it.effect(
+    "creates a setup cell in the normalized target notebook",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-        window: {
-          showQuickPickItems: (items) =>
-            Effect.succeed(
-              Option.fromNullishOr(
-                items.find((item) => item.label.includes("Create setup cell")),
-              ),
-            ),
-        },
-        workspace: {
-          applyEdit: () => Ref.set(applied, true).pipe(Effect.as(true)),
-        },
-      });
+      yield* vscode.openNotebook(editor.notebook);
+      yield* vscode.selectQuickPick(menuLabel("create-setup-cell"));
+      yield* showNotebookMenu.invoke(targetFor(editor));
 
-      yield* showNotebookMenu
-        .invoke(targetFor(editor))
-        .pipe(Effect.provide(testLayer(vscode)));
-
-      expect(yield* Ref.get(applied)).toBe(true);
-      expect(yield* Ref.get(vscode.executions)).toEqual([]);
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(snapshot.workspaceEdits).toHaveLength(1);
+      Vitest.expect(snapshot.executions).toEqual([]);
     }),
   );
 
-  it.effect("routes publish through the normalized target", () =>
-    Effect.gen(function* () {
-      const warning = yield* Ref.make(Option.none<string>());
-      const vscode = yield* TestVsCode.make({
-        window: {
-          showQuickPickItems: (items) =>
-            Effect.succeed(
-              Option.fromNullishOr(
-                items.find((item) => item.label.includes("Publish notebook")),
-              ),
-            ),
-          showWarningMessage: (message) =>
-            Ref.set(warning, Option.some(message)).pipe(
-              Effect.as(Option.none()),
-            ),
-        },
-      });
+  it.effect(
+    "routes publish through the normalized target",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.selectQuickPick(menuLabel("publish-notebook"));
+      yield* showNotebookMenu.invoke(Option.none());
 
-      yield* showNotebookMenu
-        .invoke(Option.none())
-        .pipe(Effect.provide(testLayer(vscode)));
-
-      expect(yield* Ref.get(warning)).toEqual(
-        Option.some("Must have an open marimo notebook to publish Gist."),
-      );
-      expect(yield* Ref.get(vscode.executions)).toEqual([]);
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(snapshot.warningMessages).toEqual([
+        "Must have an open marimo notebook to publish Gist.",
+      ]);
+      Vitest.expect(snapshot.executions).toEqual([]);
     }),
   );
 
-  it.effect("configures exports for the normalized target notebook", () =>
-    Effect.gen(function* () {
-      const applied = yield* Ref.make(false);
+  it.effect(
+    "configures exports for the normalized target notebook",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
         data: {
           metadata: MarimoNotebookDocument.createMetadata({
@@ -195,122 +178,74 @@ describe("showNotebookMenu", () => {
           ],
         },
       });
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [editor.notebook],
-        window: {
-          showQuickPickItems: (items) =>
-            Effect.succeed(
-              Option.fromNullishOr(
-                items.find((item) => item.label.includes("Automatic exports")),
-              ),
-            ),
-          showQuickPickItemsMany: (items) =>
-            Effect.succeed(
-              Option.some(items.filter((item) => item.label === "HTML")),
-            ),
-        },
-        workspace: {
-          applyEdit: () => Ref.set(applied, true).pipe(Effect.as(true)),
-        },
-      });
+      yield* vscode.openNotebook(editor.notebook);
+      yield* vscode.selectQuickPick(menuLabel("automatic-exports"));
+      yield* vscode.selectQuickPickMany(["HTML"]);
+      yield* showNotebookMenu.invoke(targetFor(editor));
 
-      yield* showNotebookMenu
-        .invoke(targetFor(editor))
-        .pipe(Effect.provide(testLayer(vscode)));
-
-      expect(yield* Ref.get(applied)).toBe(true);
+      Vitest.expect((yield* vscode.snapshot).workspaceEdits).toHaveLength(1);
     }),
   );
 
   it.effect(
     "shows the current reactivity state for the normalized target",
-    () =>
-      Effect.gen(function* () {
-        const descriptions = yield* Ref.make<ReadonlyArray<string>>([]);
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-        const vscode = yield* TestVsCode.make({
-          initialDocuments: [editor.notebook],
-          window: {
-            showQuickPickItems: (items, options) => {
-              if (options?.title === "marimo notebook") {
-                return Effect.succeed(
-                  Option.fromNullishOr(
-                    items.find((item) => item.label.includes("Reactivity")),
-                  ),
-                );
-              }
-              return Ref.set(
-                descriptions,
-                items.flatMap((item) => item.description ?? []),
-              ).pipe(Effect.as(Option.none()));
-            },
-          },
-        });
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+      yield* openSession(vscode, editor);
+      yield* vscode.selectQuickPick(menuLabel("reactivity"));
+      yield* showNotebookMenu.invoke(targetFor(editor));
 
-        yield* showNotebookMenu
-          .invoke(targetFor(editor))
-          .pipe(Effect.provide(testLayer(vscode)));
-
-        expect(yield* Ref.get(descriptions)).toEqual(["Lazy", "Auto-run"]);
-      }),
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(
+        snapshot.quickPicks[1]?.items.flatMap((item) => item.description ?? []),
+      ).toEqual(["Lazy", "Auto-run"]);
+    }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "ends quietly if the notebook closes while loading reactivity",
-    () =>
-      Effect.gen(function* () {
-        const requestStarted = yield* Deferred.make<void>();
-        const releaseRequest = yield* Deferred.make<void>();
-        const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-        const vscode = yield* TestVsCode.make({
-          initialDocuments: [editor.notebook],
-          window: {
-            showQuickPickItems: (items) =>
-              Effect.succeed(
-                Option.fromNullishOr(
-                  items.find((item) => item.label.includes("Reactivity")),
+    Effect.fn(function* () {
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
+      const runtime = makeTestNotebookRuntime({
+        send: (request) =>
+          request.kind === "get-configuration"
+            ? Deferred.succeed(requestStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseRequest)),
+                Effect.andThen(
+                  Effect.succeed({
+                    config: marimoConfigFixture({}),
+                  }),
                 ),
-              ),
-          },
-        });
-        const runtime = makeTestNotebookRuntime({
-          send: (request) =>
-            request.kind === "get-configuration"
-              ? Deferred.succeed(requestStarted, undefined).pipe(
-                  Effect.andThen(Deferred.await(releaseRequest)),
-                  Effect.andThen(
-                    Effect.succeed({
-                      config: marimoConfigFixture({}),
-                    }),
-                  ),
-                )
-              : Effect.die("not implemented"),
-        });
+              )
+            : Effect.die("not implemented"),
+      });
 
-        yield* Effect.gen(function* () {
-          const sessions = yield* NotebookDocumentSessions.Service;
-          const session = Option.getOrThrow(
-            sessions.forDocument(editor.notebook),
-          );
-          const sessionEnded = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const vscode = yield* TestVsCode.Service;
+        const session = yield* openSession(vscode, editor);
+        yield* vscode.selectQuickPick(menuLabel("reactivity"));
+        const sessionEnded = yield* Deferred.make<void>();
 
-          const running = yield* showNotebookMenu
-            .invoke(targetFor(editor))
-            .pipe(Effect.forkChild);
-          yield* Deferred.await(requestStarted);
-          yield* Scope.addFinalizer(
-            session.scope,
-            Deferred.succeed(sessionEnded, undefined),
-          );
-          const closing = yield* vscode
-            .closeNotebook(editor.notebook)
-            .pipe(Effect.forkChild);
-          yield* Deferred.await(sessionEnded);
-          yield* Deferred.succeed(releaseRequest, undefined);
+        const running = yield* showNotebookMenu
+          .invoke(targetFor(editor))
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(requestStarted);
+        yield* Scope.addFinalizer(
+          session.scope,
+          Deferred.succeed(sessionEnded, undefined),
+        );
+        const closing = yield* vscode
+          .closeNotebook(editor.notebook)
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(sessionEnded);
+        yield* Deferred.succeed(releaseRequest, undefined);
 
-          yield* Fiber.join(closing);
-          yield* Fiber.join(running);
-        }).pipe(Effect.provide(testLayer(vscode, runtime)));
-      }),
+        yield* Fiber.join(closing);
+        yield* Fiber.join(running);
+      }).pipe(Effect.provide(layerWith(runtime)));
+    }),
   );
 });

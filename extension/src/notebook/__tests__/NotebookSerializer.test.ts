@@ -1,43 +1,37 @@
 import * as NodeFs from "node:fs";
 
-import { assert, expect, it } from "@effect/vitest";
-import {
-  Cause,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Ref,
-  Result,
-} from "effect";
+import * as Vitest from "@effect/vitest";
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Result } from "effect";
 import { TestClock } from "effect/testing";
 
 import packageJson from "../../../package.json";
 import { TestMarimoClientProcess } from "../../__mocks__/TestMarimoClient.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestMarimoClient } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
 import * as NotebookSerializer from "../../notebook/NotebookSerializer.ts";
 import * as Constants from "../../platform/Constants.ts";
 
-const NotebookSerializerLive = Layer.empty.pipe(
+const liveLayer = Layer.empty.pipe(
   Layer.provideMerge(NotebookSerializer.layer),
   // These tests intentionally cover the cross-language serialization contract.
   Layer.provideMerge(TestMarimoClientProcess),
   Layer.provideMerge(Constants.defaultLayer),
 );
 
-it.effect(
-  "bounds a deserialize request that never completes",
-  Effect.fn(function* () {
-    const layer = Layer.empty.pipe(
+Vitest.describe("when deserialization stalls", () => {
+  const it = EffectTest.make(
+    Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
       Layer.provideMerge(Constants.defaultLayer),
-    );
+    ),
+  );
 
-    const exit = yield* Effect.gen(function* () {
+  it.effect(
+    "bounds a deserialize request that never completes",
+    Effect.fn(function* () {
       const serializer = yield* NotebookSerializer.Service;
       const deserialize = yield* Effect.forkChild(
         serializer
@@ -45,61 +39,67 @@ it.effect(
           .pipe(Effect.exit),
       );
       yield* TestClock.adjust(Duration.seconds(120));
-      return yield* Fiber.join(deserialize);
-    }).pipe(Effect.provide(layer));
+      const exit = yield* Fiber.join(deserialize);
 
-    assert(Exit.isFailure(exit));
-    const failure = Cause.findErrorOption(exit.cause);
-    assert(failure._tag === "Some");
-    assert(Cause.isTimeoutError(failure.value));
-  }),
-);
+      Vitest.assert(Exit.isFailure(exit));
+      const failure = Cause.findErrorOption(exit.cause);
+      Vitest.assert(failure._tag === "Some");
+      Vitest.assert(Cause.isTimeoutError(failure.value));
+    }),
+  );
+});
 
-it.effect(
-  "registered serializer explains deserialize timeouts",
-  Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
-    const layer = Layer.empty.pipe(
+Vitest.describe("when a registered deserializer stalls", () => {
+  const it = EffectTest.make(
+    Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(makeTestMarimoClient({ send: () => Effect.never })),
       Layer.provideMerge(Constants.defaultLayer),
-      Layer.provideMerge(vscode.layer),
-    );
+      Layer.provideMerge(TestVsCode.layer),
+    ),
+  );
 
-    yield* Effect.gen(function* () {
+  it.effect(
+    "registered serializer explains deserialize timeouts",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
       yield* NotebookSerializer.Service;
-      const registrations = Array.from(yield* Ref.get(vscode.serializers));
+      const registrations = yield* vscode.serializers;
       const registration = registrations[0];
-      assert.isDefined(registration);
+      Vitest.assert.isDefined(registration);
 
-      const pending = registration.serializer.deserializeNotebook(
-        new TextEncoder().encode("app = marimo.App()"),
-        {
-          isCancellationRequested: false,
-          onCancellationRequested: () => ({ dispose() {} }),
-        },
-      );
-      const settled = Promise.resolve(pending).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      yield* Effect.yieldNow;
+      const deserialize = yield* Effect.tryPromise({
+        try: () =>
+          Promise.resolve(
+            registration.serializer.deserializeNotebook(
+              new TextEncoder().encode("app = marimo.App()"),
+              {
+                isCancellationRequested: false,
+                onCancellationRequested: () => ({ dispose() {} }),
+              },
+            ),
+          ),
+        catch: (error) =>
+          error instanceof NotebookSerializer.OperationError
+            ? error
+            : new NotebookSerializer.OperationError({
+                message: String(error),
+              }),
+      }).pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
       yield* TestClock.adjust(Duration.seconds(120));
-      const error = yield* Effect.promise(() => settled);
+      const error = yield* Fiber.join(deserialize);
 
-      assert(error instanceof Error);
-      expect(error.message).toBe(
+      Vitest.assert(error instanceof Error);
+      Vitest.expect(error.message).toBe(
         "Timed out after 120 seconds while opening the notebook. See marimo logs for details.",
       );
-    }).pipe(Effect.provide(layer));
-  }),
-);
+    }),
+  );
+});
 
-it.effect(
-  "registered serializer explains non-marimo source failures",
-  Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
-    const layer = Layer.empty.pipe(
+Vitest.describe("when registered source is not a marimo notebook", () => {
+  const it = EffectTest.make(
+    Layer.empty.pipe(
       Layer.provideMerge(NotebookSerializer.layer),
       Layer.provideMerge(
         makeTestMarimoClient({
@@ -110,14 +110,18 @@ it.effect(
         }),
       ),
       Layer.provideMerge(Constants.defaultLayer),
-      Layer.provideMerge(vscode.layer),
-    );
+      Layer.provideMerge(TestVsCode.layer),
+    ),
+  );
 
-    yield* Effect.gen(function* () {
+  it.effect(
+    "registered serializer explains non-marimo source failures",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
       yield* NotebookSerializer.Service;
-      const registrations = Array.from(yield* Ref.get(vscode.serializers));
+      const registrations = yield* vscode.serializers;
       const registration = registrations[0];
-      assert.isDefined(registration);
+      Vitest.assert.isDefined(registration);
 
       const error = yield* Effect.promise(async () => {
         try {
@@ -134,75 +138,74 @@ it.effect(
         }
       });
 
-      assert(error instanceof Error);
-      expect(error.message).toBe(
+      Vitest.assert(error instanceof Error);
+      Vitest.expect(error.message).toBe(
         "This is not a native marimo notebook and must be converted first.",
       );
-    }).pipe(Effect.provide(layer));
-  }),
-);
+    }),
+  );
+});
 
-it.layer(NotebookSerializerLive, { timeout: 30_000 })(
-  "NotebookSerializer",
-  (it) => {
-    it("NOTEBOOK_TYPE matches package.json notebook type", () => {
-      const notebookConfig = packageJson.contributes.notebooks.find(
-        (nb) => nb.type === NOTEBOOK_TYPE,
-      );
-      expect(notebookConfig).toBeDefined();
-      assert.strictEqual(notebookConfig?.type, NOTEBOOK_TYPE);
-    });
-
-    it.effect(
-      "rejects invalid owned metadata instead of serializing defaults",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const invalidCell = yield* Effect.result(
-          serializer.serializeEffect({
-            cells: [
-              {
-                kind: 2,
-                value: "x = 1",
-                languageId: LanguageId.Python,
-                metadata: { marimo: { misspelled: true } },
-              },
-            ],
-          }),
-        );
-        const invalidNotebook = yield* Effect.result(
-          serializer.serializeEffect({
-            cells: [],
-            metadata: { marimo: { misspelled: true } },
-          }),
-        );
-
-        expect(Result.isFailure(invalidCell)).toBe(true);
-        expect(Result.isFailure(invalidNotebook)).toBe(true);
-      }),
+EffectTest.layer(liveLayer)("NotebookSerializer", (it) => {
+  Vitest.it("NOTEBOOK_TYPE matches package.json notebook type", () => {
+    const notebookConfig = packageJson.contributes.notebooks.find(
+      (nb) => nb.type === NOTEBOOK_TYPE,
     );
+    Vitest.expect(notebookConfig).toBeDefined();
+    Vitest.assert.strictEqual(notebookConfig?.type, NOTEBOOK_TYPE);
+  });
 
-    it.effect(
-      "serializes notebook cells to marimo format",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const bytes = yield* serializer.serializeEffect({
+  it.effect(
+    "rejects invalid owned metadata instead of serializing defaults",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const invalidCell = yield* Effect.result(
+        serializer.serializeEffect({
           cells: [
-            {
-              kind: 2,
-              value: "import marimo as mo",
-              languageId: LanguageId.Python,
-            },
             {
               kind: 2,
               value: "x = 1",
               languageId: LanguageId.Python,
+              metadata: { marimo: { misspelled: true } },
             },
           ],
-        });
-        const serializedSource = new TextDecoder().decode(bytes).trim();
-        expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
+        }),
+      );
+      const invalidNotebook = yield* Effect.result(
+        serializer.serializeEffect({
+          cells: [],
+          metadata: { marimo: { misspelled: true } },
+        }),
+      );
+
+      Vitest.expect(Result.isFailure(invalidCell)).toBe(true);
+      Vitest.expect(Result.isFailure(invalidNotebook)).toBe(true);
+    }),
+  );
+
+  it.effect(
+    "serializes notebook cells to marimo format",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const bytes = yield* serializer.serializeEffect({
+        cells: [
+          {
+            kind: 2,
+            value: "import marimo as mo",
+            languageId: LanguageId.Python,
+          },
+          {
+            kind: 2,
+            value: "x = 1",
+            languageId: LanguageId.Python,
+          },
+        ],
+      });
+      const serializedSource = new TextDecoder().decode(bytes).trim();
+      Vitest.expect(removeGeneratedWith(serializedSource))
+        .toMatchInlineSnapshot(`
           "import marimo
 
           __generated_with = ""
@@ -225,35 +228,36 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
           if __name__ == "__main__":
               app.run()"
         `);
-      }),
-    );
+    }),
+  );
 
-    it.effect(
-      "serializes markdown notebook cells to marimo format",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const bytes = yield* serializer.serializeEffect({
-          cells: [
-            {
-              kind: 2,
-              value: "import marimo as mo",
-              languageId: LanguageId.Python,
-            },
-            {
-              kind: 1,
-              value: "# single line markdown",
-              languageId: LanguageId.Markdown,
-            },
-            {
-              kind: 1,
-              value: "- multiline\n-markdown",
-              languageId: LanguageId.Markdown,
-            },
-          ],
-        });
-        const serializedSource = new TextDecoder().decode(bytes).trim();
-        expect(removeGeneratedWith(serializedSource)).toMatchInlineSnapshot(`
+  it.effect(
+    "serializes markdown notebook cells to marimo format",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const bytes = yield* serializer.serializeEffect({
+        cells: [
+          {
+            kind: 2,
+            value: "import marimo as mo",
+            languageId: LanguageId.Python,
+          },
+          {
+            kind: 1,
+            value: "# single line markdown",
+            languageId: LanguageId.Markdown,
+          },
+          {
+            kind: 1,
+            value: "- multiline\n-markdown",
+            languageId: LanguageId.Markdown,
+          },
+        ],
+      });
+      const serializedSource = new TextDecoder().decode(bytes).trim();
+      Vitest.expect(removeGeneratedWith(serializedSource))
+        .toMatchInlineSnapshot(`
           "import marimo
 
           __generated_with = ""
@@ -287,100 +291,100 @@ it.layer(NotebookSerializerLive, { timeout: 30_000 })(
           if __name__ == "__main__":
               app.run()"
         `);
-      }),
-    );
+    }),
+  );
 
-    it.effect.each([
-      { name: "empty", metadata: {} },
-      { name: "foreign-only", metadata: { foreign: { value: true } } },
-      { name: "empty marimo", metadata: { marimo: {} } },
-      { name: "empty options", metadata: { marimo: { options: {} } } },
-    ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
-      Effect.gen(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const bytes = yield* serializer.serializeEffect({
-          cells: [
-            {
-              kind: 1,
-              value: "# markdown",
-              languageId: LanguageId.Markdown,
-              metadata,
+  it.effect.each([
+    { name: "empty", metadata: {} },
+    { name: "foreign-only", metadata: { foreign: { value: true } } },
+    { name: "empty marimo", metadata: { marimo: {} } },
+    { name: "empty options", metadata: { marimo: { options: {} } } },
+  ])("uses markdown defaults for a $name metadata envelope", ({ metadata }) =>
+    Effect.gen(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const bytes = yield* serializer.serializeEffect({
+        cells: [
+          {
+            kind: 1,
+            value: "# markdown",
+            languageId: LanguageId.Markdown,
+            metadata,
+          },
+        ],
+      });
+
+      Vitest.expect(new TextDecoder().decode(bytes)).toContain(
+        "@app.cell(hide_code=True)",
+      );
+    }),
+  );
+
+  it.effect(
+    "preserves an explicit hide_code=false for markdown",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const bytes = yield* serializer.serializeEffect({
+        cells: [
+          {
+            kind: 1,
+            value: "# markdown",
+            languageId: LanguageId.Markdown,
+            metadata: {
+              marimo: { options: { hide_code: false } },
             },
-          ],
-        });
+          },
+        ],
+      });
 
-        expect(new TextDecoder().decode(bytes)).toContain(
-          "@app.cell(hide_code=True)",
-        );
-      }),
-    );
+      Vitest.expect(new TextDecoder().decode(bytes)).not.toContain(
+        "@app.cell(hide_code=True)",
+      );
+    }),
+  );
 
-    it.effect(
-      "preserves an explicit hide_code=false for markdown",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const bytes = yield* serializer.serializeEffect({
-          cells: [
-            {
-              kind: 1,
-              value: "# markdown",
-              languageId: LanguageId.Markdown,
-              metadata: {
-                marimo: { options: { hide_code: false } },
-              },
-            },
-          ],
-        });
+  it.effect(
+    "rejects a present null notebook metadata namespace",
+    Effect.fn(function* () {
+      const serializer = yield* NotebookSerializer.Service;
+      const result = yield* Effect.result(
+        serializer.serializeEffect({
+          cells: [],
+          metadata: { marimo: null },
+        }),
+      );
 
-        expect(new TextDecoder().decode(bytes)).not.toContain(
-          "@app.cell(hide_code=True)",
-        );
-      }),
-    );
+      Vitest.expect(Result.isFailure(result)).toBe(true);
+    }),
+  );
 
-    it.effect(
-      "rejects a present null notebook metadata namespace",
-      Effect.fn(function* () {
-        const serializer = yield* NotebookSerializer.Service;
-        const result = yield* Effect.result(
-          serializer.serializeEffect({
-            cells: [],
-            metadata: { marimo: null },
-          }),
-        );
+  it.effect(
+    "returns a typed source error for non-marimo Python",
+    Effect.fn(function* () {
+      const serializer = yield* NotebookSerializer.Service;
+      const result = yield* Effect.result(
+        serializer.deserializeEffect(
+          new TextEncoder().encode("print('hello')\n"),
+        ),
+      );
 
-        expect(Result.isFailure(result)).toBe(true);
-      }),
-    );
+      Vitest.assert(Result.isFailure(result));
+      Vitest.assert(
+        result.failure instanceof NotebookSerializer.NotebookSourceError,
+      );
+      Vitest.expect(result.failure.failure).toEqual({
+        kind: "convertible",
+      });
+    }),
+  );
 
-    it.effect(
-      "returns a typed source error for non-marimo Python",
-      Effect.fn(function* () {
-        const serializer = yield* NotebookSerializer.Service;
-        const result = yield* Effect.result(
-          serializer.deserializeEffect(
-            new TextEncoder().encode("print('hello')\n"),
-          ),
-        );
-
-        assert(Result.isFailure(result));
-        assert(
-          result.failure instanceof NotebookSerializer.NotebookSourceError,
-        );
-        expect(result.failure.failure).toEqual({
-          kind: "convertible",
-        });
-      }),
-    );
-
-    it.effect(
-      "deserializes mo.md() without f-strings to markdown cells",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const source = `import marimo
+  it.effect(
+    "deserializes mo.md() without f-strings to markdown cells",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const source = `import marimo
 
 __generated_with = "0.9.0"
 app = marimo.App()
@@ -411,34 +415,34 @@ def _(mo):
 if __name__ == "__main__":
     app.run()`;
 
-        const bytes = new TextEncoder().encode(source);
-        const notebook = yield* serializer.deserializeEffect(bytes);
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
 
-        // First cell should be Python
-        expect(notebook.cells[0].kind).toBe(2);
-        expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
-        expect(notebook.cells[0].value).toBe("import marimo as mo");
+      // First cell should be Python
+      Vitest.expect(notebook.cells[0].kind).toBe(2);
+      Vitest.expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
+      Vitest.expect(notebook.cells[0].value).toBe("import marimo as mo");
 
-        // Second cell should be Markdown (not Python)
-        expect(notebook.cells[1].kind).toBe(1);
-        expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
-        expect(notebook.cells[1].value).toBe(
-          "# Hello World\n\nThis is a markdown cell.",
-        );
+      // Second cell should be Markdown (not Python)
+      Vitest.expect(notebook.cells[1].kind).toBe(1);
+      Vitest.expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
+      Vitest.expect(notebook.cells[1].value).toBe(
+        "# Hello World\n\nThis is a markdown cell.",
+      );
 
-        // Third cell should also be Markdown
-        expect(notebook.cells[2].kind).toBe(1);
-        expect(notebook.cells[2].languageId).toBe(LanguageId.Markdown);
-        expect(notebook.cells[2].value).toBe("Single quotes");
-      }),
-    );
+      // Third cell should also be Markdown
+      Vitest.expect(notebook.cells[2].kind).toBe(1);
+      Vitest.expect(notebook.cells[2].languageId).toBe(LanguageId.Markdown);
+      Vitest.expect(notebook.cells[2].value).toBe("Single quotes");
+    }),
+  );
 
-    it.effect(
-      "keeps mo.md() with f-strings as Python cells",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const source = `import marimo
+  it.effect(
+    "keeps mo.md() with f-strings as Python cells",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const source = `import marimo
 
 __generated_with = "0.9.0"
 app = marimo.App()
@@ -464,27 +468,27 @@ def _(mo, name):
 if __name__ == "__main__":
     app.run()`;
 
-        const bytes = new TextEncoder().encode(source);
-        const notebook = yield* serializer.deserializeEffect(bytes);
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
 
-        // First cell should be Python
-        expect(notebook.cells[0].kind).toBe(2);
-        expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
+      // First cell should be Python
+      Vitest.expect(notebook.cells[0].kind).toBe(2);
+      Vitest.expect(notebook.cells[0].languageId).toBe(LanguageId.Python);
 
-        // Second cell should remain Python (because it's an f-string)
-        expect(notebook.cells[1].kind).toBe(2);
-        expect(notebook.cells[1].languageId).toBe(LanguageId.Python);
-        expect(notebook.cells[1].value).toContain("mo.md(f");
-        expect(notebook.cells[1].value).toContain("{name}");
-      }),
-    );
+      // Second cell should remain Python (because it's an f-string)
+      Vitest.expect(notebook.cells[1].kind).toBe(2);
+      Vitest.expect(notebook.cells[1].languageId).toBe(LanguageId.Python);
+      Vitest.expect(notebook.cells[1].value).toContain("mo.md(f");
+      Vitest.expect(notebook.cells[1].value).toContain("{name}");
+    }),
+  );
 
-    it.effect(
-      "round-trip markdown cells maintain mo.md() format",
-      Effect.fn(function* () {
-        const { LanguageId } = yield* Constants.Service;
-        const serializer = yield* NotebookSerializer.Service;
-        const source = `import marimo
+  it.effect(
+    "round-trip markdown cells maintain mo.md() format",
+    Effect.fn(function* () {
+      const { LanguageId } = yield* Constants.Service;
+      const serializer = yield* NotebookSerializer.Service;
+      const source = `import marimo
 
 __generated_with = "0.9.0"
 app = marimo.App()
@@ -510,53 +514,52 @@ def _(mo):
 if __name__ == "__main__":
     app.run()`;
 
-        const bytes = new TextEncoder().encode(source);
-        const notebook = yield* serializer.deserializeEffect(bytes);
+      const bytes = new TextEncoder().encode(source);
+      const notebook = yield* serializer.deserializeEffect(bytes);
 
-        // Should be deserialized as markdown
-        expect(notebook.cells[1].kind).toBe(1);
-        expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
+      // Should be deserialized as markdown
+      Vitest.expect(notebook.cells[1].kind).toBe(1);
+      Vitest.expect(notebook.cells[1].languageId).toBe(LanguageId.Markdown);
 
-        // Re-serialize and check it goes back to mo.md()
-        const serialized = yield* serializer.serializeEffect(notebook);
-        const serializedSource = new TextDecoder().decode(serialized).trim();
+      // Re-serialize and check it goes back to mo.md()
+      const serialized = yield* serializer.serializeEffect(notebook);
+      const serializedSource = new TextDecoder().decode(serialized).trim();
 
-        expect(removeGeneratedWith(serializedSource)).toBe(
-          removeGeneratedWith(source.trim()),
-        );
-      }),
-    );
+      Vitest.expect(removeGeneratedWith(serializedSource)).toBe(
+        removeGeneratedWith(source.trim()),
+      );
+    }),
+  );
 
-    it.effect.each([
-      ["simple notebook", "simple.txt"],
-      ["notebook with named cells", "with_names.txt"],
-      ["notebook with multiline cells", "multiline.txt"],
-      ["notebook with cell options", "with_options.txt"],
-      ["notebook with setup cell", "with_setup.txt"],
-      ["notebook with ellipsis", "with_ellipsis.txt"],
-    ] as const)("identity: %s", ([_, filename]) => {
-      return Effect.gen(function* () {
-        const serializer = yield* NotebookSerializer.Service;
-        const source = yield* Effect.tryPromise(() =>
-          NodeFs.promises.readFile(
-            new URL(`../../__mocks__/notebooks/${filename}`, import.meta.url),
-            "utf-8",
-          ),
-        );
-        const bytes = new TextEncoder().encode(source);
+  it.effect.each([
+    ["simple notebook", "simple.txt"],
+    ["notebook with named cells", "with_names.txt"],
+    ["notebook with multiline cells", "multiline.txt"],
+    ["notebook with cell options", "with_options.txt"],
+    ["notebook with setup cell", "with_setup.txt"],
+    ["notebook with ellipsis", "with_ellipsis.txt"],
+  ] as const)("identity: %s", ([_, filename]) => {
+    return Effect.gen(function* () {
+      const serializer = yield* NotebookSerializer.Service;
+      const source = yield* Effect.tryPromise(() =>
+        NodeFs.promises.readFile(
+          new URL(`../../__mocks__/notebooks/${filename}`, import.meta.url),
+          "utf-8",
+        ),
+      );
+      const bytes = new TextEncoder().encode(source);
 
-        const notebook = yield* serializer.deserializeEffect(bytes);
-        const serialized = yield* serializer.serializeEffect(notebook);
-        const serializedSource = new TextDecoder().decode(serialized).trim();
-        const sourceSource = source.trim();
+      const notebook = yield* serializer.deserializeEffect(bytes);
+      const serialized = yield* serializer.serializeEffect(notebook);
+      const serializedSource = new TextDecoder().decode(serialized).trim();
+      const sourceSource = source.trim();
 
-        expect(
-          normalizeLineEndings(removeGeneratedWith(serializedSource)),
-        ).toBe(normalizeLineEndings(removeGeneratedWith(sourceSource)));
-      });
+      Vitest.expect(
+        normalizeLineEndings(removeGeneratedWith(serializedSource)),
+      ).toBe(normalizeLineEndings(removeGeneratedWith(sourceSource)));
     });
-  },
-);
+  });
+});
 
 function removeGeneratedWith(source: string): string {
   return source.replace(/__generated_with = ".*"/, '__generated_with = ""');

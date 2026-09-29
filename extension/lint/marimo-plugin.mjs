@@ -182,6 +182,102 @@ const noMarimoCommandIdLiterals = defineRule({
   },
 });
 
+const effectArchitecture = defineRule({
+  meta: {
+    type: "problem",
+    docs: {
+      description: "Keep Effect services and runtimes at their owning module",
+    },
+    messages: {
+      identity: "Prefix production Context.Service identities with @marimo/.",
+      layer: "Export layer from the module instead of a static class field.",
+      runtime:
+        "Create ManagedRuntime only at the application root (features/Main.ts) or in tests.",
+    },
+  },
+  create(context) {
+    const filename = context.filename.replaceAll("\\", "/");
+    if (
+      !filename.includes("/src/") ||
+      /\/(?:__tests__|__mocks__)\//.test(filename) ||
+      filename.endsWith(".test.ts")
+    ) {
+      return {};
+    }
+    const imports = new Map();
+    /**
+     * Whether `node` names the Effect module `module`, either through a
+     * named import or as a member of a namespace import.
+     * @param {import("@oxlint/plugins").ESTree.Expression} node
+     * @param {string} module
+     */
+    const isModule = (node, module) =>
+      (node.type === "Identifier" && imports.get(node.name) === module) ||
+      (node.type === "MemberExpression" &&
+        !node.computed &&
+        node.object.type === "Identifier" &&
+        imports.get(node.object.name) === "*" &&
+        node.property.type === "Identifier" &&
+        node.property.name === module);
+    /**
+     * @param {import("@oxlint/plugins").ESTree.Expression} node
+     * @param {string} module
+     * @param {string} method
+     */
+    const isMember = (node, module, method) =>
+      node.type === "MemberExpression" &&
+      !node.computed &&
+      isModule(node.object, module) &&
+      node.property.type === "Identifier" &&
+      node.property.name === method;
+    return {
+      ImportDeclaration(node) {
+        if (node.source.value !== "effect") return;
+        for (const specifier of node.specifiers) {
+          if (specifier.type === "ImportNamespaceSpecifier") {
+            imports.set(specifier.local.name, "*");
+          } else if (
+            specifier.type === "ImportSpecifier" &&
+            specifier.imported.type === "Identifier"
+          ) {
+            imports.set(specifier.local.name, specifier.imported.name);
+          }
+        }
+      },
+      CallExpression(node) {
+        if (
+          isMember(node.callee, "ManagedRuntime", "make") &&
+          !filename.endsWith("/src/features/Main.ts")
+        ) {
+          context.report({ node, messageId: "runtime" });
+        }
+        if (
+          node.callee.type === "CallExpression" &&
+          isMember(node.callee.callee, "Context", "Service")
+        ) {
+          const identity = node.arguments[0];
+          if (
+            identity?.type !== "Literal" ||
+            typeof identity.value !== "string" ||
+            !identity.value.startsWith("@marimo/")
+          ) {
+            context.report({ node, messageId: "identity" });
+          }
+        }
+      },
+      PropertyDefinition(node) {
+        if (
+          node.static &&
+          node.key.type === "Identifier" &&
+          node.key.name === "layer"
+        ) {
+          context.report({ node, messageId: "layer" });
+        }
+      },
+    };
+  },
+});
+
 export default definePlugin({
   meta: {
     name: "marimo",
@@ -190,5 +286,6 @@ export default definePlugin({
     "vscode-type-only": vscodeTypeOnly,
     "no-at-imports": noAtImports,
     "no-marimo-command-id-literals": noMarimoCommandIdLiterals,
+    "effect-architecture": effectArchitecture,
   },
 });

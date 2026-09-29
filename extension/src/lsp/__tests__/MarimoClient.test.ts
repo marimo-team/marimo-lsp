@@ -2,128 +2,96 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { assert, describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Option, Ref, Stream } from "effect";
-import { vi } from "vite-plus/test";
+import * as Vitest from "@effect/vitest";
+import { Effect, Exit, Fiber, Layer, Option, Ref, Stream } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
 import * as MarimoClient from "../MarimoClient.ts";
+import * as TestCustomLspFailure from "./TestCustomLspFailure.ts";
+import * as TestMarimoNotifications from "./TestMarimoNotifications.ts";
 
 const notebook = notebookId("notebook-a");
+const it = EffectTest.make(Layer.empty);
 
-describe("custom language-server failures", () => {
+Vitest.describe("custom language-server failures", () => {
+  const it = EffectTest.make(
+    TestCustomLspFailure.layerWith(
+      TestCustomLspFailure.Scenario.OpenSettings(),
+    ),
+  );
+
   it.effect(
     "prompts once and opens the selected recovery surface",
     Effect.fn(function* () {
-      const prompts = yield* Ref.make(0);
-      let logsOpened = 0;
-      const vscode = yield* TestVsCode.make({
-        window: {
-          showErrorMessage: (message, options = {}) => {
-            expect(message).toContain(
-              "Custom language servers are for extension development",
-            );
-            return Ref.update(prompts, (count) => count + 1).pipe(
-              Effect.as(
-                Option.fromNullishOr(
-                  options.items?.find((item) => item === "Open Settings"),
-                ),
-              ),
-            );
-          },
-        },
+      const recovery = yield* TestCustomLspFailure.Service;
+
+      yield* Effect.all([recovery.notify, recovery.notify], {
+        concurrency: "unbounded",
       });
-      const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
-        mode: "configured",
-        channel: {
-          name: "marimo-lsp",
-          show: () => {
-            logsOpened += 1;
-          },
-        },
-      }).pipe(Effect.provide(vscode.layer));
 
-      yield* Effect.all([notify, notify], { concurrency: "unbounded" });
-
-      expect(yield* Ref.get(prompts)).toBe(1);
-      expect(logsOpened).toBe(0);
-      expect(yield* Ref.get(vscode.executions)).toContainEqual({
+      const snapshot = yield* recovery.snapshot;
+      Vitest.expect(snapshot.prompts).toHaveLength(1);
+      Vitest.expect(snapshot.prompts[0]).toContain(
+        "Custom language servers are for extension development",
+      );
+      Vitest.expect(snapshot.logsOpened).toBe(0);
+      Vitest.expect(snapshot.executions).toContainEqual({
         command: "workbench.action.openSettings",
         args: ["marimo.lsp"],
       });
     }),
   );
 
-  it.effect(
-    "opens logs when selected",
-    Effect.fn(function* () {
-      let logsOpened = 0;
-      const vscode = yield* TestVsCode.make({
-        window: {
-          showErrorMessage: (_message, options = {}) =>
-            Effect.succeed(
-              Option.fromNullishOr(
-                options.items?.find((item) => item === "Open Logs"),
-              ),
-            ),
-        },
-      });
-      const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
-        mode: "configured",
-        channel: {
-          name: "marimo-lsp",
-          show: () => {
-            logsOpened += 1;
-          },
-        },
-      }).pipe(Effect.provide(vscode.layer));
+  Vitest.describe("when logs are selected", () => {
+    const it = EffectTest.make(
+      TestCustomLspFailure.layerWith(TestCustomLspFailure.Scenario.OpenLogs()),
+    );
 
-      yield* notify;
+    it.effect(
+      "opens logs when selected",
+      Effect.fn(function* () {
+        const recovery = yield* TestCustomLspFailure.Service;
+        yield* recovery.notify;
 
-      expect(logsOpened).toBe(1);
-      expect(yield* Ref.get(vscode.executions)).toEqual([]);
-    }),
-  );
+        const snapshot = yield* recovery.snapshot;
+        Vitest.expect(snapshot.logsOpened).toBe(1);
+        Vitest.expect(snapshot.executions).toEqual([]);
+      }),
+    );
+  });
 
-  it.effect(
-    "does not prompt for bundled language servers",
-    Effect.fn(function* () {
-      const prompts = yield* Ref.make(0);
-      const vscode = yield* TestVsCode.make({
-        window: {
-          showErrorMessage: () =>
-            Ref.update(prompts, (count) => count + 1).pipe(
-              Effect.as(Option.none()),
-            ),
-        },
-      });
-      for (const mode of ["wasm", "uv"] as const) {
-        const notify = yield* MarimoClient.makeCustomLspFailureNotifier({
-          mode,
-          channel: { name: "marimo-lsp", show() {} },
-        }).pipe(Effect.provide(vscode.layer));
-        yield* notify;
-      }
+  Vitest.describe("for bundled language servers", () => {
+    const it = EffectTest.make(
+      TestCustomLspFailure.layerWith(TestCustomLspFailure.Scenario.Bundled()),
+    );
 
-      expect(yield* Ref.get(prompts)).toBe(0);
-    }),
-  );
+    it.effect(
+      "does not prompt for bundled language servers",
+      Effect.fn(function* () {
+        const recovery = yield* TestCustomLspFailure.Service;
+        yield* recovery.notify;
+        Vitest.expect((yield* recovery.snapshot).prompts).toEqual([]);
+      }),
+    );
+  });
 });
 
 it.effect(
   "does not fail scope cleanup when language-client disposal rejects",
   Effect.fn(function* () {
-    const dispose = vi.fn(() =>
-      Promise.reject(new Error("client is startFailed")),
-    );
+    let disposals = 0;
+    const dispose = () => {
+      disposals += 1;
+      return Promise.reject(new Error("client is startFailed"));
+    };
 
     yield* MarimoClient.disposeLanguageClient({ dispose });
 
-    expect(dispose).toHaveBeenCalledOnce();
+    Vitest.expect(disposals).toBe(1);
   }),
 );
 
@@ -155,7 +123,7 @@ it.effect(
     });
     yield* marimo.setDisplayTheme({ theme: "dark" });
 
-    assert.deepStrictEqual(yield* Ref.get(calls), [
+    Vitest.assert.deepStrictEqual(yield* Ref.get(calls), [
       {
         kind: "execute",
         notebookUri: notebook,
@@ -171,7 +139,7 @@ it.effect(
   }),
 );
 
-describe("generated command client", () => {
+Vitest.describe("generated command client", () => {
   it.effect(
     "parses responses against the method's success schema",
     Effect.fn(function* () {
@@ -189,7 +157,7 @@ describe("generated command client", () => {
       });
 
       // Response is parsed, not asserted: `tree` is a typed DependencyTreeNode.
-      assert.strictEqual(response.tree?.name, "root");
+      Vitest.assert.strictEqual(response.tree?.name, "root");
     }),
   );
 
@@ -208,12 +176,12 @@ describe("generated command client", () => {
         })
         .pipe(Effect.exit);
 
-      assert.isTrue(Exit.isFailure(exit));
+      Vitest.assert.isTrue(Exit.isFailure(exit));
       // The formatter names the schema and the path of the field that
       // failed. It does not name the response type that contains it.
-      assert.include(String(exit), "SchemaError");
-      assert.include(String(exit), "DependencyTreeNode");
-      assert.include(String(exit), '["tree"]');
+      Vitest.assert.include(String(exit), "SchemaError");
+      Vitest.assert.include(String(exit), "DependencyTreeNode");
+      Vitest.assert.include(String(exit), '["tree"]');
     }),
   );
 
@@ -233,10 +201,10 @@ describe("generated command client", () => {
         })
         .pipe(Effect.exit);
 
-      assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), '["source"]');
-      assert.include(String(exit), 'readonly "kind": "venv"');
-      assert.include(String(exit), 'readonly "kind": "script"');
+      Vitest.assert.isTrue(Exit.isFailure(exit));
+      Vitest.assert.include(String(exit), '["source"]');
+      Vitest.assert.include(String(exit), 'readonly "kind": "venv"');
+      Vitest.assert.include(String(exit), 'readonly "kind": "script"');
     }),
   );
 
@@ -256,16 +224,16 @@ describe("generated command client", () => {
         })
         .pipe(Effect.exit);
 
-      assert.isTrue(Exit.isFailure(exit));
-      assert.include(String(exit), '["source"]');
-      assert.include(String(exit), 'readonly "kind": "venv"');
-      assert.include(String(exit), 'readonly "kind": "script"');
+      Vitest.assert.isTrue(Exit.isFailure(exit));
+      Vitest.assert.include(String(exit), '["source"]');
+      Vitest.assert.include(String(exit), 'readonly "kind": "venv"');
+      Vitest.assert.include(String(exit), 'readonly "kind": "script"');
     }),
   );
 });
 
-describe("findMarimoLspExecutable", () => {
-  it.effect("uses a compatible Python range for the bundled LSP", () =>
+Vitest.describe("findMarimoLspExecutable", () => {
+  it.live("uses a compatible Python range for the bundled LSP", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -282,7 +250,7 @@ describe("findMarimoLspExecutable", () => {
             directory.path,
           );
 
-          expect(executable).toEqual({
+          Vitest.expect(executable).toEqual({
             command: "bundled-uv",
             args: [
               "tool",
@@ -300,20 +268,20 @@ describe("findMarimoLspExecutable", () => {
   );
 });
 
-describe("findWasmMarimoLspExecutable", () => {
-  it("launches the bundled server with VS Code's Node runtime", () => {
+Vitest.describe("findWasmMarimoLspExecutable", () => {
+  Vitest.it("launches the bundled server with VS Code's Node runtime", () => {
     const executable =
       MarimoClient.findWasmMarimoLspExecutable("/extension/dist");
 
-    expect(executable.command).toBe(process.execPath);
-    expect(executable.args).toEqual([
+    Vitest.expect(executable.command).toBe(process.execPath);
+    Vitest.expect(executable.args).toEqual([
       NodePath.join("/extension/dist", "wasmServer.js"),
     ]);
-    expect(executable.options?.env?.ELECTRON_RUN_AS_NODE).toBe("1");
+    Vitest.expect(executable.options?.env?.ELECTRON_RUN_AS_NODE).toBe("1");
   });
 });
 
-describe("selectMarimoLspExecutable", () => {
+Vitest.describe("selectMarimoLspExecutable", () => {
   it.effect(
     "uses the command carried by the custom server variant",
     Effect.fn(function* () {
@@ -325,7 +293,7 @@ describe("selectMarimoLspExecutable", () => {
         searchDirectory: "/does/not/exist",
       });
 
-      expect(selection).toEqual({
+      Vitest.expect(selection).toEqual({
         _tag: "Configured",
         exec: { command: "/custom/marimo-lsp", args: ["--stdio"] },
       });
@@ -341,14 +309,14 @@ describe("selectMarimoLspExecutable", () => {
         searchDirectory: "/extension/dist",
       });
 
-      expect(selection._tag).toBe("Wasm");
-      expect(selection.exec.args).toEqual([
+      Vitest.expect(selection._tag).toBe("Wasm");
+      Vitest.expect(selection.exec.args).toEqual([
         NodePath.join("/extension/dist", "wasmServer.js"),
       ]);
     }),
   );
 
-  it.effect("resolves uv only for the Python server variant", () =>
+  it.live("resolves uv only for the Python server variant", () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
         NodeFs.mkdtempDisposableSync(
@@ -363,7 +331,7 @@ describe("selectMarimoLspExecutable", () => {
             searchDirectory: directory.path,
           });
 
-          expect(selection).toEqual({
+          Vitest.expect(selection).toEqual({
             _tag: "Uv",
             exec: {
               command: "bundled-uv",
@@ -376,63 +344,91 @@ describe("selectMarimoLspExecutable", () => {
   );
 });
 
-it.effect(
-  "subscribes to kernel notifications",
-  Effect.fn(function* () {
-    let requestedNotification: string | undefined;
-    const marimo = MarimoClient.makeCommands({
-      send: () => Effect.void,
-      // Stream.suspend defers to subscription time, so the assertion below
-      // still observes that draining `kernelNotifications` evaluated the
-      // transport.
-      kernelNotifications: Stream.suspend(() => {
-        requestedNotification = "marimo/kernelNotification";
-        return Stream.empty;
-      }),
-    });
+Vitest.describe("notification streams", () => {
+  const it = EffectTest.make(TestMarimoNotifications.layer);
 
-    yield* marimo.kernelNotifications.pipe(Stream.runDrain);
+  it.effect(
+    "subscribes to kernel notifications",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      yield* notifications.drainCommandNotifications;
 
-    assert.strictEqual(requestedNotification, "marimo/kernelNotification");
-  }),
-);
+      Vitest.expect(
+        (yield* notifications.snapshot).commandNotificationsRequested,
+      ).toBe(true);
+    }),
+  );
 
-it.effect(
-  "broadcasts kernel notifications without replacing the transport handler",
-  Effect.fn(function* () {
-    let registrations = 0;
-    let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* MarimoClient.makeKernelNotificationStream(
-      (handler) => {
-        registrations += 1;
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
+  it.effect(
+    "broadcasts kernel notifications without replacing the transport handler",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const first = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      const second = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      yield* notifications.awaitKernelSubscriptions(2);
 
-    const message = {
-      notebookUri: notebook,
-      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
-      notification: { op: "completed-run", run_id: null },
-    } as const;
-    const [first, second] = yield* Effect.all(
-      [
-        operations.pipe(Stream.take(1), Stream.runHead),
-        operations.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          assert.ok(notify);
-          notify(message);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
+      const message = {
+        notebookUri: notebook,
+        sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        notification: { op: "completed-run", run_id: null },
+      } as const;
+      yield* notifications.publishKernel(message);
 
-    assert.strictEqual(registrations, 1);
-    assert.deepStrictEqual(first, Option.some(message));
-    assert.deepStrictEqual(second, Option.some(message));
-  }),
-);
+      Vitest.expect((yield* notifications.snapshot).kernelRegistrations).toBe(
+        1,
+      );
+      Vitest.expect(yield* Fiber.join(first)).toEqual(Option.some(message));
+      Vitest.expect(yield* Fiber.join(second)).toEqual(Option.some(message));
+    }),
+  );
+
+  it.effect(
+    "decodes document analysis on its own channel",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const received = yield* notifications.takeDocumentAnalysis.pipe(
+        Effect.forkChild,
+      );
+      yield* notifications.awaitDocumentSubscriptions(1);
+      const snapshot: DocumentAnalysis = {
+        notebookUri: notebook,
+        analysis: { op: "variables", variables: [] },
+      };
+
+      yield* notifications.publishDocumentAnalysis({
+        notebookUri: notebook,
+        analysis: { op: "datasets" },
+      });
+      yield* notifications.publishDocumentAnalysis(snapshot);
+
+      Vitest.expect(yield* Fiber.join(received)).toEqual(Option.some(snapshot));
+    }),
+  );
+
+  it.effect(
+    "requires a kernel session ID even for kernel variable snapshots",
+    Effect.fn(function* () {
+      const notifications = yield* TestMarimoNotifications.Service;
+      const received = yield* notifications.takeKernel.pipe(Effect.forkChild);
+      yield* notifications.awaitKernelSubscriptions(1);
+      const kernelSnapshot: KernelNotification = {
+        notebookUri: notebook,
+        sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
+        notification: { op: "variables", variables: [] },
+      };
+
+      yield* notifications.publishKernel({
+        ...kernelSnapshot,
+        sessionId: undefined,
+      });
+      yield* notifications.publishKernel(kernelSnapshot);
+
+      Vitest.expect(yield* Fiber.join(received)).toEqual(
+        Option.some(kernelSnapshot),
+      );
+    }),
+  );
+});
 
 it.effect(
   "disposes the transport notification handler with its scope",
@@ -447,71 +443,6 @@ it.effect(
       })).pipe(Effect.asVoid),
     );
 
-    expect(disposals).toBe(1);
-  }),
-);
-
-it.effect(
-  "decodes document analysis on its own channel",
-  Effect.fn(function* () {
-    let notify: ((message: unknown) => void) | undefined;
-    const analyses = yield* MarimoClient.makeDocumentAnalysisStream(
-      (handler) => {
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
-    const snapshot: DocumentAnalysis = {
-      notebookUri: notebook,
-      analysis: { op: "variables", variables: [] },
-    };
-
-    const [received] = yield* Effect.all(
-      [
-        analyses.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          assert.ok(notify);
-          notify({ notebookUri: notebook, analysis: { op: "datasets" } });
-          notify(snapshot);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
-
-    assert.deepStrictEqual(received, Option.some(snapshot));
-  }),
-);
-
-it.effect(
-  "requires a kernel session ID even for kernel variable snapshots",
-  Effect.fn(function* () {
-    let notify: ((message: unknown) => void) | undefined;
-    const operations = yield* MarimoClient.makeKernelNotificationStream(
-      (handler) => {
-        notify = handler;
-        return { dispose() {} };
-      },
-    );
-    const kernelSnapshot: KernelNotification = {
-      notebookUri: notebook,
-      sessionId: kernelSessionId("00000000-0000-4000-8000-000000000001"),
-      notification: { op: "variables", variables: [] },
-    };
-
-    const [received] = yield* Effect.all(
-      [
-        operations.pipe(Stream.take(1), Stream.runHead),
-        Effect.gen(function* () {
-          yield* Effect.yieldNow;
-          assert.ok(notify);
-          notify({ ...kernelSnapshot, sessionId: undefined });
-          notify(kernelSnapshot);
-        }),
-      ],
-      { concurrency: "unbounded" },
-    );
-
-    assert.deepStrictEqual(received, Option.some(kernelSnapshot));
+    Vitest.expect(disposals).toBe(1);
   }),
 );

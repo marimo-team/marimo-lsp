@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 
@@ -66,9 +66,9 @@ function snapshotView(nb: vscode.NotebookData): string {
     .join("\n");
 }
 
-describe("enrichNotebookFromLive", () => {
-  describe("identical notebooks", () => {
-    it("preserves all stableIds when cells are identical", () => {
+Vitest.describe("enrichNotebookFromLive", () => {
+  Vitest.describe("identical notebooks", () => {
+    Vitest.it("preserves all stableIds when cells are identical", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -82,10 +82,10 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
-    it.each([
+    Vitest.it.each([
       { live: false, incoming: true },
       { live: true, incoming: false },
     ])(
@@ -100,12 +100,12 @@ describe("enrichNotebookFromLive", () => {
 
         const result = enrichNotebookFromLive(reloaded, cached);
 
-        expect(getStableIds(result)).toEqual(["id-1"]);
-        expect(getHideCode(result)).toEqual([incoming]);
+        Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
+        Vitest.expect(getHideCode(result)).toEqual([incoming]);
       },
     );
 
-    it("preserves outputs when cells are identical", () => {
+    Vitest.it("preserves outputs when cells are identical", () => {
       // SAFETY: test fixture — the enrich logic under test only reads `.items`,
       // so a minimal object is sufficient and avoids constructing a full
       // vscode.NotebookCellOutput (which requires NotebookCellOutputItems with
@@ -121,12 +121,12 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(result.cells[0].outputs).toEqual([mockOutput]);
+      Vitest.expect(result.cells[0].outputs).toEqual([mockOutput]);
     });
   });
 
-  describe("cell added at end", () => {
-    it("preserves existing cell ids, new cell keeps fresh id", () => {
+  Vitest.describe("cell added at end", () => {
+    Vitest.it("preserves existing cell ids, new cell keeps fresh id", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -139,12 +139,12 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
     });
   });
 
-  describe("cell added at beginning", () => {
-    it("preserves suffix cells, new cell keeps fresh id", () => {
+  Vitest.describe("cell added at beginning", () => {
+    Vitest.it("preserves suffix cells, new cell keeps fresh id", () => {
       const cached = notebook([
         cell("y = 2", { stableId: "id-2" }),
         cell("z = 3", { stableId: "id-3" }),
@@ -158,12 +158,12 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // First cell is new, last two match suffix
-      expect(getStableIds(result)).toEqual(["fresh-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["fresh-1", "id-2", "id-3"]);
     });
   });
 
-  describe("cell added in middle", () => {
-    it("preserves prefix and suffix, new cell keeps fresh id", () => {
+  Vitest.describe("cell added in middle", () => {
+    Vitest.it("preserves prefix and suffix, new cell keeps fresh id", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("z = 3", { stableId: "id-3" }),
@@ -177,12 +177,12 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // First cell matches prefix, last matches suffix, middle is new
-      expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
     });
   });
 
-  describe("cell deleted", () => {
-    it("remaining cells preserve their ids", () => {
+  Vitest.describe("cell deleted", () => {
+    Vitest.it("remaining cells preserve their ids", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -195,12 +195,12 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-1", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-3"]);
     });
   });
 
-  describe("cell content edited", () => {
-    it("edited cell preserves id via positional fallback", () => {
+  Vitest.describe("cell content edited", () => {
+    Vitest.it("edited cell preserves id via positional fallback", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -216,43 +216,46 @@ describe("enrichNotebookFromLive", () => {
 
       // First and last match via prefix/suffix, edited middle cell
       // preserves identity via positional fallback
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
   });
 
-  describe("whitespace changes", () => {
-    it("matches cells with leading/trailing whitespace trimmed", () => {
+  Vitest.describe("whitespace changes", () => {
+    Vitest.it("matches cells with leading/trailing whitespace trimmed", () => {
       const cached = notebook([cell("  x = 1  ", { stableId: "id-1" })]);
       const incoming = notebook([cell("x = 1", { stableId: "fresh-1" })]);
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-1"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
 
-    it("matches cells with different internal content via positional fallback", () => {
-      // Normalization only trims; internal whitespace changes are caught
-      // by positional fallback (Pass 3) instead
-      const cached = notebook([
-        cell("x = 1", { stableId: "id-1" }),
-        cell("y=2", { stableId: "id-2" }),
-        cell("z = 3", { stableId: "id-3" }),
-      ]);
-      const incoming = notebook([
-        cell("x = 1", { stableId: "fresh-1" }),
-        cell("y = 2", { stableId: "fresh-2" }), // different internal spacing
-        cell("z = 3", { stableId: "fresh-3" }),
-      ]);
+    Vitest.it(
+      "matches cells with different internal content via positional fallback",
+      () => {
+        // Normalization only trims; internal whitespace changes are caught
+        // by positional fallback (Pass 3) instead
+        const cached = notebook([
+          cell("x = 1", { stableId: "id-1" }),
+          cell("y=2", { stableId: "id-2" }),
+          cell("z = 3", { stableId: "id-3" }),
+        ]);
+        const incoming = notebook([
+          cell("x = 1", { stableId: "fresh-1" }),
+          cell("y = 2", { stableId: "fresh-2" }), // different internal spacing
+          cell("z = 3", { stableId: "fresh-3" }),
+        ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+        const result = enrichNotebookFromLive(incoming, cached);
 
-      // Positional fallback preserves identity for content-changed cells
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
-    });
+        // Positional fallback preserves identity for content-changed cells
+        Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+      },
+    );
   });
 
-  describe("cells reordered", () => {
-    it("matches reordered cells by content", () => {
+  Vitest.describe("cells reordered", () => {
+    Vitest.it("matches reordered cells by content", () => {
       const cached = notebook([
         cell("a = 1", { stableId: "id-a" }),
         cell("b = 2", { stableId: "id-b" }),
@@ -266,12 +269,12 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["id-c", "id-a", "id-b"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-c", "id-a", "id-b"]);
     });
   });
 
-  describe("complex scenarios", () => {
-    it("handles add, delete, and reorder together", () => {
+  Vitest.describe("complex scenarios", () => {
+    Vitest.it("handles add, delete, and reorder together", () => {
       const cached = notebook([
         cell("a = 1", { stableId: "id-a" }),
         cell("b = 2", { stableId: "id-b" }),
@@ -291,19 +294,24 @@ describe("enrichNotebookFromLive", () => {
       // b was deleted and "new" is genuinely new, but positional fallback
       // pairs the one remaining unmatched cached cell (b) with the one
       // remaining unmatched incoming cell (new), preserving b's identity.
-      expect(getStableIds(result)).toEqual(["id-a", "id-d", "id-b", "id-c"]);
+      Vitest.expect(getStableIds(result)).toEqual([
+        "id-a",
+        "id-d",
+        "id-b",
+        "id-c",
+      ]);
     });
 
-    it("empty incoming notebook returns empty", () => {
+    Vitest.it("empty incoming notebook returns empty", () => {
       const cached = notebook([cell("x = 1", { stableId: "id-1" })]);
       const incoming = notebook([]);
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(result.cells).toEqual([]);
+      Vitest.expect(result.cells).toEqual([]);
     });
 
-    it("empty cached notebook keeps all fresh ids", () => {
+    Vitest.it("empty cached notebook keeps all fresh ids", () => {
       const cached = notebook([]);
       const incoming = notebook([
         cell("x = 1", { stableId: "fresh-1" }),
@@ -312,12 +320,12 @@ describe("enrichNotebookFromLive", () => {
 
       const result = enrichNotebookFromLive(incoming, cached);
 
-      expect(getStableIds(result)).toEqual(["fresh-1", "fresh-2"]);
+      Vitest.expect(getStableIds(result)).toEqual(["fresh-1", "fresh-2"]);
     });
   });
 
-  describe("language and kind matching", () => {
-    it("exact match requires same language (prefix/suffix)", () => {
+  Vitest.describe("language and kind matching", () => {
+    Vitest.it("exact match requires same language (prefix/suffix)", () => {
       // Cells in same position with different language won't match in prefix/suffix
       const cached = notebook([
         cell("a = 1", { stableId: "id-1", languageId: "python" }),
@@ -334,10 +342,10 @@ describe("enrichNotebookFromLive", () => {
 
       // First cell has different language, breaks exact prefix match
       // But content matching in middle still finds it
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
-    it("content matching ignores language differences", () => {
+    Vitest.it("content matching ignores language differences", () => {
       // When exact match fails, content-based matching only compares value
       const cached = notebook([
         cell("x = 1", { stableId: "id-1", languageId: "python" }),
@@ -349,10 +357,10 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // Same content matches despite different language
-      expect(getStableIds(result)).toEqual(["id-1"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
 
-    it("content matching ignores kind differences", () => {
+    Vitest.it("content matching ignores kind differences", () => {
       const cached = notebook([
         cell("# Hello", { stableId: "id-1", kind: 1 }), // Markup
       ]);
@@ -363,35 +371,43 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // Same content matches despite different kind
-      expect(getStableIds(result)).toEqual(["id-1"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
   });
 
-  describe("positional fallback (external edits)", () => {
-    it("preserves identity when AI edits multiple cells in place", () => {
-      const cached = notebook([
-        cell("import pandas as pd", { stableId: "id-1" }),
-        cell("df = pd.read_csv('data.csv')", { stableId: "id-2" }),
-        cell("df.head()", { stableId: "id-3" }),
-        cell("df.describe()", { stableId: "id-4" }),
-      ]);
-      const incoming = notebook([
-        cell("import pandas as pd", { stableId: "fresh-1" }),
-        cell("df = pd.read_csv('data.csv', encoding='utf-8')", {
-          stableId: "fresh-2",
-        }), // edited
-        cell("df.head(10)", { stableId: "fresh-3" }), // edited
-        cell("df.describe()", { stableId: "fresh-4" }),
-      ]);
+  Vitest.describe("positional fallback (external edits)", () => {
+    Vitest.it(
+      "preserves identity when AI edits multiple cells in place",
+      () => {
+        const cached = notebook([
+          cell("import pandas as pd", { stableId: "id-1" }),
+          cell("df = pd.read_csv('data.csv')", { stableId: "id-2" }),
+          cell("df.head()", { stableId: "id-3" }),
+          cell("df.describe()", { stableId: "id-4" }),
+        ]);
+        const incoming = notebook([
+          cell("import pandas as pd", { stableId: "fresh-1" }),
+          cell("df = pd.read_csv('data.csv', encoding='utf-8')", {
+            stableId: "fresh-2",
+          }), // edited
+          cell("df.head(10)", { stableId: "fresh-3" }), // edited
+          cell("df.describe()", { stableId: "fresh-4" }),
+        ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+        const result = enrichNotebookFromLive(incoming, cached);
 
-      // All cells preserve identity — unchanged via prefix/suffix,
-      // edited via positional fallback
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3", "id-4"]);
-    });
+        // All cells preserve identity — unchanged via prefix/suffix,
+        // edited via positional fallback
+        Vitest.expect(getStableIds(result)).toEqual([
+          "id-1",
+          "id-2",
+          "id-3",
+          "id-4",
+        ]);
+      },
+    );
 
-    it("preserves identity when all cells are edited", () => {
+    Vitest.it("preserves identity when all cells are edited", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -406,27 +422,34 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // No prefix or suffix matches, but positional fallback pairs all
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
-    it("handles edit + add: existing cells keep identity, new cell gets fresh id", () => {
-      const cached = notebook([
-        cell("x = 1", { stableId: "id-1" }),
-        cell("y = 2", { stableId: "id-2" }),
-      ]);
-      const incoming = notebook([
-        cell("x = 10", { stableId: "fresh-1" }), // edited
-        cell("y = 20", { stableId: "fresh-2" }), // edited
-        cell("z = 30", { stableId: "fresh-3" }), // new
-      ]);
+    Vitest.it(
+      "handles edit + add: existing cells keep identity, new cell gets fresh id",
+      () => {
+        const cached = notebook([
+          cell("x = 1", { stableId: "id-1" }),
+          cell("y = 2", { stableId: "id-2" }),
+        ]);
+        const incoming = notebook([
+          cell("x = 10", { stableId: "fresh-1" }), // edited
+          cell("y = 20", { stableId: "fresh-2" }), // edited
+          cell("z = 30", { stableId: "fresh-3" }), // new
+        ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+        const result = enrichNotebookFromLive(incoming, cached);
 
-      // Positional fallback pairs first two, third is genuinely new
-      expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
-    });
+        // Positional fallback pairs first two, third is genuinely new
+        Vitest.expect(getStableIds(result)).toEqual([
+          "id-1",
+          "id-2",
+          "fresh-3",
+        ]);
+      },
+    );
 
-    it("handles edit + delete: remaining cells keep identity", () => {
+    Vitest.it("handles edit + delete: remaining cells keep identity", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -441,11 +464,11 @@ describe("enrichNotebookFromLive", () => {
       const result = enrichNotebookFromLive(incoming, cached);
 
       // Positional fallback pairs first two, third was deleted
-      expect(getStableIds(result)).toEqual(["id-1", "id-2"]);
+      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2"]);
     });
   });
 
-  describe("snapshots", () => {
+  Vitest.describe("snapshots", () => {
     // Base notebook used in snapshot tests
     const baseCached = notebook([
       cell("# Setup", { stableId: "cached-1" }),
@@ -455,7 +478,7 @@ describe("enrichNotebookFromLive", () => {
       cell("# End", { stableId: "cached-5" }),
     ]);
 
-    it("add cell at beginning", () => {
+    Vitest.it("add cell at beginning", () => {
       const incoming = notebook([
         cell("# New first", { stableId: "fresh-0" }),
         cell("# Setup", { stableId: "fresh-1" }),
@@ -466,7 +489,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[fresh-0]: # New first
         [cached-1]: # Setup
         [cached-2]: x = 1
@@ -476,7 +499,7 @@ describe("enrichNotebookFromLive", () => {
       `);
     });
 
-    it("remove cell at beginning", () => {
+    Vitest.it("remove cell at beginning", () => {
       const incoming = notebook([
         cell("x = 1", { stableId: "fresh-1" }),
         cell("y = 2", { stableId: "fresh-2" }),
@@ -485,7 +508,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-2]: x = 1
         [cached-3]: y = 2
         [cached-4]: z = 3
@@ -493,7 +516,7 @@ describe("enrichNotebookFromLive", () => {
       `);
     });
 
-    it("add cell in middle", () => {
+    Vitest.it("add cell in middle", () => {
       const incoming = notebook([
         cell("# Setup", { stableId: "fresh-1" }),
         cell("x = 1", { stableId: "fresh-2" }),
@@ -504,7 +527,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
         [fresh-new]: # New middle
@@ -514,7 +537,7 @@ describe("enrichNotebookFromLive", () => {
       `);
     });
 
-    it("remove cell in middle", () => {
+    Vitest.it("remove cell in middle", () => {
       const incoming = notebook([
         cell("# Setup", { stableId: "fresh-1" }),
         cell("x = 1", { stableId: "fresh-2" }),
@@ -523,7 +546,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
         [cached-4]: z = 3
@@ -531,7 +554,7 @@ describe("enrichNotebookFromLive", () => {
       `);
     });
 
-    it("add cell at end", () => {
+    Vitest.it("add cell at end", () => {
       const incoming = notebook([
         cell("# Setup", { stableId: "fresh-1" }),
         cell("x = 1", { stableId: "fresh-2" }),
@@ -542,7 +565,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
         [cached-3]: y = 2
@@ -552,7 +575,7 @@ describe("enrichNotebookFromLive", () => {
       `);
     });
 
-    it("remove cell at end", () => {
+    Vitest.it("remove cell at end", () => {
       const incoming = notebook([
         cell("# Setup", { stableId: "fresh-1" }),
         cell("x = 1", { stableId: "fresh-2" }),
@@ -561,7 +584,7 @@ describe("enrichNotebookFromLive", () => {
       ]);
 
       const result = enrichNotebookFromLive(incoming, baseCached);
-      expect(snapshotView(result)).toMatchInlineSnapshot(`
+      Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
         [cached-3]: y = 2

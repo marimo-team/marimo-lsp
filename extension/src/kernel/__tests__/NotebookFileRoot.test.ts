@@ -2,7 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Exit, Option } from "effect";
 import type * as vscode from "vscode";
 
@@ -52,7 +52,7 @@ const withTree = <A, E>(
     (temporary) => Effect.sync(() => temporary.remove()),
   );
 
-it.effect("resolves all supported saved-notebook forms", () =>
+Vitest.it.effect("resolves all supported saved-notebook forms", () =>
   withTree(({ root, nested, spaced, notebook }) =>
     Effect.gen(function* () {
       for (const [configuredValue, expected] of [
@@ -69,13 +69,13 @@ it.effect("resolves all supported saved-notebook forms", () =>
           workspaceFolders: Option.some([folder(root)]),
           homeDirectory: root,
         });
-        expect(result.path).toBe(expected);
+        Vitest.expect(result.path).toBe(expected);
       }
     }),
   ),
 );
 
-it.effect("uses the most specific containing workspace", () =>
+Vitest.it.effect("uses the most specific containing workspace", () =>
   withTree(({ root, nested, notebook }) =>
     Effect.gen(function* () {
       const result = yield* resolveNotebookFileRoot({
@@ -83,12 +83,12 @@ it.effect("uses the most specific containing workspace", () =>
         notebookUri: notebook,
         workspaceFolders: Option.some([folder(root), folder(nested)]),
       });
-      expect(result.path).toBe(nested);
+      Vitest.expect(result.path).toBe(nested);
     }),
   ),
 );
 
-it.effect("rejects unsupported variables and invalid directories", () =>
+Vitest.it.effect("rejects unsupported variables and invalid directories", () =>
   withTree(({ root, notebook, file }) =>
     Effect.gen(function* () {
       for (const configuredValue of [
@@ -96,7 +96,7 @@ it.effect("rejects unsupported variables and invalid directories", () =>
         NodePath.join(root, "missing"),
         file,
       ]) {
-        expect(
+        Vitest.expect(
           Exit.isFailure(
             yield* Effect.exit(
               resolveNotebookFileRoot({
@@ -112,13 +112,13 @@ it.effect("rejects unsupported variables and invalid directories", () =>
   ),
 );
 
-it.effect("handles saved notebooks outside workspace folders", () =>
+Vitest.it.effect("handles saved notebooks outside workspace folders", () =>
   withTree(({ root, nested, notebook }) =>
     Effect.gen(function* () {
       const workspaceFolders = Option.some([
         folder(NodePath.join(root, "elsewhere")),
       ]);
-      expect(
+      Vitest.expect(
         (yield* resolveNotebookFileRoot({
           configuredValue: "${fileDirname}",
           notebookUri: notebook,
@@ -127,7 +127,7 @@ it.effect("handles saved notebooks outside workspace folders", () =>
       ).toBe(nested);
 
       for (const configuredValue of ["${workspaceFolder}", "relative"]) {
-        expect(
+        Vitest.expect(
           Exit.isFailure(
             yield* Effect.exit(
               resolveNotebookFileRoot({
@@ -143,7 +143,7 @@ it.effect("handles saved notebooks outside workspace folders", () =>
   ),
 );
 
-it.effect("uses the documented untitled default fallbacks", () =>
+Vitest.it.effect("uses the documented untitled default fallbacks", () =>
   withTree(({ root, nested }) =>
     Effect.gen(function* () {
       const untitled = Uri.from({ scheme: "untitled", path: "Untitled-1" });
@@ -159,7 +159,7 @@ it.effect("uses the documented untitled default fallbacks", () =>
           workspaceFolders,
           homeDirectory: nested,
         });
-        expect(result).toEqual({
+        Vitest.expect(result).toEqual({
           path: expected,
           usedFirstWorkspaceFallback: usedFallback,
         });

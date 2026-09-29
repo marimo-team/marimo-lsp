@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import {
   Cause,
   Deferred,
@@ -9,13 +9,11 @@ import {
   Option,
   Ref,
   Scope,
+  Stream,
 } from "effect";
 
-import {
-  createTestNotebookDocument,
-  TestVsCode,
-  Uri,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as NotebookConfiguration from "../../config/NotebookConfiguration.ts";
@@ -25,121 +23,121 @@ import * as NotebookSessionResources from "../NotebookSessionResources.ts";
 
 const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
 
-const withTestContext = Effect.fn(function* () {
-  const document = createTestNotebookDocument(Uri.parse(NOTEBOOK_URI));
-  const vscode = yield* TestVsCode.make({ initialDocuments: [document] });
-  const runtime = makeTestNotebookRuntime({
-    send: () => Effect.die("Unexpected marimo request"),
-  });
-  const sessions = NotebookDocumentSessions.layer.pipe(
-    Layer.provide(vscode.layer),
-  );
-  const resources = NotebookSessionResources.layer.pipe(Layer.provide(runtime));
+const runtimeLayer = makeTestNotebookRuntime({
+  send: () => Effect.die("Unexpected marimo request"),
+});
+const it = EffectTest.make(
+  Layer.empty.pipe(
+    Layer.provideMerge(NotebookDocumentSessions.layer),
+    Layer.provideMerge(NotebookSessionResources.layer),
+    Layer.provide(runtimeLayer),
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
-  return {
-    document,
-    vscode,
-    layer: Layer.mergeAll(vscode.layer, sessions, resources),
-  };
+const openDocument = Effect.fn(function* () {
+  const vscode = yield* TestVsCode.Service;
+  const document = TestVsCode.createTestNotebookDocument(
+    TestVsCode.Uri.parse(NOTEBOOK_URI),
+  );
+  yield* vscode.openNotebook(document);
+  yield* vscode.setActiveNotebookEditor(
+    Option.some(TestVsCode.createTestNotebookEditor(document)),
+  );
+  const sessions = yield* NotebookDocumentSessions.Service;
+  const session = yield* sessions.active.pipe(
+    Stream.filter(Option.exists((active) => active.document === document)),
+    Stream.runHead,
+    Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+  );
+  return { document, session, vscode };
 });
 
-describe("NotebookSessionResources", () => {
+Vitest.describe("NotebookSessionResources", () => {
   it.effect("interrupts a running program when its session ends", () =>
     Effect.gen(function* () {
-      const ctx = yield* withTestContext();
+      const { document, session, vscode } = yield* openDocument();
       const started = yield* Deferred.make<void>();
       const stopped = yield* Deferred.make<void>();
 
-      yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources.Service;
-        const current = sessions.current(NOTEBOOK_URI);
-        assert(Option.isSome(current));
-        const session = current.value;
+      const resources = yield* NotebookSessionResources.Service;
 
-        const running = yield* resources
-          .runScoped(
-            session,
-            NotebookConfiguration.Service.pipe(
-              Effect.andThen(
-                Deferred.succeed(started, undefined).pipe(
-                  Effect.andThen(Effect.never),
-                  Effect.ensuring(Deferred.succeed(stopped, undefined)),
-                ),
+      const running = yield* resources
+        .runScoped(
+          session,
+          NotebookConfiguration.Service.pipe(
+            Effect.andThen(
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(stopped, undefined)),
               ),
             ),
-          )
-          .pipe(Scope.provide(session.scope), Effect.forkDetach);
-        yield* Deferred.await(started);
+          ),
+        )
+        .pipe(Scope.provide(session.scope), Effect.forkDetach);
+      yield* Deferred.await(started);
 
-        yield* ctx.vscode.closeNotebook(ctx.document);
-        yield* Deferred.await(stopped);
-        const exit = yield* Fiber.await(running);
-        assert(Exit.isFailure(exit));
-        const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
-      }).pipe(Effect.provide(ctx.layer));
+      yield* vscode.closeNotebook(document);
+      yield* Deferred.await(stopped);
+      const exit = yield* Fiber.await(running);
+      Vitest.assert(Exit.isFailure(exit));
+      const failure = exit.cause.reasons.find(Cause.isFailReason);
+      Vitest.assert.instanceOf(
+        failure?.error,
+        NotebookDocumentSessions.EndedError,
+      );
     }),
   );
 
   it.effect("rejects work admitted after its session ends", () =>
     Effect.gen(function* () {
-      const ctx = yield* withTestContext();
+      const { document, session, vscode } = yield* openDocument();
       const ran = yield* Ref.make(false);
 
-      yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources.Service;
-        const current = sessions.current(NOTEBOOK_URI);
-        assert(Option.isSome(current));
-        const session = current.value;
-        const ended = yield* Deferred.make<void>();
-        yield* Effect.addFinalizer(() =>
-          Deferred.succeed(ended, undefined),
-        ).pipe(Scope.provide(session.scope));
-        yield* ctx.vscode.closeNotebook(ctx.document);
-        yield* Deferred.await(ended);
+      const resources = yield* NotebookSessionResources.Service;
+      const ended = yield* Deferred.make<void>();
+      yield* Effect.addFinalizer(() => Deferred.succeed(ended, undefined)).pipe(
+        Scope.provide(session.scope),
+      );
+      yield* vscode.closeNotebook(document);
+      yield* Deferred.await(ended);
 
-        const exit = yield* resources
-          .runScoped(session, Ref.set(ran, true))
-          .pipe(Scope.provide(session.scope), Effect.exit);
-        assert(Exit.isFailure(exit));
-        const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookDocumentSessions.EndedError);
-        expect(yield* Ref.get(ran)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+      const exit = yield* resources
+        .runScoped(session, Ref.set(ran, true))
+        .pipe(Scope.provide(session.scope), Effect.exit);
+      Vitest.assert(Exit.isFailure(exit));
+      const failure = exit.cause.reasons.find(Cause.isFailReason);
+      Vitest.assert.instanceOf(
+        failure?.error,
+        NotebookDocumentSessions.EndedError,
+      );
+      Vitest.expect(yield* Ref.get(ran)).toBe(false);
     }),
   );
 
   it.effect("releases scoped resources after programs finish", () =>
     Effect.gen(function* () {
-      const ctx = yield* withTestContext();
+      const { session } = yield* openDocument();
       const tracked = yield* makeScopedResourceCounter();
 
-      yield* Effect.gen(function* () {
-        const sessions = yield* NotebookDocumentSessions.Service;
-        const resources = yield* NotebookSessionResources.Service;
-        const current = sessions.current(NOTEBOOK_URI);
-        assert(Option.isSome(current));
-        const session = current.value;
+      const resources = yield* NotebookSessionResources.Service;
 
-        const providedScope = yield* resources
-          .runScoped(session, Effect.scope)
+      const providedScope = yield* resources
+        .runScoped(session, Effect.scope)
+        .pipe(Scope.provide(session.scope));
+      Vitest.expect(providedScope).toBe(session.scope);
+
+      for (let index = 0; index < 100; index++) {
+        yield* resources
+          .runScoped(session, tracked.track(NotebookConfiguration.Service))
           .pipe(Scope.provide(session.scope));
-        expect(providedScope).toBe(session.scope);
+      }
 
-        for (let index = 0; index < 100; index++) {
-          yield* resources
-            .runScoped(session, tracked.track(NotebookConfiguration.Service))
-            .pipe(Scope.provide(session.scope));
-        }
-
-        expect(yield* tracked.counts).toEqual({
-          acquired: 100,
-          released: 100,
-          active: 0,
-        });
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* tracked.counts).toEqual({
+        acquired: 100,
+        released: 100,
+        active: 0,
+      });
     }),
   );
 });

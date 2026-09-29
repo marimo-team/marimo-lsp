@@ -95,6 +95,7 @@ export const layer = Layer.effect(
           }),
         ),
       ),
+      { startImmediately: true },
     );
 
     const getLastNotebookEditor = Effect.fn(

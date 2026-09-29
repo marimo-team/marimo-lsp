@@ -2,7 +2,7 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { assert, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import {
   Deferred,
   Effect,
@@ -13,13 +13,13 @@ import {
   Option,
   PubSub,
   Ref,
-  Schedule,
   Stream,
 } from "effect";
 
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   makeTestMarimoClient,
   type TestCommand,
@@ -29,19 +29,25 @@ import {
   kernelSessionId,
   notebookId,
 } from "../../lib/__tests__/branded.ts";
+import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
+import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
+import * as LiveSessions from "../../panel/sessions/LiveSessions.ts";
 import type {
   CellOutputReplay,
   ListSessionsResponse,
 } from "../../schemas/Models.gen.ts";
 import * as NotebookRuntime from "../NotebookRuntime.ts";
+import * as TestNotebookRuntime from "./TestNotebookRuntime.ts";
 
 const notebook = notebookId("notebook-a");
+const it = EffectTest.make(Layer.empty);
 
-const makeTestLayer = Effect.fn(function* (
+const makeTestLayer = (
   options: Parameters<typeof makeTestMarimoClient>[0] = {},
-  vscodeOptions: Parameters<typeof TestVsCode.make>[0] = {},
-) {
-  const vscode = yield* TestVsCode.make(vscodeOptions);
+  vscodeOptions: TestVsCode.Options = {},
+  vscodeBehavior: TestVsCode.Behavior = {},
+) => {
+  const vscodeLayer = TestVsCode.layerWith(vscodeOptions, vscodeBehavior);
   const serverSessions = new Map<
     ReturnType<typeof notebookId>,
     {
@@ -112,24 +118,26 @@ const makeTestLayer = Effect.fn(function* (
       }),
   });
   return {
-    vscode,
     serverSessions,
     snapshot,
     layer: Layer.empty.pipe(
       Layer.provideMerge(NotebookRuntime.defaultLayer),
+      Layer.provideMerge(NotebookDocumentSessions.layer),
+      Layer.provideMerge(NotebookEditorRegistry.layer),
+      Layer.provideMerge(LiveSessions.layer),
       Layer.provide(client),
       Layer.provide(TestTelemetryLive),
       Layer.provide(TestPythonExtension.layer),
-      Layer.provideMerge(vscode.layer),
+      Layer.provideMerge(vscodeLayer),
     ),
   };
-});
+};
 
 it.effect(
   "returns a stable handle that binds the notebook ID",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
           Effect.as(request.kind === "list-sessions" ? { sessions: [] } : null),
@@ -142,20 +150,19 @@ it.effect(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.open(editor);
       const first = yield* notebooks.forNotebook(id);
       const second = yield* notebooks.forNotebook(id);
       const document = yield* notebooks.forDocument(editor.notebook);
 
-      expect(first).toBe(second);
+      Vitest.expect(first).toBe(second);
 
       yield* document
         .execute({ cells: [] }, "/usr/bin/python")
         .pipe(Effect.orDie);
       yield* first.interrupt.pipe(Effect.orDie);
 
-      assert.deepStrictEqual(yield* Ref.get(requests), [
+      Vitest.assert.deepStrictEqual(yield* Ref.get(requests), [
         {
           kind: "list-sessions",
         },
@@ -185,7 +192,7 @@ it.effect(
       yield* Deferred.make<
         Extract<TestCommand, { readonly kind: "update-ui-element" }>
       >();
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         request.kind === "update-ui-element"
           ? Deferred.succeed(updateSent, request).pipe(Effect.as(null))
@@ -194,6 +201,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -211,7 +219,7 @@ it.effect(
           requestId: "renderer-still-alive",
         },
       });
-      expect(yield* vscode.rendererMessaging.receive).toMatchObject({
+      Vitest.expect(yield* vscode.rendererMessaging.receive).toMatchObject({
         op: "image-data-result",
         requestId: "renderer-still-alive",
       });
@@ -223,7 +231,7 @@ it.effect(
         command: "update-ui-element",
         params: { objectIds: ["slider"], values: [2] },
       });
-      expect(yield* Deferred.await(updateSent)).toMatchObject({
+      Vitest.expect(yield* Deferred.await(updateSent)).toMatchObject({
         kind: "update-ui-element",
         objectIds: ["slider"],
         values: [2],
@@ -241,7 +249,7 @@ it.effect(
     const logger = Logger.make(({ logLevel, message }) => {
       if (logLevel === "Error") errors.push(message);
     });
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         request.kind === "update-ui-element"
           ? Deferred.succeed(updateStarted, undefined).pipe(
@@ -255,6 +263,7 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const editor = TestVsCode.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
@@ -268,11 +277,11 @@ it.effect(
         params: { objectIds: ["slider"], values: [1] },
       });
       yield* Deferred.await(updateStarted);
-      yield* Effect.yieldNow;
+      yield* Deferred.await(updateCancelled);
     }).pipe(Effect.provide(layer.pipe(Layer.provide(Logger.layer([logger])))));
 
-    expect(yield* Deferred.isDone(updateCancelled)).toBe(true);
-    expect(errors).toEqual([]);
+    Vitest.expect(yield* Deferred.isDone(updateCancelled)).toBe(true);
+    Vitest.expect(errors).toEqual([]);
   }),
 );
 
@@ -280,7 +289,7 @@ it.effect(
   "keeps captured kernel identity authoritative over request fields",
   Effect.fn(function* () {
     const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       send: (request) =>
         Ref.update(requests, (current) => [...current, request]).pipe(
           Effect.as(null),
@@ -303,8 +312,7 @@ it.effect(
         ),
       };
 
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.open(editor);
       const document = yield* runtime.forDocument(editor.notebook);
       yield* document.execute({ cells: [] }, "/usr/bin/python");
       const notebook = yield* runtime.forNotebook(id);
@@ -340,14 +348,14 @@ it.effect(
           "delete-cell",
         ].includes(request.kind),
       );
-      expect(commands.map((request) => request.kind)).toEqual([
+      Vitest.expect(commands.map((request) => request.kind)).toEqual([
         "update-ui-element",
         "set-model-value",
         "invoke-function",
         "delete-cell",
       ]);
       for (const command of commands) {
-        expect(command).toMatchObject({
+        Vitest.expect(command).toMatchObject({
           notebookUri: id,
           kernelSessionId: activeSessionId,
         });
@@ -367,7 +375,7 @@ it.effect.each([false, true])(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      const { layer } = yield* makeTestLayer(
+      const { layer } = makeTestLayer(
         {
           send: (request) =>
             Effect.gen(function* () {
@@ -398,11 +406,20 @@ it.effect.each([false, true])(
         yield* Deferred.await(executionStarted);
 
         const notebook = yield* runtime.forNotebook(id);
+        const progress = yield* runtime.subscribeInputProgress;
+        const request = { objectIds: [], values: [] };
         const mutation = yield* notebook
-          .updateUIElements({ objectIds: [], values: [] })
+          .updateUIElements(request)
           .pipe(Effect.forkChild);
-        yield* Effect.yieldNow;
-        expect(
+        yield* progress.pipe(
+          Stream.filter(
+            (event) =>
+              event._tag === "KernelMutationQueued" &&
+              event.request === request,
+          ),
+          Stream.runHead,
+        );
+        Vitest.expect(
           (yield* Ref.get(calls)).some(
             (request) => request.kind === "update-ui-element",
           ),
@@ -416,11 +433,11 @@ it.effect.each([false, true])(
           (request) =>
             request.kind === "execute" || request.kind === "update-ui-element",
         );
-        expect(kernelCalls.map((request) => request.kind)).toEqual([
+        Vitest.expect(kernelCalls.map((request) => request.kind)).toEqual([
           "execute",
           "update-ui-element",
         ]);
-        expect(kernelCalls.at(-1)).toMatchObject({
+        Vitest.expect(kernelCalls.at(-1)).toMatchObject({
           kind: "update-ui-element",
           notebookUri: id,
           kernelSessionId: kernelSessionId(
@@ -442,7 +459,7 @@ it.effect.each(["close", "move"] as const)(
         NodePath.join(process.cwd(), "notebook.py"),
       );
       const id = notebookId(editor.notebook.uri.toString());
-      const { layer } = yield* makeTestLayer(
+      const { layer } = makeTestLayer(
         {
           send: (request) =>
             Effect.sync(() => {
@@ -466,9 +483,8 @@ it.effect.each(["close", "move"] as const)(
             yield* runtime.moveSession(id, notebookId(`${id}-renamed.py`));
             break;
         }
-        yield* Effect.yieldNow;
-        expect(queries - before).toBe(0);
-        expect((yield* Effect.flip(notebook.interrupt))._tag).toBe(
+        Vitest.expect(queries - before).toBe(0);
+        Vitest.expect((yield* Effect.flip(notebook.interrupt))._tag).toBe(
           "NoActiveKernelError",
         );
         if (operation === "move") {
@@ -490,7 +506,7 @@ it.effect(
       NodePath.join(process.cwd(), "notebook.py"),
     );
     const id = notebookId(first.notebook.uri.toString());
-    const { layer, vscode } = yield* makeTestLayer(
+    const { layer } = makeTestLayer(
       {
         send: (request) =>
           request.kind === "execute" && request.executable === "/old-python"
@@ -514,15 +530,15 @@ it.effect(
       yield* Deferred.await(requestStarted);
 
       const replacement = TestVsCode.makeNotebookEditor(first.notebook.uri);
-      yield* vscode.openNotebook(replacement.notebook);
-      const replacementDocument = yield* runtime
-        .forDocument(replacement.notebook)
-        .pipe(Effect.retry(Schedule.recurs(100)), Effect.orDie);
+      yield* TestNotebookRuntime.open(replacement);
+      const replacementDocument = yield* runtime.forDocument(
+        replacement.notebook,
+      );
       yield* replacementDocument.execute({ cells: [] }, "/new-python");
 
       yield* Deferred.succeed(releaseRequest, undefined);
-      expect(Exit.isFailure(yield* Fiber.join(pending))).toBe(true);
-      expect(yield* runtime.getRuntimeSession(id)).toEqual(
+      Vitest.expect(Exit.isFailure(yield* Fiber.join(pending))).toBe(true);
+      Vitest.expect(yield* runtime.getRuntimeSession(id)).toEqual(
         Option.some({
           executable: "/new-python",
           workingDirectory: process.cwd(),
@@ -532,12 +548,12 @@ it.effect(
       const ended = yield* firstDocument
         .execute({ cells: [] }, "/old-python")
         .pipe(Effect.flip);
-      expect(ended._tag).toBe("NoActiveKernelError");
+      Vitest.expect(ended._tag).toBe("NoActiveKernelError");
     }).pipe(Effect.provide(layer));
   }),
 );
 
-it.effect("tracks RuntimeSession until a successful kernel close", () =>
+it.live("tracks RuntimeSession until a successful kernel close", () =>
   Effect.acquireUseRelease(
     Effect.sync(() =>
       NodeFs.mkdtempDisposableSync(
@@ -556,7 +572,7 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
         );
         const id = notebookId(editor.notebook.uri.toString());
         const requests = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
-        const { layer, vscode } = yield* makeTestLayer(
+        const { layer } = makeTestLayer(
           {
             send: (request) =>
               Ref.update(requests, (current) => [...current, request]).pipe(
@@ -567,6 +583,8 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           },
           {
             initialDocuments: [editor.notebook],
+          },
+          {
             workspace: {
               getConfiguration: (section) =>
                 Effect.succeed({
@@ -590,22 +608,21 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
 
         yield* Effect.gen(function* () {
           const runtime = yield* NotebookRuntime.Service;
-          yield* Effect.yieldNow;
+          yield* TestNotebookRuntime.activate(editor);
           const firstDocument = yield* runtime.forDocument(editor.notebook);
           yield* firstDocument.execute({ cells: [] }, "/python-one");
 
           configuredRoot = secondRoot;
           yield* firstDocument.execute({ cells: [] }, "/python-one");
-          expect(yield* runtime.getRuntimeSession(id)).toEqual(
+          Vitest.expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
               workingDirectory: firstRoot,
             }),
           );
 
-          yield* vscode.closeNotebook(editor.notebook);
-          yield* Effect.yieldNow;
-          expect(yield* runtime.getRuntimeSession(id)).toEqual(
+          yield* TestNotebookRuntime.close(editor.notebook);
+          Vitest.expect(yield* runtime.getRuntimeSession(id)).toEqual(
             Option.some({
               executable: "/python-one",
               workingDirectory: firstRoot,
@@ -617,15 +634,14 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           const reopened = TestVsCode.makeNotebookEditor(
             NodePath.join(temporary.path, "notebook.py"),
           );
-          yield* vscode.openNotebook(reopened.notebook);
-          yield* Effect.yieldNow;
+          yield* TestNotebookRuntime.open(reopened);
           const secondDocument = yield* runtime.forDocument(reopened.notebook);
           yield* secondDocument.execute({ cells: [] }, "/python-two");
           const notebook = yield* runtime.forNotebook(id);
           yield* notebook.close;
-          expect(Option.isNone(yield* runtime.getRuntimeSession(id))).toBe(
-            true,
-          );
+          Vitest.expect(
+            Option.isNone(yield* runtime.getRuntimeSession(id)),
+          ).toBe(true);
 
           configuredRoot = firstRoot;
           yield* secondDocument.execute({ cells: [] }, "/python-two");
@@ -633,12 +649,9 @@ it.effect("tracks RuntimeSession until a successful kernel close", () =>
           const launches = (yield* Ref.get(requests)).filter(
             (request) => request.kind === "execute",
           );
-          expect(launches.map((request) => request.workingDirectory)).toEqual([
-            firstRoot,
-            firstRoot,
-            secondRoot,
-            firstRoot,
-          ]);
+          Vitest.expect(
+            launches.map((request) => request.workingDirectory),
+          ).toEqual([firstRoot, firstRoot, secondRoot, firstRoot]);
         }).pipe(Effect.provide(layer));
       }),
     (temporary) => Effect.sync(() => temporary.remove()),
@@ -649,12 +662,15 @@ it.effect(
   "subscribes to MarimoClient operations once",
   Effect.fn(function* () {
     let subscriptions = 0;
-    const { layer } = yield* makeTestLayer({
+    const subscribed = yield* Deferred.make<void>();
+    const { layer } = makeTestLayer({
       // Stream.suspend evaluates once per subscription, so the counter still
       // measures how many times the runtime subscribed to `operations`.
       kernelNotifications: Stream.suspend(() => {
         subscriptions += 1;
-        return Stream.never;
+        return Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+          Stream.flatMap(() => Stream.never),
+        );
       }),
     });
 
@@ -663,11 +679,8 @@ it.effect(
       yield* notebooks.forNotebook(notebook);
       yield* notebooks.forNotebook(notebookId("notebook-b"));
 
-      const settledSubscriptions = yield* eventually(
-        Effect.sync(() => subscriptions),
-        (count) => count === 1,
-      );
-      expect(settledSubscriptions).toBe(1);
+      yield* Deferred.await(subscribed);
+      Vitest.expect(subscriptions).toBe(1);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -675,7 +688,7 @@ it.effect(
 it.effect(
   "owns the selected controller",
   Effect.fn(function* () {
-    const { layer } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
       drive: () => () => Effect.void,
@@ -687,10 +700,12 @@ it.effect(
       const notebooks = yield* NotebookRuntime.Service;
       const handle = yield* notebooks.forNotebook(notebook);
 
-      expect(Option.isNone(yield* handle.getController)).toBe(true);
+      Vitest.expect(Option.isNone(yield* handle.getController)).toBe(true);
       yield* notebooks.attachController(notebook, controller);
 
-      expect(yield* handle.getController).toEqual(Option.some(controller));
+      Vitest.expect(yield* handle.getController).toEqual(
+        Option.some(controller),
+      );
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -698,7 +713,7 @@ it.effect(
 it.effect(
   "does not report a live kernel from controller selection alone",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const controller: NotebookRuntime.NotebookController = {
       id: "marimo-/usr/bin/python",
@@ -709,18 +724,19 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
       yield* notebooks.attachController(
         notebookId(editor.notebook.uri.toString()),
         controller,
       );
 
-      const contexts = (yield* Ref.get(vscode.executions)).filter(
+      const contexts = (yield* vscode.snapshot).executions.filter(
         (execution) =>
           execution.command === "setContext" &&
           execution.args[0] === "marimo.notebook.hasKernel",
       );
-      expect(contexts.at(-1)?.args[1]).toBe(false);
+      Vitest.expect(contexts.at(-1)?.args[1]).toBe(false);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -745,7 +761,7 @@ it.effect(
         stale_inputs: true,
       },
     };
-    const { layer, vscode } = yield* makeTestLayer(
+    const { layer } = makeTestLayer(
       {
         send: (request) =>
           Ref.update(requests, (current) => [...current, request]).pipe(
@@ -767,63 +783,58 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
+      yield* TestNotebookRuntime.activate(editor);
       const id = notebookId(editor.notebook.uri.toString());
       yield* notebooks.forDocument(editor.notebook);
       yield* notebooks.attachController(id, controller);
 
       const restored = yield* Deferred.await(presented);
-      expect(restored).toEqual([replay]);
-      expect(Option.isNone(yield* notebooks.getRuntimeSession(id))).toBe(true);
+      Vitest.expect(restored).toEqual([replay]);
+      Vitest.expect(Option.isNone(yield* notebooks.getRuntimeSession(id))).toBe(
+        true,
+      );
       const kinds = (yield* Ref.get(requests)).map((request) => request.kind);
-      expect(kinds).toContain("read-notebook-outputs");
-      expect(kinds).not.toContain("execute");
-      expect(kinds).not.toContain("restart-session");
+      Vitest.expect(kinds).toContain("read-notebook-outputs");
+      Vitest.expect(kinds).not.toContain("execute");
+      Vitest.expect(kinds).not.toContain("restart-session");
     }).pipe(Effect.provide(layer));
   }),
 );
 
-const hasKernelContexts = (vscode: TestVsCode) =>
-  Effect.map(Ref.get(vscode.executions), (executions) =>
-    executions
-      .filter(
-        (execution) =>
-          execution.command === "setContext" &&
-          execution.args[0] === "marimo.notebook.hasKernel",
-      )
-      .map((execution) => execution.args[1]),
-  );
-
-/**
- * Retries until the runtime's forked subscribers have caught up, then gives up
- * and returns the last value so a failing assertion reports it.
- */
-const eventually = <A>(
-  get: Effect.Effect<A>,
-  predicate: (value: A) => boolean,
+const kernelContexts = (
+  executions: ReadonlyArray<TestVsCode.CommandExecution>,
 ) =>
-  Effect.filterOrFail(get, predicate, () => "not settled yet" as const).pipe(
-    Effect.retry(Schedule.recurs(100)),
-    Effect.catch(() => get),
-  );
+  executions
+    .filter(
+      (execution) =>
+        execution.command === "setContext" &&
+        execution.args[0] === "marimo.notebook.hasKernel",
+    )
+    .map((execution) => execution.args[1]);
+
+const hasKernelContexts = (vscode: TestVsCode.Interface) =>
+  Effect.map(vscode.snapshot, ({ executions }) => kernelContexts(executions));
+
+const awaitKernelContext = (vscode: TestVsCode.Interface, expected: boolean) =>
+  vscode
+    .awaitExecutions(
+      (executions) => kernelContexts(executions).at(-1) === expected,
+    )
+    .pipe(Effect.andThen(hasKernelContexts(vscode)));
 
 it.effect(
   "reports no kernel for an active notebook with no controller",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
-      yield* Effect.yieldNow;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
 
-      const contexts = yield* eventually(
-        hasKernelContexts(vscode),
-        (values) => values.length > 0,
-      );
-      expect(contexts.at(-1)).toBe(false);
+      const contexts = yield* awaitKernelContext(vscode, false);
+      Vitest.expect(contexts.at(-1)).toBe(false);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -834,14 +845,14 @@ it.effect(
     const changes = yield* PubSub.unbounded<ListSessionsResponse>();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
-    const { layer, vscode } = yield* makeTestLayer({
+    const { layer } = makeTestLayer({
       sessionChanges: Stream.fromPubSub(changes),
     });
 
     yield* Effect.gen(function* () {
       yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       yield* vscode.setActiveNotebookEditor(Option.some(editor));
-      yield* Effect.yieldNow;
       yield* PubSub.publish(changes, {
         generation: 1,
         revision: 2,
@@ -859,11 +870,8 @@ it.effect(
         ],
       });
 
-      const contexts = yield* eventually(
-        hasKernelContexts(vscode),
-        (values) => values.at(-1) === true,
-      );
-      expect(contexts.at(-1)).toBe(true);
+      const contexts = yield* awaitKernelContext(vscode, true);
+      Vitest.expect(contexts.at(-1)).toBe(true);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -871,7 +879,7 @@ it.effect(
 it.effect(
   "releases a notebook's controller when its document closes",
   Effect.fn(function* () {
-    const { layer, vscode } = yield* makeTestLayer();
+    const { layer } = makeTestLayer();
     const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py");
     const id = notebookId(editor.notebook.uri.toString());
     const controller: NotebookRuntime.NotebookController = {
@@ -883,26 +891,23 @@ it.effect(
 
     yield* Effect.gen(function* () {
       const notebooks = yield* NotebookRuntime.Service;
-      yield* vscode.openNotebook(editor.notebook);
-      yield* Effect.yieldNow;
-      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      const vscode = yield* TestVsCode.Service;
+      yield* TestNotebookRuntime.open(editor);
       yield* notebooks.attachController(id, controller);
-      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
+      Vitest.expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
 
-      yield* Effect.yieldNow;
-      yield* vscode.closeNotebook(editor.notebook);
+      yield* TestNotebookRuntime.close(editor.notebook);
 
-      // Pruning treats a controller as dead once no open notebook selects it,
-      // so the runtime must stop handing this one out. Re-resolve the handle
-      // each attempt: one captured before the close reads the released state.
-      const released = yield* eventually(
-        notebooks
-          .forNotebook(id)
-          .pipe(Effect.flatMap((notebook) => notebook.getController)),
-        Option.isNone,
-      );
-      expect(Option.isNone(released)).toBe(true);
-      expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
+      // Closing has completed the document session; resolve a new handle
+      // instead of reading the old session's captured controller.
+      const released = yield* notebooks
+        .forNotebook(id)
+        .pipe(Effect.flatMap((notebook) => notebook.getController));
+      Vitest.expect(Option.isNone(released)).toBe(true);
+      Vitest.expect((yield* hasKernelContexts(vscode)).at(-1)).toBe(false);
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(snapshot.openNotebookUris).toEqual([]);
+      Vitest.expect(snapshot.activeNotebookUri).toEqual(Option.none());
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -921,7 +926,7 @@ it.effect(
     );
     const firstId = notebookId(first.notebook.uri.toString());
     const secondId = notebookId(second.notebook.uri.toString());
-    const { layer, vscode, serverSessions, snapshot } = yield* makeTestLayer(
+    const { layer, serverSessions, snapshot } = makeTestLayer(
       {
         sessionChanges: Stream.fromPubSub(changes),
         send: (request) =>
@@ -936,15 +941,13 @@ it.effect(
     );
     yield* Effect.gen(function* () {
       const runtime = yield* NotebookRuntime.Service;
+      const vscode = yield* TestVsCode.Service;
       const firstDocument = yield* runtime.forDocument(first.notebook);
       const secondDocument = yield* runtime.forDocument(second.notebook);
       yield* firstDocument.execute({ cells: [] }, "/python");
       yield* secondDocument.execute({ cells: [] }, "/python");
       yield* vscode.setActiveNotebookEditor(Option.some(second));
-      yield* eventually(
-        hasKernelContexts(vscode),
-        (values) => values.at(-1) === true,
-      );
+      yield* awaitKernelContext(vscode, true);
 
       const execution = yield* firstDocument
         .execute({ cells: [] }, "/replacement")
@@ -952,18 +955,24 @@ it.effect(
       yield* Deferred.await(executionStarted);
       serverSessions.delete(firstId);
       yield* PubSub.publish(changes, snapshot());
-      yield* eventually(runtime.getRuntimeSession(firstId), Option.isNone);
+      const sessions = yield* LiveSessions.Service;
+      yield* sessions.changes.pipe(
+        Stream.filter(
+          (items) => !items.some((item) => item.notebookUri === firstId),
+        ),
+        Stream.runHead,
+      );
+      Vitest.expect(
+        Option.isNone(yield* runtime.getRuntimeSession(firstId)),
+      ).toBe(true);
       // This second change must reach the active editor before the busy
       // notebook's command returns, even though its first change is still queued.
       serverSessions.delete(secondId);
       yield* PubSub.publish(changes, snapshot());
-      const contexts = yield* eventually(
-        hasKernelContexts(vscode),
-        (values) => values.at(-1) === false,
-      );
-      expect(contexts.at(-1)).toBe(false);
+      const contexts = yield* awaitKernelContext(vscode, false);
+      Vitest.expect(contexts.at(-1)).toBe(false);
       const other = yield* runtime.forNotebook(secondId);
-      expect((yield* Effect.flip(other.interrupt))._tag).toBe(
+      Vitest.expect((yield* Effect.flip(other.interrupt))._tag).toBe(
         "NoActiveKernelError",
       );
 

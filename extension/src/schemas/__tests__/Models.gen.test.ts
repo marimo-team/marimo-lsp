@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Result, Schema } from "effect";
 
 import commandProtocol from "../../../../tests/fixtures/command_protocol.json";
@@ -14,10 +14,10 @@ import {
   VenvSource,
 } from "../Models.gen.ts";
 
-describe("Models.gen (msgspec → Effect Schema codegen)", () => {
-  it("fills omitted fields with msgspec defaults on decode", () => {
+Vitest.describe("Models.gen (msgspec → Effect Schema codegen)", () => {
+  Vitest.it("fills omitted fields with msgspec defaults on decode", () => {
     const decoded = Schema.decodeUnknownSync(CellMetadata)({});
-    expect(decoded).toMatchInlineSnapshot(`
+    Vitest.expect(decoded).toMatchInlineSnapshot(`
       {
         "marimo": {
           "name": "_",
@@ -35,34 +35,37 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     `);
   });
 
-  it("preserves open-envelope fields while rejecting unknown owned fields", () => {
-    const decoded = Schema.decodeUnknownSync(CellMetadata)({
-      foreign: { ownedBy: "another-extension" },
-      marimo: { name: "cell" },
-    });
-    expect(Schema.encodeSync(CellMetadata)(decoded)).toMatchObject({
-      foreign: { ownedBy: "another-extension" },
-      marimo: { name: "cell" },
-    });
+  Vitest.it(
+    "preserves open-envelope fields while rejecting unknown owned fields",
+    () => {
+      const decoded = Schema.decodeUnknownSync(CellMetadata)({
+        foreign: { ownedBy: "another-extension" },
+        marimo: { name: "cell" },
+      });
+      Vitest.expect(Schema.encodeSync(CellMetadata)(decoded)).toMatchObject({
+        foreign: { ownedBy: "another-extension" },
+        marimo: { name: "cell" },
+      });
 
-    expect(
-      Result.isFailure(
-        Schema.decodeUnknownResult(CellMetadata)({
-          marimo: { name: "cell", misspelled: true },
-        }),
-      ),
-    ).toBe(true);
-  });
+      Vitest.expect(
+        Result.isFailure(
+          Schema.decodeUnknownResult(CellMetadata)({
+            marimo: { name: "cell", misspelled: true },
+          }),
+        ),
+      ).toBe(true);
+    },
+  );
 
-  it("keeps the canonical notebook marimo namespace required", () => {
-    expect(
+  Vitest.it("keeps the canonical notebook marimo namespace required", () => {
+    Vitest.expect(
       Result.isFailure(
         Schema.decodeUnknownResult(NotebookDocumentMetadata)({}),
       ),
     ).toBe(true);
   });
 
-  it("decodes tagged unions by their msgspec tag field", () => {
+  Vitest.it("decodes tagged unions by their msgspec tag field", () => {
     const venv = Schema.decodeUnknownSync(GetDependencyTree)({
       kind: "get-dependency-tree",
       notebookUri: "file:///nb.py",
@@ -71,14 +74,17 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
         executable: "/usr/bin/python3",
       },
     }).source;
-    expect(venv).toEqual({ kind: "venv", executable: "/usr/bin/python3" });
+    Vitest.expect(venv).toEqual({
+      kind: "venv",
+      executable: "/usr/bin/python3",
+    });
 
     const bad = Schema.decodeUnknownResult(GetDependencyTree)({
       kind: "get-dependency-tree",
       notebookUri: "file:///nb.py",
       source: { kind: "conda" },
     });
-    expect(Result.isFailure(bad)).toBe(true);
+    Vitest.expect(Result.isFailure(bad)).toBe(true);
 
     // msgspec accepts an omitted tag when decoding a concrete struct, but
     // requires it when decoding the tagged union used by the command.
@@ -89,10 +95,10 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
         executable: "/usr/bin/python3",
       },
     });
-    expect(Result.isFailure(missing)).toBe(true);
+    Vitest.expect(Result.isFailure(missing)).toBe(true);
   });
 
-  it("decodes the flat owned command protocol", () => {
+  Vitest.it("decodes the flat owned command protocol", () => {
     const decoded = Schema.decodeUnknownSync(Command)({
       kind: "execute",
       notebookUri: "file:///nb.py",
@@ -101,7 +107,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       cells: [{ cellId: "cell-1", code: "answer = 42" }],
     });
 
-    expect(Schema.encodeSync(Command)(decoded)).toEqual({
+    Vitest.expect(Schema.encodeSync(Command)(decoded)).toEqual({
       kind: "execute",
       notebookUri: "file:///nb.py",
       executable: "/usr/bin/python3",
@@ -109,7 +115,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       cells: [{ cellId: "cell-1", code: "answer = 42" }],
     });
 
-    expect(
+    Vitest.expect(
       Result.isFailure(
         Schema.decodeUnknownResult(Command)({
           kind: "execute-cells",
@@ -119,39 +125,39 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     ).toBe(true);
   });
 
-  it("matches the shared command compatibility corpus", () => {
+  Vitest.it("matches the shared command compatibility corpus", () => {
     for (const command of commandProtocol.valid) {
       const decoded = Schema.decodeUnknownSync(Command)(command);
-      expect(Schema.encodeSync(Command)(decoded)).toEqual(command);
+      Vitest.expect(Schema.encodeSync(Command)(decoded)).toEqual(command);
     }
 
     for (const command of commandProtocol.invalid) {
-      expect(
+      Vitest.expect(
         Result.isFailure(Schema.decodeUnknownResult(Command)(command)),
       ).toBe(true);
     }
   });
 
-  it("rejects payloads msgspec would reject", () => {
+  Vitest.it("rejects payloads msgspec would reject", () => {
     const missingCode = Schema.decodeUnknownResult(ExecuteScratchpad)({
       kind: "execute-scratchpad",
       notebookUri: "file:///nb.py",
       runId: "abc",
     });
-    expect(Result.isFailure(missingCode)).toBe(true);
+    Vitest.expect(Result.isFailure(missingCode)).toBe(true);
   });
 
-  it("decodes a generated package command", () => {
+  Vitest.it("decodes a generated package command", () => {
     const decoded = Schema.decodeUnknownSync(GetDependencyTree)({
       kind: "get-dependency-tree",
       notebookUri: "file:///nb.py",
       source: { kind: "script" },
     });
-    expect(decoded.source).toEqual({ kind: "script" });
+    Vitest.expect(decoded.source).toEqual({ kind: "script" });
   });
 
-  it("requires workingDirectory for execute commands", () => {
-    expect(() =>
+  Vitest.it("requires workingDirectory for execute commands", () => {
+    Vitest.expect(() =>
       Schema.decodeUnknownSync(Execute)({
         kind: "execute",
         notebookUri: "file:///nb.py",
@@ -161,37 +167,40 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
     ).toThrow();
   });
 
-  it("names structs in parse errors via identifier annotations", () => {
+  Vitest.it("names structs in parse errors via identifier annotations", () => {
     // The default formatter uses `identifier` as the expected label for a
     // type failure such as "Expected VenvSource". It does not use it for a
     // nested key issue.
     const result = Schema.decodeUnknownResult(VenvSource)("not-an-object");
-    expect(Result.isFailure(result)).toBe(true);
+    Vitest.expect(Result.isFailure(result)).toBe(true);
     if (Result.isFailure(result)) {
-      expect(String(result.failure)).toContain("VenvSource");
+      Vitest.expect(String(result.failure)).toContain("VenvSource");
     }
   });
 
-  it("round-trips through encode to the wire shape msgspec expects", () => {
-    const encoded = Schema.encodeSync(CellMetadata)({
-      marimo: {
-        name: "my_cell",
-        options: { hide_code: true },
-        sourceProjections: { markdown: null, sql: null },
-      },
-      marimoRuntime: { stableId: "abc", state: null },
-    });
-    expect(encoded).toEqual({
-      marimo: {
-        name: "my_cell",
-        options: { hide_code: true },
-        sourceProjections: { markdown: null, sql: null },
-      },
-      marimoRuntime: { stableId: "abc", state: null },
-    });
-  });
+  Vitest.it(
+    "round-trips through encode to the wire shape msgspec expects",
+    () => {
+      const encoded = Schema.encodeSync(CellMetadata)({
+        marimo: {
+          name: "my_cell",
+          options: { hide_code: true },
+          sourceProjections: { markdown: null, sql: null },
+        },
+        marimoRuntime: { stableId: "abc", state: null },
+      });
+      Vitest.expect(encoded).toEqual({
+        marimo: {
+          name: "my_cell",
+          options: { hide_code: true },
+          sourceProjections: { markdown: null, sql: null },
+        },
+        marimoRuntime: { stableId: "abc", state: null },
+      });
+    },
+  );
 
-  it("separates managed app options from the passthrough record", () => {
+  Vitest.it("separates managed app options from the passthrough record", () => {
     const decoded = Schema.decodeUnknownSync(NotebookDocument)({
       version: "1",
       metadata: { marimo_version: "0.23.15" },
@@ -211,7 +220,7 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       header: null,
     });
 
-    expect(Schema.encodeSync(NotebookDocument)(decoded).appOptions)
+    Vitest.expect(Schema.encodeSync(NotebookDocument)(decoded).appOptions)
       .toMatchInlineSnapshot(`
         {
           "managed": {
@@ -230,13 +239,13 @@ describe("Models.gen (msgspec → Effect Schema codegen)", () => {
       `);
   });
 
-  it.effect("requires JSON null for fire-and-forget responses", () =>
+  Vitest.it.effect("requires JSON null for fire-and-forget responses", () =>
     Effect.gen(function* () {
       const api = makeCommandClient(() => Effect.succeed(undefined));
       const result = yield* Effect.result(
         api.interrupt({ notebookUri: "file:///nb.py" }),
       );
-      expect(Result.isFailure(result)).toBe(true);
+      Vitest.expect(Result.isFailure(result)).toBe(true);
     }),
   );
 });

@@ -1,182 +1,90 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Schedule, SubscriptionRef } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Option } from "effect";
 
-import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
-import {
-  makeTestMarimoClient,
-  type TestCommand,
-} from "../../__tests__/__utils__/TestMarimoClient.ts";
-import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
-import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
-import * as ThemeSync from "../ThemeSync.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as TestThemeSync from "./TestThemeSync.ts";
 
-const withTestCtx = Effect.fn(function* (
-  initialTheme: "light" | "dark" = "light",
-) {
-  const themeRef = yield* SubscriptionRef.make<"light" | "dark">(initialTheme);
-  const executions = yield* Ref.make<ReadonlyArray<TestCommand>>([]);
+const it = EffectTest.make(TestThemeSync.layerWith("light"));
+const darkIt = EffectTest.make(TestThemeSync.layerWith("dark"));
 
-  const editor = TestVsCode.makeNotebookEditor("/test/notebook_mo.py", {
-    data: {
-      cells: [
-        {
-          kind: 1,
-          value: "",
-          languageId: "python",
-          metadata: MarimoNotebookCell.createMetadata({
-            marimoRuntime: { stableId: "cell-1" },
-          }),
-        },
-      ],
-    },
-  });
-
-  const vscode = yield* TestVsCode.make({
-    initialDocuments: [editor.notebook],
-    window: {
-      colorThemeChanges: SubscriptionRef.changes(themeRef),
-    },
-  });
-
-  const layer = Layer.empty.pipe(
-    Layer.provideMerge(ThemeSync.layer),
-    Layer.provide(NotebookEditorRegistry.layer),
-    Layer.provide(
-      makeTestMarimoClient({
-        send(request) {
-          return Ref.update(executions, (current) => [
-            ...current,
-            request,
-          ]).pipe(Effect.as({ success: true }));
-        },
-      }),
-    ),
-    Layer.provide(TestTelemetryLive),
-    Layer.provide(vscode.layer),
-  );
-
-  return {
-    layer,
-    vscode,
-    editor,
-    themeRef,
-    executions,
-  };
-});
-
-const waitForExecutions = (
-  executions: Ref.Ref<ReadonlyArray<TestCommand>>,
-  predicate: (executions: ReadonlyArray<TestCommand>) => boolean,
-) =>
-  Effect.yieldNow.pipe(
-    Effect.andThen(Ref.get(executions)),
-    Effect.filterOrFail(
-      predicate,
-      () => "ThemeSync executions have not settled" as const,
-    ),
-    Effect.retry(Schedule.recurs(100)),
-  );
-
-describe("ThemeSync", () => {
+Vitest.describe("ThemeSync", () => {
   it.effect(
     "sends set-display-theme on theme change",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx("light");
+      const test = yield* TestThemeSync.Service;
+      yield* test.vscode.setActiveNotebookEditor(Option.some(test.editor));
+      yield* test.awaitExecutions((executions) => executions.length >= 2);
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* waitForExecutions(
-          ctx.executions,
-          (executions) => executions.length >= 2,
-        );
+      yield* test.setTheme("dark");
+      yield* test.awaitExecutions((executions) =>
+        executions.some(
+          (execution) =>
+            execution.kind === "set-display-theme" &&
+            execution.theme === "dark",
+        ),
+      );
 
-        yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* waitForExecutions(ctx.executions, (executions) =>
-          executions.some(
-            (execution) =>
-              execution.kind === "set-display-theme" &&
-              execution.theme === "dark",
-          ),
-        );
-
-        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
-          [
-            {
-              "kind": "set-display-theme",
-              "theme": "light",
-            },
-            {
-              "kind": "set-display-theme",
-              "theme": "light",
-            },
-            {
-              "kind": "set-display-theme",
-              "theme": "dark",
-            },
-          ]
-        `);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* test.executions).toMatchInlineSnapshot(`
+        [
+          {
+            "kind": "set-display-theme",
+            "theme": "light",
+          },
+          {
+            "kind": "set-display-theme",
+            "theme": "light",
+          },
+          {
+            "kind": "set-display-theme",
+            "theme": "dark",
+          },
+        ]
+      `);
     }),
   );
 
   it.effect(
     "sends set-display-theme while no marimo notebook is active",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx("light");
+      const test = yield* TestThemeSync.Service;
+      yield* test.vscode.setActiveNotebookEditor(Option.none());
+      yield* test.awaitExecutions((executions) => executions.length >= 1);
 
-      yield* Effect.gen(function* () {
-        // The focus is on a text editor. The registry has no notebook.
-        yield* ctx.vscode.setActiveNotebookEditor(Option.none());
-        yield* waitForExecutions(
-          ctx.executions,
-          (executions) => executions.length >= 1,
-        );
+      yield* test.setTheme("dark");
+      yield* test.awaitExecutions((executions) =>
+        executions.some(
+          (execution) =>
+            execution.kind === "set-display-theme" &&
+            execution.theme === "dark",
+        ),
+      );
 
-        yield* SubscriptionRef.set(ctx.themeRef, "dark");
-        yield* waitForExecutions(ctx.executions, (executions) =>
-          executions.some(
-            (execution) =>
-              execution.kind === "set-display-theme" &&
-              execution.theme === "dark",
-          ),
-        );
-
-        // set-display-theme updates all running sessions. The kernels must
-        // get the change when no notebook is focused.
-        expect(yield* Ref.get(ctx.executions)).toContainEqual({
-          kind: "set-display-theme",
-          theme: "dark",
-        });
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* test.executions).toContainEqual({
+        kind: "set-display-theme",
+        theme: "dark",
+      });
     }),
   );
 
-  it.effect(
+  darkIt.effect(
     "syncs theme when a new notebook becomes active",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx("dark");
+      const test = yield* TestThemeSync.Service;
+      yield* test.vscode.setActiveNotebookEditor(Option.some(test.editor));
+      yield* test.awaitExecutions((executions) => executions.length >= 2);
 
-      yield* Effect.gen(function* () {
-        yield* ctx.vscode.setActiveNotebookEditor(Option.some(ctx.editor));
-        yield* waitForExecutions(
-          ctx.executions,
-          (executions) => executions.length >= 2,
-        );
-
-        expect(yield* Ref.get(ctx.executions)).toMatchInlineSnapshot(`
-          [
-            {
-              "kind": "set-display-theme",
-              "theme": "dark",
-            },
-            {
-              "kind": "set-display-theme",
-              "theme": "dark",
-            },
-          ]
-        `);
-      }).pipe(Effect.provide(ctx.layer));
+      Vitest.expect(yield* test.executions).toMatchInlineSnapshot(`
+        [
+          {
+            "kind": "set-display-theme",
+            "theme": "dark",
+          },
+          {
+            "kind": "set-display-theme",
+            "theme": "dark",
+          },
+        ]
+      `);
     }),
   );
 });

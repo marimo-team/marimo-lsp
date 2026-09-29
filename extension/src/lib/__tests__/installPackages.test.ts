@@ -2,11 +2,14 @@ import * as NodeFs from "node:fs";
 import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 
-import { TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { resolveProjectInstallRequests } from "../installPackages.ts";
+
+const it = EffectTest.make(TestVsCode.layer);
 
 function makeProject(content: string) {
   const tmp = NodeFs.mkdtempDisposableSync(
@@ -16,7 +19,7 @@ function makeProject(content: string) {
   return tmp;
 }
 
-it.effect(
+it.live(
   "uses the package's unique existing dependency group",
   Effect.fn(function* () {
     using project = makeProject(`
@@ -26,14 +29,12 @@ dependencies = []
 [dependency-groups]
 notebooks = ["marimo>=0.10"]
 `);
-    const vscode = yield* TestVsCode.make();
-
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20"],
       project.path,
-    ).pipe(Effect.provide(vscode.layer));
+    );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
         target: { _tag: "Group", name: "notebooks" },
@@ -42,7 +43,7 @@ notebooks = ["marimo>=0.10"]
   }),
 );
 
-it.effect(
+it.live(
   "refuses to update only one of multiple declarations",
   Effect.fn(function* () {
     using project = makeProject(`
@@ -52,18 +53,16 @@ dependencies = ["marimo>=0.10"]
 [dependency-groups]
 dev = ["marimo>=0.10"]
 `);
-    const vscode = yield* TestVsCode.make();
-
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20"],
       project.path,
-    ).pipe(Effect.provide(vscode.layer));
+    );
 
-    expect(requests).toBeNull();
+    Vitest.expect(requests).toBeNull();
   }),
 );
 
-it.effect(
+it.live(
   "cancels when standard and legacy dev declarations conflict",
   Effect.fn(function* () {
     using project = makeProject(`
@@ -76,29 +75,25 @@ dev = ["marimo<0.20"]
 [tool.uv]
 dev-dependencies = ["marimo<0.20"]
 `);
-    const vscode = yield* TestVsCode.make();
-
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20"],
       project.path,
-    ).pipe(Effect.provide(vscode.layer));
+    );
 
-    expect(requests).toBeNull();
+    Vitest.expect(requests).toBeNull();
   }),
 );
 
-it.effect(
+it.live(
   "falls back to project dependencies when TOML inspection fails",
   Effect.fn(function* () {
     using project = makeProject("[project\ndependencies = []");
-    const vscode = yield* TestVsCode.make();
-
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20"],
       project.path,
-    ).pipe(Effect.provide(vscode.layer));
+    );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20"],
         target: { _tag: "Production" },
@@ -107,7 +102,7 @@ it.effect(
   }),
 );
 
-it.effect(
+it.live(
   "batches packages that share a target and separates different targets",
   Effect.fn(function* () {
     using project = makeProject(`
@@ -117,14 +112,12 @@ dependencies = ["httpx"]
 [dependency-groups]
 dev = ["marimo", "pytest"]
 `);
-    const vscode = yield* TestVsCode.make();
-
     const requests = yield* resolveProjectInstallRequests(
       ["marimo>=0.20", "pytest", "httpx"],
       project.path,
-    ).pipe(Effect.provide(vscode.layer));
+    );
 
-    expect(requests).toEqual([
+    Vitest.expect(requests).toEqual([
       {
         packages: ["marimo>=0.20", "pytest"],
         target: { _tag: "Group", name: "dev" },

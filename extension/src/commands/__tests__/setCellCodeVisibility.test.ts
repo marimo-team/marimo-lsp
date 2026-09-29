@@ -1,16 +1,13 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Option, Ref } from "effect";
-import type * as vscode from "vscode";
+import * as Vitest from "@effect/vitest";
+import { Effect, Option } from "effect";
 
-import {
-  createNotebookUri,
-  createTestNotebookDocument,
-  getNotebookEdits,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import hideCellCode from "../hideCellCode.ts";
 import showCellCode from "../showCellCode.ts";
+
+const it = EffectTest.make(TestVsCode.layer);
 
 it.effect.each([
   {
@@ -23,15 +20,9 @@ it.effect.each([
   },
 ])("persists and applies hide_code=$hidden", ({ hidden, command }) =>
   Effect.gen(function* () {
-    const applied = yield* Ref.make(Option.none<vscode.WorkspaceEdit>());
-    const vscode = yield* TestVsCode.make({
-      workspace: {
-        applyEdit: (edit) =>
-          Ref.set(applied, Option.some(edit)).pipe(Effect.as(true)),
-      },
-    });
-    const uri = createNotebookUri("file:///test/notebook_mo.py");
-    const document = createTestNotebookDocument(uri, {
+    const vscode = yield* TestVsCode.Service;
+    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+    const document = TestVsCode.createTestNotebookDocument(uri, {
       data: {
         cells: [
           { kind: 2, value: "other = 0", languageId: "mo-python" },
@@ -50,17 +41,19 @@ it.effect.each([
     const rawCell = document.cellAt(1);
 
     const invoke = hidden ? hideCellCode.invoke : showCellCode.invoke;
-    yield* invoke(Option.some(MarimoNotebookCell.from(rawCell))).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* invoke(Option.some(MarimoNotebookCell.from(rawCell)));
 
-    const workspaceEdit = Option.getOrThrow(yield* Ref.get(applied));
-    const replacement = getNotebookEdits(workspaceEdit, uri)[0]?.newCells[0];
+    const snapshot = yield* vscode.snapshot;
+    const workspaceEdit = Option.getOrThrow(
+      Option.fromNullishOr(snapshot.workspaceEdits.at(-1)),
+    );
+    const replacement = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0]
+      ?.newCells[0];
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
-    expect(metadata.marimo.options.hide_code).toBe(hidden);
-    expect(yield* Ref.get(vscode.executions)).toEqual([
+    Vitest.expect(metadata.marimo.options.hide_code).toBe(hidden);
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command,
         args: [
@@ -79,15 +72,9 @@ it.effect.each([
   { hidden: false, invoke: showCellCode.invoke },
 ])("persists markup hide_code=$hidden while keeping input expanded", (test) =>
   Effect.gen(function* () {
-    const applied = yield* Ref.make(Option.none<vscode.WorkspaceEdit>());
-    const vscode = yield* TestVsCode.make({
-      workspace: {
-        applyEdit: (edit) =>
-          Ref.set(applied, Option.some(edit)).pipe(Effect.as(true)),
-      },
-    });
-    const uri = createNotebookUri("file:///test/notebook_mo.py");
-    const document = createTestNotebookDocument(uri, {
+    const vscode = yield* TestVsCode.Service;
+    const uri = TestVsCode.createNotebookUri("file:///test/notebook_mo.py");
+    const document = TestVsCode.createTestNotebookDocument(uri, {
       data: {
         cells: [
           {
@@ -104,15 +91,19 @@ it.effect.each([
     });
     const cell = Option.some(MarimoNotebookCell.from(document.cellAt(0)));
 
-    yield* test.invoke(cell).pipe(Effect.provide(vscode.layer));
+    yield* test.invoke(cell);
 
-    const workspaceEdit = Option.getOrThrow(yield* Ref.get(applied));
-    const replacement = getNotebookEdits(workspaceEdit, uri)[0]?.newCells[0];
+    const snapshot = yield* vscode.snapshot;
+    const workspaceEdit = Option.getOrThrow(
+      Option.fromNullishOr(snapshot.workspaceEdits.at(-1)),
+    );
+    const replacement = TestVsCode.getNotebookEdits(workspaceEdit, uri)[0]
+      ?.newCells[0];
     const metadata = Option.getOrThrow(
       MarimoNotebookCell.decodeMetadata(replacement?.metadata),
     );
-    expect(metadata.marimo.options.hide_code).toBe(test.hidden);
-    expect(yield* Ref.get(vscode.executions)).toEqual([
+    Vitest.expect(metadata.marimo.options.hide_code).toBe(test.hidden);
+    Vitest.expect(snapshot.executions).toEqual([
       {
         command: "notebook.cell.expandCellInput",
         args: [

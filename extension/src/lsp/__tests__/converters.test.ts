@@ -1,11 +1,9 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import * as lsp from "vscode-languageserver-protocol";
 
-import {
-  createTestTextDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { UNSAFE_castForNegativeTest } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
@@ -58,21 +56,18 @@ const stringEntries = (e: Record<string, unknown>): Array<[string, string]> =>
     (entry): entry is [string, string] => typeof entry[1] === "string",
   );
 
-const withVsCode = Effect.gen(function* () {
-  const test = yield* TestVsCode.make();
-  return yield* VsCode.Service.pipe(Effect.provide(test.layer));
-});
+const it = EffectTest.make(TestVsCode.layer);
 
-describe("toVsCodeRange", () => {
+Vitest.describe("toVsCodeRange", () => {
   it.effect(
     "converts LSP range to VS Code range",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const range = toVsCodeRange(code, {
         start: { line: 1, character: 5 },
         end: { line: 3, character: 10 },
       });
-      expect(range).toMatchInlineSnapshot(`
+      Vitest.expect(range).toMatchInlineSnapshot(`
         Range {
           "end": Position {
             "character": 10,
@@ -88,13 +83,13 @@ describe("toVsCodeRange", () => {
   );
 });
 
-describe("toHoverContent", () => {
+Vitest.describe("toHoverContent", () => {
   it.effect(
     "converts plain string",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toHoverContent(code, "hello");
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         MarkdownString {
           "baseUri": undefined,
           "isTrusted": undefined,
@@ -109,12 +104,12 @@ describe("toHoverContent", () => {
   it.effect(
     "converts MarkupContent",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toHoverContent(code, {
         kind: lsp.MarkupKind.Markdown,
         value: "# Title",
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         MarkdownString {
           "baseUri": undefined,
           "isTrusted": undefined,
@@ -129,12 +124,12 @@ describe("toHoverContent", () => {
   it.effect(
     "converts MarkedString array",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toHoverContent(code, [
         "plain text",
         { language: "python", value: "x = 1" },
       ]);
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         [
           MarkdownString {
             "baseUri": undefined,
@@ -160,19 +155,19 @@ describe("toHoverContent", () => {
   );
 });
 
-describe("toLocationResult", () => {
+Vitest.describe("toLocationResult", () => {
   it.effect(
     "returns undefined for null",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toLocationResult(code, null)).toBeUndefined();
+      const code = yield* VsCode.Service;
+      Vitest.expect(toLocationResult(code, null)).toBeUndefined();
     }),
   );
 
   it.effect(
     "converts single Location",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationResult(code, {
         uri: "file:///test.py",
         range: {
@@ -180,7 +175,7 @@ describe("toLocationResult", () => {
           end: { line: 0, character: 5 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         Location {
           "range": Range {
             "end": Position {
@@ -207,7 +202,7 @@ describe("toLocationResult", () => {
   it.effect(
     "converts Location array",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationResult(code, [
         {
           uri: "file:///a.py",
@@ -224,7 +219,7 @@ describe("toLocationResult", () => {
           },
         },
       ]);
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         [
           Location {
             "range": Range {
@@ -272,7 +267,7 @@ describe("toLocationResult", () => {
   it.effect(
     "converts LocationLink array",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationResult(code, [
         {
           targetUri: "file:///target.py",
@@ -286,7 +281,7 @@ describe("toLocationResult", () => {
           },
         },
       ]);
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         [
           {
             "originSelectionRange": undefined,
@@ -326,18 +321,18 @@ describe("toLocationResult", () => {
   it.effect(
     "returns empty array for empty input",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationResult(code, []);
-      expect(result).toMatchInlineSnapshot(`[]`);
+      Vitest.expect(result).toMatchInlineSnapshot(`[]`);
     }),
   );
 });
 
-describe("toDocumentHighlight", () => {
+Vitest.describe("toDocumentHighlight", () => {
   it.effect(
     "converts with kind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toDocumentHighlight(code, {
         range: {
           start: { line: 1, character: 0 },
@@ -345,7 +340,7 @@ describe("toDocumentHighlight", () => {
         },
         kind: lsp.DocumentHighlightKind.Write,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         DocumentHighlight {
           "kind": 2,
           "range": Range {
@@ -366,14 +361,14 @@ describe("toDocumentHighlight", () => {
   it.effect(
     "converts without kind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toDocumentHighlight(code, {
         range: {
           start: { line: 0, character: 0 },
           end: { line: 0, character: 3 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         DocumentHighlight {
           "kind": undefined,
           "range": Range {
@@ -397,8 +392,8 @@ describe("toDocumentHighlight", () => {
 // snapshot diff (or an exhaustiveness throw), with no manual list to keep
 // in sync.
 
-describe("toSymbolKind", () => {
-  it.effect("maps every lsp.SymbolKind", () =>
+Vitest.describe("toSymbolKind", () => {
+  Vitest.it.effect("maps every lsp.SymbolKind", () =>
     Effect.sync(() => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.SymbolKind).map(([name, value]) => [
@@ -406,7 +401,7 @@ describe("toSymbolKind", () => {
           toSymbolKind(value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Array": 17,
       	  "Boolean": 16,
@@ -440,18 +435,18 @@ describe("toSymbolKind", () => {
   );
 });
 
-describe("toCompletionItemKind", () => {
+Vitest.describe("toCompletionItemKind", () => {
   it.effect(
     "maps every lsp.CompletionItemKind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(lsp.CompletionItemKind).map(([name, value]) => [
           name,
           toCompletionItemKind(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Class": 6,
       	  "Color": 15,
@@ -484,20 +479,20 @@ describe("toCompletionItemKind", () => {
   );
 });
 
-describe("toLspCompletionItemKind", () => {
+Vitest.describe("toLspCompletionItemKind", () => {
   // Iterate the VS Code side so User/Issue (no LSP equivalent) show up as
   // explicit rows collapsed to Text.
   it.effect(
     "maps every vscode.CompletionItemKind (User/Issue → Text)",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(code.CompletionItemKind).map(([name, value]) => [
           name,
           toLspCompletionItemKind(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Class": 7,
       	  "Color": 16,
@@ -532,18 +527,18 @@ describe("toLspCompletionItemKind", () => {
   );
 });
 
-describe("toVsCodeDiagnosticSeverity", () => {
+Vitest.describe("toVsCodeDiagnosticSeverity", () => {
   it.effect(
     "maps every lsp.DiagnosticSeverity",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(lsp.DiagnosticSeverity).map(([name, value]) => [
           name,
           toVsCodeDiagnosticSeverity(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Error": 0,
       	  "Hint": 3,
@@ -555,18 +550,18 @@ describe("toVsCodeDiagnosticSeverity", () => {
   );
 });
 
-describe("toLspDiagnosticSeverity", () => {
+Vitest.describe("toLspDiagnosticSeverity", () => {
   it.effect(
     "maps every vscode.DiagnosticSeverity",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(code.DiagnosticSeverity).map(([name, value]) => [
           name,
           toLspDiagnosticSeverity(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Error": 1,
       	  "Hint": 4,
@@ -578,8 +573,8 @@ describe("toLspDiagnosticSeverity", () => {
   );
 });
 
-describe("toDocumentHighlightKind", () => {
-  it.effect("maps every lsp.DocumentHighlightKind", () =>
+Vitest.describe("toDocumentHighlightKind", () => {
+  Vitest.it.effect("maps every lsp.DocumentHighlightKind", () =>
     Effect.sync(() => {
       const mapping = Object.fromEntries(
         numericEntries(lsp.DocumentHighlightKind).map(([name, value]) => [
@@ -587,7 +582,7 @@ describe("toDocumentHighlightKind", () => {
           toDocumentHighlightKind(value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Read": 1,
       	  "Text": 0,
@@ -598,17 +593,19 @@ describe("toDocumentHighlightKind", () => {
   );
 });
 
-describe("toLspFoldingRangeKind", () => {
+Vitest.describe("toLspFoldingRangeKind", () => {
   // LSP FoldingRangeKind is a string namespace, extensible by servers.
   // Iterate the known values plus one unknown to lock in the undefined fallback.
-  it.effect("maps every lsp.FoldingRangeKind plus an unknown fallback", () =>
-    Effect.sync(() => {
-      const mapping: Record<string, unknown> = {};
-      for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
-        mapping[name] = toLspFoldingRangeKind(value);
-      }
-      mapping.__unknown__ = toLspFoldingRangeKind("unknown-server-kind");
-      expect(mapping).toMatchInlineSnapshot(`
+  Vitest.it.effect(
+    "maps every lsp.FoldingRangeKind plus an unknown fallback",
+    () =>
+      Effect.sync(() => {
+        const mapping: Record<string, unknown> = {};
+        for (const [name, value] of stringEntries(lsp.FoldingRangeKind)) {
+          mapping[name] = toLspFoldingRangeKind(value);
+        }
+        mapping.__unknown__ = toLspFoldingRangeKind("unknown-server-kind");
+        Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Comment": 1,
       	  "Imports": 2,
@@ -616,22 +613,22 @@ describe("toLspFoldingRangeKind", () => {
       	  "__unknown__": undefined,
       	}
       `);
-    }),
+      }),
   );
 });
 
-describe("toLspCompletionTriggerKind", () => {
+Vitest.describe("toLspCompletionTriggerKind", () => {
   it.effect(
     "maps every vscode.CompletionTriggerKind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(code.CompletionTriggerKind).map(([name, value]) => [
           name,
           toLspCompletionTriggerKind(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Invoke": 1,
       	  "TriggerCharacter": 2,
@@ -642,18 +639,18 @@ describe("toLspCompletionTriggerKind", () => {
   );
 });
 
-describe("toLspCodeActionTriggerKind", () => {
+Vitest.describe("toLspCodeActionTriggerKind", () => {
   it.effect(
     "maps every vscode.CodeActionTriggerKind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const mapping = Object.fromEntries(
         numericEntries(code.CodeActionTriggerKind).map(([name, value]) => [
           name,
           toLspCodeActionTriggerKind(code, value),
         ]),
       );
-      expect(mapping).toMatchInlineSnapshot(`
+      Vitest.expect(mapping).toMatchInlineSnapshot(`
       	{
       	  "Automatic": 2,
       	  "Invoke": 1,
@@ -663,11 +660,11 @@ describe("toLspCodeActionTriggerKind", () => {
   );
 });
 
-describe("toDocumentSymbol", () => {
+Vitest.describe("toDocumentSymbol", () => {
   it.effect(
     "converts with children",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toDocumentSymbol(code, {
         name: "MyClass",
         detail: "A class",
@@ -696,7 +693,7 @@ describe("toDocumentSymbol", () => {
           },
         ],
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         DocumentSymbol {
           "children": [
             DocumentSymbol {
@@ -757,17 +754,17 @@ describe("toDocumentSymbol", () => {
   );
 });
 
-describe("toFoldingRange", () => {
+Vitest.describe("toFoldingRange", () => {
   it.effect(
     "converts with kind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toFoldingRange(code, {
         startLine: 0,
         endLine: 10,
         kind: lsp.FoldingRangeKind.Imports,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         FoldingRange {
           "end": 10,
           "kind": 2,
@@ -778,11 +775,11 @@ describe("toFoldingRange", () => {
   );
 });
 
-describe("toSelectionRange", () => {
+Vitest.describe("toSelectionRange", () => {
   it.effect(
     "converts nested selection ranges",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toSelectionRange(code, {
         range: {
           start: { line: 0, character: 0 },
@@ -795,7 +792,7 @@ describe("toSelectionRange", () => {
           },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         SelectionRange {
           "parent": SelectionRange {
             "parent": undefined,
@@ -826,11 +823,11 @@ describe("toSelectionRange", () => {
   );
 });
 
-describe("toTextEdit", () => {
+Vitest.describe("toTextEdit", () => {
   it.effect(
     "converts LSP TextEdit",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toTextEdit(code, {
         range: {
           start: { line: 0, character: 0 },
@@ -838,7 +835,7 @@ describe("toTextEdit", () => {
         },
         newText: "hello",
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         TextEdit {
           "newEol": undefined,
           "newText": "hello",
@@ -858,11 +855,11 @@ describe("toTextEdit", () => {
   );
 });
 
-describe("toSignatureHelp", () => {
+Vitest.describe("toSignatureHelp", () => {
   it.effect(
     "converts with signatures and parameters",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toSignatureHelp(code, {
         signatures: [
           {
@@ -886,7 +883,7 @@ describe("toSignatureHelp", () => {
         activeSignature: 0,
         activeParameter: 1,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         SignatureHelp {
           "activeParameter": 1,
           "activeSignature": 0,
@@ -927,12 +924,12 @@ describe("toSignatureHelp", () => {
   it.effect(
     "defaults activeParameter to 0 when undefined",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toSignatureHelp(code, {
         signatures: [{ label: "fn()" }],
         activeSignature: 0,
       });
-      expect(result.activeParameter).toBe(0);
+      Vitest.expect(result.activeParameter).toBe(0);
     }),
   );
 
@@ -942,29 +939,29 @@ describe("toSignatureHelp", () => {
   it.effect(
     "maps null activeParameter to -1",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toSignatureHelp(code, {
         signatures: [{ label: "fn()" }],
         activeSignature: 0,
         activeParameter: UNSAFE_castForNegativeTest<number>(null),
       });
-      expect(result.activeParameter).toBe(-1);
+      Vitest.expect(result.activeParameter).toBe(-1);
     }),
   );
 });
 
-describe("toInlayHint", () => {
+Vitest.describe("toInlayHint", () => {
   it.effect(
     "converts string label",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toInlayHint(code, {
         position: { line: 1, character: 10 },
         label: ": int",
         kind: lsp.InlayHintKind.Type,
         paddingLeft: true,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         InlayHint {
           "kind": 1,
           "label": ": int",
@@ -984,7 +981,7 @@ describe("toInlayHint", () => {
   it.effect(
     "converts label parts with location",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toInlayHint(code, {
         position: { line: 0, character: 5 },
         label: [
@@ -1000,7 +997,7 @@ describe("toInlayHint", () => {
           },
         ],
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         InlayHint {
           "kind": undefined,
           "label": [
@@ -1045,23 +1042,23 @@ describe("toInlayHint", () => {
   it.effect(
     "stashes data for resolve round-trip",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toInlayHint(code, {
         position: { line: 0, character: 0 },
         label: "hint",
         data: { id: 42 },
       });
       // data is stashed via WeakMap, not visible in snapshot
-      expect(result.label).toBe("hint");
+      Vitest.expect(result.label).toBe("hint");
     }),
   );
 });
 
-describe("toCompletionItem", () => {
+Vitest.describe("toCompletionItem", () => {
   it.effect(
     "converts basic item with kind offset",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "my_var",
         kind: lsp.CompletionItemKind.Variable,
@@ -1071,7 +1068,7 @@ describe("toCompletionItem", () => {
           value: "A variable",
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         CompletionItem {
           "additionalTextEdits": undefined,
           "command": undefined,
@@ -1102,7 +1099,7 @@ describe("toCompletionItem", () => {
   it.effect(
     "converts item with textEdit",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "print",
         kind: lsp.CompletionItemKind.Function,
@@ -1114,15 +1111,15 @@ describe("toCompletionItem", () => {
           newText: "print",
         },
       });
-      expect(result.insertText).toBe("print");
-      expect(result.range).toBeDefined();
+      Vitest.expect(result.insertText).toBe("print");
+      Vitest.expect(result.range).toBeDefined();
     }),
   );
 
   it.effect(
     "converts snippet insertTextFormat",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "for",
         kind: lsp.CompletionItemKind.Snippet,
@@ -1130,7 +1127,7 @@ describe("toCompletionItem", () => {
         insertTextFormat: lsp.InsertTextFormat.Snippet,
       });
       // Should be wrapped in SnippetString
-      expect(result.insertText).toMatchInlineSnapshot(`
+      Vitest.expect(result.insertText).toMatchInlineSnapshot(`
         SnippetString {
           "value": "for \${1:item} in \${2:iterable}:
         	$0",
@@ -1142,7 +1139,7 @@ describe("toCompletionItem", () => {
   it.effect(
     "converts labelDetails",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "foo",
         labelDetails: {
@@ -1151,7 +1148,7 @@ describe("toCompletionItem", () => {
         },
         kind: lsp.CompletionItemKind.Function,
       });
-      expect(result.label).toMatchInlineSnapshot(`
+      Vitest.expect(result.label).toMatchInlineSnapshot(`
         {
           "description": "module.foo",
           "detail": "(x: int)",
@@ -1164,12 +1161,12 @@ describe("toCompletionItem", () => {
   it.effect(
     "converts deprecated tag",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "old_fn",
         tags: [lsp.CompletionItemTag.Deprecated],
       });
-      expect(result.tags).toMatchInlineSnapshot(`
+      Vitest.expect(result.tags).toMatchInlineSnapshot(`
         [
           1,
         ]
@@ -1178,36 +1175,36 @@ describe("toCompletionItem", () => {
   );
 });
 
-describe("toCodeActionKind", () => {
+Vitest.describe("toCodeActionKind", () => {
   it.effect(
     "builds from dotted string",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const kind = toCodeActionKind(code, "notebook.source.fixAll");
-      expect(kind.value).toBe("notebook.source.fixAll");
+      Vitest.expect(kind.value).toBe("notebook.source.fixAll");
     }),
   );
 
   it.effect(
     "builds simple kind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const kind = toCodeActionKind(code, "quickfix");
-      expect(kind.value).toBe("quickfix");
+      Vitest.expect(kind.value).toBe("quickfix");
     }),
   );
 });
 
-describe("toCodeAction", () => {
+Vitest.describe("toCodeAction", () => {
   it.effect(
     "converts basic code action",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Fix import",
         kind: "quickfix",
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         CodeAction {
           "command": undefined,
           "diagnostics": undefined,
@@ -1226,7 +1223,7 @@ describe("toCodeAction", () => {
   it.effect(
     "converts with edit and diagnostics",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Organize imports",
         kind: "source.organizeImports",
@@ -1256,7 +1253,7 @@ describe("toCodeAction", () => {
           },
         ],
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
         CodeAction {
           "command": undefined,
           "diagnostics": [
@@ -1296,7 +1293,7 @@ describe("toCodeAction", () => {
     // normalize to the plain string for VS Code's Diagnostic constructor.
     "normalizes a MarkupContent diagnostic message to plain text",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Organize imports",
         kind: "quickfix",
@@ -1315,20 +1312,20 @@ describe("toCodeAction", () => {
           },
         ],
       });
-      expect(result.diagnostics?.[0]?.message).toBe("Unused import");
+      Vitest.expect(result.diagnostics?.[0]?.message).toBe("Unused import");
     }),
   );
 
   it.effect(
     "converts disabled action",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Extract variable",
         kind: "refactor.extract",
         disabled: { reason: "No expression selected" },
       });
-      expect(result.disabled).toMatchInlineSnapshot(`
+      Vitest.expect(result.disabled).toMatchInlineSnapshot(`
         {
           "reason": "No expression selected",
         }
@@ -1339,13 +1336,13 @@ describe("toCodeAction", () => {
   it.effect(
     "stashes data for resolve",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Fix all",
         kind: "source.fixAll",
         data: { uri: "file:///test.py" },
       });
-      expect(result.title).toBe("Fix all");
+      Vitest.expect(result.title).toBe("Fix all");
     }),
   );
 });
@@ -1354,12 +1351,13 @@ describe("toCodeAction", () => {
 // Trivial LSP-side converters
 // ---------------------------------------------------------------------------
 
-describe("toLspRange", () => {
+Vitest.describe("toLspRange", () => {
   it.effect(
     "extracts start and end",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toLspRange(new code.Range(1, 2, 3, 4))).toMatchInlineSnapshot(`
+      const code = yield* VsCode.Service;
+      Vitest.expect(toLspRange(new code.Range(1, 2, 3, 4)))
+        .toMatchInlineSnapshot(`
       	{
       	  "end": {
       	    "character": 4,
@@ -1375,11 +1373,11 @@ describe("toLspRange", () => {
   );
 });
 
-describe("toLocation", () => {
+Vitest.describe("toLocation", () => {
   it.effect(
     "parses uri and converts range",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocation(code, {
         uri: "file:///a.py",
         range: {
@@ -1387,7 +1385,7 @@ describe("toLocation", () => {
           end: { line: 0, character: 5 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	Location {
       	  "range": Range {
       	    "end": Position {
@@ -1412,11 +1410,11 @@ describe("toLocation", () => {
   );
 });
 
-describe("toLocationLink", () => {
+Vitest.describe("toLocationLink", () => {
   it.effect(
     "converts with originSelectionRange",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationLink(code, {
         targetUri: "file:///t.py",
         targetRange: {
@@ -1432,7 +1430,7 @@ describe("toLocationLink", () => {
           end: { line: 0, character: 3 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	{
       	  "originSelectionRange": Range {
       	    "end": Position {
@@ -1479,7 +1477,7 @@ describe("toLocationLink", () => {
   it.effect(
     "omits originSelectionRange when absent",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLocationLink(code, {
         targetUri: "file:///t.py",
         targetRange: {
@@ -1491,7 +1489,7 @@ describe("toLocationLink", () => {
           end: { line: 0, character: 1 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	{
       	  "originSelectionRange": undefined,
       	  "targetRange": Range {
@@ -1527,14 +1525,14 @@ describe("toLocationLink", () => {
   );
 });
 
-describe("toDocumentPositionParams", () => {
+Vitest.describe("toDocumentPositionParams", () => {
   it.effect(
     "serializes uri and position",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      const doc = createTestTextDocument("/x.py", "python", "");
+      const code = yield* VsCode.Service;
+      const doc = TestVsCode.createTestTextDocument("/x.py", "python", "");
       const result = toDocumentPositionParams(doc, new code.Position(5, 2));
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	{
       	  "position": {
       	    "character": 2,
@@ -1553,32 +1551,32 @@ describe("toDocumentPositionParams", () => {
 // Structural converters with branching logic
 // ---------------------------------------------------------------------------
 
-describe("toDocumentation", () => {
+Vitest.describe("toDocumentation", () => {
   it.effect(
     "returns undefined for undefined",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toDocumentation(code, undefined)).toBeUndefined();
+      const code = yield* VsCode.Service;
+      Vitest.expect(toDocumentation(code, undefined)).toBeUndefined();
     }),
   );
 
   it.effect(
     "passes through strings unchanged",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toDocumentation(code, "plain")).toBe("plain");
+      const code = yield* VsCode.Service;
+      Vitest.expect(toDocumentation(code, "plain")).toBe("plain");
     }),
   );
 
   it.effect(
     "wraps MarkupContent in MarkdownString",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toDocumentation(code, {
         kind: lsp.MarkupKind.Markdown,
         value: "# Heading",
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	MarkdownString {
       	  "baseUri": undefined,
       	  "isTrusted": undefined,
@@ -1591,24 +1589,24 @@ describe("toDocumentation", () => {
   );
 });
 
-describe("toTooltip", () => {
+Vitest.describe("toTooltip", () => {
   it.effect(
     "passes through strings",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
-      expect(toTooltip(code, "hi")).toBe("hi");
+      const code = yield* VsCode.Service;
+      Vitest.expect(toTooltip(code, "hi")).toBe("hi");
     }),
   );
 
   it.effect(
     "wraps MarkupContent",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toTooltip(code, {
         kind: lsp.MarkupKind.Markdown,
         value: "**bold**",
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	MarkdownString {
       	  "baseUri": undefined,
       	  "isTrusted": undefined,
@@ -1621,11 +1619,11 @@ describe("toTooltip", () => {
   );
 });
 
-describe("toWorkspaceEdit", () => {
+Vitest.describe("toWorkspaceEdit", () => {
   it.effect(
     "converts changes map",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toWorkspaceEdit(code, {
         changes: {
           "file:///a.py": [
@@ -1639,14 +1637,14 @@ describe("toWorkspaceEdit", () => {
           ],
         },
       });
-      expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+      Vitest.expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
     }),
   );
 
   it.effect(
     "converts documentChanges with textDocument",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toWorkspaceEdit(code, {
         documentChanges: [
           {
@@ -1663,16 +1661,16 @@ describe("toWorkspaceEdit", () => {
           },
         ],
       });
-      expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
+      Vitest.expect(result).toMatchInlineSnapshot(`WorkspaceEdit {}`);
     }),
   );
 });
 
-describe("toLspDiagnostic", () => {
+Vitest.describe("toLspDiagnostic", () => {
   it.effect(
     "maps scalar string code, severity, source",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const d = new code.Diagnostic(
         new code.Range(0, 0, 0, 1),
         "msg",
@@ -1680,7 +1678,7 @@ describe("toLspDiagnostic", () => {
       );
       d.code = "E501";
       d.source = "ruff";
-      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
       	{
       	  "code": "E501",
       	  "message": "msg",
@@ -1704,14 +1702,14 @@ describe("toLspDiagnostic", () => {
   it.effect(
     "maps numeric code",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const d = new code.Diagnostic(
         new code.Range(0, 0, 0, 1),
         "msg",
         code.DiagnosticSeverity.Error,
       );
       d.code = 42;
-      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
       	{
       	  "code": 42,
       	  "message": "msg",
@@ -1735,14 +1733,14 @@ describe("toLspDiagnostic", () => {
   it.effect(
     "unwraps object code via .value",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const d = new code.Diagnostic(
         new code.Range(0, 0, 0, 1),
         "msg",
         code.DiagnosticSeverity.Information,
       );
       d.code = { value: "F401", target: code.Uri.parse("https://x") };
-      expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
+      Vitest.expect(toLspDiagnostic(code, d)).toMatchInlineSnapshot(`
       	{
       	  "code": "F401",
       	  "message": "msg",
@@ -1764,11 +1762,11 @@ describe("toLspDiagnostic", () => {
   );
 });
 
-describe("toLspCodeActionContext", () => {
+Vitest.describe("toLspCodeActionContext", () => {
   it.effect(
     "maps trigger kind, diagnostics, and single `only` kind",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLspCodeActionContext(code, {
         diagnostics: [
           new code.Diagnostic(
@@ -1780,7 +1778,7 @@ describe("toLspCodeActionContext", () => {
         only: code.CodeActionKind.Empty.append("quickfix"),
         triggerKind: code.CodeActionTriggerKind.Automatic,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	{
       	  "diagnostics": [
       	    {
@@ -1812,13 +1810,13 @@ describe("toLspCodeActionContext", () => {
   it.effect(
     "omits `only` when absent",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toLspCodeActionContext(code, {
         only: undefined,
         diagnostics: [],
         triggerKind: code.CodeActionTriggerKind.Invoke,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	{
       	  "diagnostics": [],
       	  "triggerKind": 1,
@@ -1832,13 +1830,13 @@ describe("toLspCodeActionContext", () => {
 // Branches missing from previously-tested converters
 // ---------------------------------------------------------------------------
 
-describe("toFoldingRange without kind", () => {
+Vitest.describe("toFoldingRange without kind", () => {
   it.effect(
     "leaves kind undefined",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toFoldingRange(code, { startLine: 0, endLine: 3 });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	FoldingRange {
       	  "end": 3,
       	  "kind": undefined,
@@ -1849,18 +1847,18 @@ describe("toFoldingRange without kind", () => {
   );
 });
 
-describe("toSelectionRange leaf", () => {
+Vitest.describe("toSelectionRange leaf", () => {
   it.effect(
     "converts range without parent",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toSelectionRange(code, {
         range: {
           start: { line: 0, character: 0 },
           end: { line: 0, character: 1 },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	SelectionRange {
       	  "parent": undefined,
       	  "range": Range {
@@ -1879,11 +1877,11 @@ describe("toSelectionRange leaf", () => {
   );
 });
 
-describe("toCompletionItem additional branches", () => {
+Vitest.describe("toCompletionItem additional branches", () => {
   it.effect(
     "converts InsertReplaceEdit textEdit into insert/replace range",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "print",
         textEdit: {
@@ -1898,7 +1896,7 @@ describe("toCompletionItem additional branches", () => {
           },
         },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	CompletionItem {
       	  "additionalTextEdits": undefined,
       	  "command": undefined,
@@ -1944,7 +1942,7 @@ describe("toCompletionItem additional branches", () => {
   it.effect(
     "maps additionalTextEdits, commitCharacters, filterText, sortText, preselect, command",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "x",
         filterText: "xx",
@@ -1962,7 +1960,7 @@ describe("toCompletionItem additional branches", () => {
         ],
         command: { title: "Log", command: "log", arguments: [1] },
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	CompletionItem {
       	  "additionalTextEdits": [
       	    TextEdit {
@@ -2012,12 +2010,12 @@ describe("toCompletionItem additional branches", () => {
   it.effect(
     "maps legacy deprecated boolean to Deprecated tag",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCompletionItem(code, {
         label: "old",
         deprecated: true,
       });
-      expect(result.tags).toMatchInlineSnapshot(`
+      Vitest.expect(result.tags).toMatchInlineSnapshot(`
       	[
       	  1,
       	]
@@ -2026,11 +2024,11 @@ describe("toCompletionItem additional branches", () => {
   );
 });
 
-describe("toInlayHint additional branches", () => {
+Vitest.describe("toInlayHint additional branches", () => {
   it.effect(
     "maps tooltip, paddingRight, label part command",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toInlayHint(code, {
         position: { line: 0, character: 0 },
         label: [
@@ -2043,7 +2041,7 @@ describe("toInlayHint additional branches", () => {
         tooltip: "plain tip",
         paddingRight: true,
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	InlayHint {
       	  "kind": undefined,
       	  "label": [
@@ -2080,11 +2078,11 @@ describe("toInlayHint additional branches", () => {
   );
 });
 
-describe("toCodeAction additional branches", () => {
+Vitest.describe("toCodeAction additional branches", () => {
   it.effect(
     "maps command and passes through scalar diagnostic code",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const result = toCodeAction(code, {
         title: "Run",
         command: { title: "Do it", command: "do", arguments: [42] },
@@ -2099,7 +2097,7 @@ describe("toCodeAction additional branches", () => {
           },
         ],
       });
-      expect(result).toMatchInlineSnapshot(`
+      Vitest.expect(result).toMatchInlineSnapshot(`
       	CodeAction {
       	  "command": {
       	    "arguments": [
@@ -2145,11 +2143,11 @@ describe("toCodeAction additional branches", () => {
 // back to the server.
 // ---------------------------------------------------------------------------
 
-describe("inlay hint round-trip", () => {
+Vitest.describe("inlay hint round-trip", () => {
   it.effect(
     "preserves data and core fields",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const data = { id: 99, server: "ty" };
       const back = toLspInlayHint(
         toInlayHint(code, {
@@ -2160,8 +2158,8 @@ describe("inlay hint round-trip", () => {
           data,
         }),
       );
-      expect(back.data).toBe(data);
-      expect(back).toMatchInlineSnapshot(`
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
       	{
       	  "data": {
       	    "id": 99,
@@ -2182,7 +2180,7 @@ describe("inlay hint round-trip", () => {
   it.effect(
     "round-trips label parts with command",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const back = toLspInlayHint(
         toInlayHint(code, {
           position: { line: 0, character: 0 },
@@ -2194,7 +2192,7 @@ describe("inlay hint round-trip", () => {
           ],
         }),
       );
-      expect(back).toMatchInlineSnapshot(`
+      Vitest.expect(back).toMatchInlineSnapshot(`
       	{
       	  "label": [
       	    {
@@ -2218,11 +2216,11 @@ describe("inlay hint round-trip", () => {
   );
 });
 
-describe("completion item round-trip", () => {
+Vitest.describe("completion item round-trip", () => {
   it.effect(
     "preserves data and flattens labelDetails/markdown docs",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const data = { resolveId: "abc" };
       const back = toLspCompletionItem(
         code,
@@ -2239,8 +2237,8 @@ describe("completion item round-trip", () => {
           data,
         }),
       );
-      expect(back.data).toBe(data);
-      expect(back).toMatchInlineSnapshot(`
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
       	{
       	  "data": {
       	    "resolveId": "abc",
@@ -2259,11 +2257,11 @@ describe("completion item round-trip", () => {
   );
 });
 
-describe("code action round-trip", () => {
+Vitest.describe("code action round-trip", () => {
   it.effect(
     "preserves data, kind, command, diagnostics, isPreferred, disabled",
     Effect.fn(function* () {
-      const code = yield* withVsCode;
+      const code = yield* VsCode.Service;
       const data = { token: "xyz" };
       const back = toLspCodeAction(
         code,
@@ -2288,8 +2286,8 @@ describe("code action round-trip", () => {
           data,
         }),
       );
-      expect(back.data).toBe(data);
-      expect(back).toMatchInlineSnapshot(`
+      Vitest.expect(back.data).toBe(data);
+      Vitest.expect(back).toMatchInlineSnapshot(`
       	{
       	  "command": {
       	    "arguments": undefined,

@@ -1,75 +1,60 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { TestExtensionContextLive } from "../../__mocks__/TestExtensionContext.ts";
-import { TestPythonExtension } from "../../__mocks__/TestPythonExtension.ts";
+import * as TestPythonExtension from "../../__mocks__/TestPythonExtension.ts";
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import {
-  createTestNotebookDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import * as Api from "../Api.ts";
 import * as VsCode from "../VsCode.ts";
 
-const withTestCtx = Effect.fn(function* (
-  options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
-) {
-  const testVsCode = yield* TestVsCode.make(options);
-  return {
-    vscode: testVsCode,
-    layer: Layer.empty.pipe(
-      Layer.merge(Api.layer),
-      Layer.provide(makeTestNotebookRuntime()),
-      Layer.provide(TestTelemetryLive),
-      Layer.provide(TestPythonExtension.layer),
-      Layer.provide(TestExtensionContextLive),
-      Layer.provideMerge(testVsCode.layer),
-    ),
-  };
-});
+const it = EffectTest.make(
+  Layer.empty.pipe(
+    Layer.merge(Api.layer),
+    Layer.provide(makeTestNotebookRuntime()),
+    Layer.provide(TestTelemetryLive),
+    Layer.provide(TestPythonExtension.layer),
+    Layer.provide(TestExtensionContextLive),
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
-describe("Api", () => {
+Vitest.describe("Api", () => {
   it.effect(
     "has experimental.kernels namespace",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const api = yield* Api.Service;
 
-      const api = yield* Api.Service.pipe(Effect.provide(ctx.layer));
-
-      expect(api).toBeDefined();
-      expect(api.experimental).toBeDefined();
-      expect(api.experimental.kernels).toBeDefined();
-      expect(typeof api.experimental.kernels.getKernel).toBe("function");
+      Vitest.expect(api).toBeDefined();
+      Vitest.expect(api.experimental).toBeDefined();
+      Vitest.expect(api.experimental.kernels).toBeDefined();
+      Vitest.expect(typeof api.experimental.kernels.getKernel).toBe("function");
     }),
   );
 
   it.effect(
     "getKernel returns undefined for non-existent notebook",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
+      const api = yield* Api.Service;
+      const code = yield* VsCode.Service;
+      const fakeUri = yield* Effect.fromResult(
+        code.utils.parseUri("file:///non-existent-notebook.py"),
+      );
+      const kernel = yield* Effect.promise(() =>
+        api.experimental.kernels.getKernel(fakeUri),
+      );
 
-      const kernel = yield* Effect.gen(function* () {
-        const api = yield* Api.Service;
-        const code = yield* VsCode.Service;
-        const fakeUri = yield* Effect.fromResult(
-          code.utils.parseUri("file:///non-existent-notebook.py"),
-        );
-
-        return yield* Effect.promise(() =>
-          api.experimental.kernels.getKernel(fakeUri),
-        );
-      }).pipe(Effect.provide(ctx.layer));
-
-      expect(kernel).toBeUndefined();
+      Vitest.expect(kernel).toBeUndefined();
     }),
   );
 
   it.effect(
     "getKernel returns undefined when notebook exists but no controller",
     Effect.fn(function* () {
-      const notebookDoc = createTestNotebookDocument(
+      const notebookDoc = TestVsCode.createTestNotebookDocument(
         "file:///test/notebook_mo.py",
         {
           data: {
@@ -87,20 +72,18 @@ describe("Api", () => {
         },
       );
 
-      const ctx = yield* withTestCtx({ initialDocuments: [notebookDoc] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(notebookDoc);
+      const api = yield* Api.Service;
+      const code = yield* VsCode.Service;
+      const uri = yield* Effect.fromResult(
+        code.utils.parseUri("file:///test/notebook_mo.py"),
+      );
+      const kernel = yield* Effect.promise(() =>
+        api.experimental.kernels.getKernel(uri),
+      );
 
-      const kernel = yield* Effect.gen(function* () {
-        const api = yield* Api.Service;
-        const code = yield* VsCode.Service;
-        const uri = yield* Effect.fromResult(
-          code.utils.parseUri("file:///test/notebook_mo.py"),
-        );
-        return yield* Effect.promise(() =>
-          api.experimental.kernels.getKernel(uri),
-        );
-      }).pipe(Effect.provide(ctx.layer));
-
-      expect(kernel).toBeUndefined();
+      Vitest.expect(kernel).toBeUndefined();
     }),
   );
 });

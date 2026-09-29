@@ -12,7 +12,9 @@ import {
   Layer,
   Option,
   Order,
+  Ref,
   Schema,
+  Semaphore,
   Stream,
   String,
 } from "effect";
@@ -240,29 +242,50 @@ print(json.dumps(packages), flush=True)`,
       timeToLive: Duration.infinity,
       lookup: (key: EnvironmentKey) => inspect(key.env),
     });
+    const cacheInvalidation = Semaphore.makeUnsafe(1);
+    const invalidationGeneration = yield* Ref.make(
+      yield* invalidation.generation,
+    );
+
+    const synchronizeInvalidation = cacheInvalidation.withPermit(
+      Effect.gen(function* () {
+        const current = yield* invalidation.generation;
+        if (current === (yield* Ref.get(invalidationGeneration))) return;
+        yield* Cache.invalidateAll(cache);
+        yield* Ref.set(invalidationGeneration, current);
+      }),
+    );
 
     yield* Effect.forkScoped(
       invalidation.changes.pipe(
         Stream.runForEach((reason) =>
           Effect.logDebug("Invalidating environment validation cache").pipe(
             Effect.annotateLogs({ reason }),
-            Effect.andThen(Cache.invalidateAll(cache)),
+            Effect.andThen(synchronizeInvalidation),
           ),
         ),
       ),
+      { startImmediately: true },
     );
 
     const validate = Effect.fn("EnvironmentValidator.validate")(function* (
       env: py.Environment,
     ) {
       const key = new EnvironmentKey(env);
-      // Only reuse successes: drop failed entries so a just-fixed
-      // environment (e.g. marimo installed in a terminal) is re-checked
-      // on the next run. Concurrent lookups for the same key still
-      // dedupe while the inspection is in flight.
-      return yield* Cache.get(cache, key).pipe(
-        Effect.tapError(() => Cache.invalidate(cache, key)),
-      );
+      for (;;) {
+        yield* synchronizeInvalidation;
+        const generation = yield* invalidation.generation;
+        // Only reuse successes: drop failed entries so a just-fixed
+        // environment (e.g. marimo installed in a terminal) is re-checked
+        // on the next run. Concurrent lookups for the same key still
+        // dedupe while the inspection is in flight.
+        const result = yield* Cache.get(cache, key).pipe(
+          Effect.tapError(() => Cache.invalidate(cache, key)),
+        );
+        // An invalidation that arrived during the lookup may have raced the
+        // cached entry; synchronize and look up again.
+        if ((yield* invalidation.generation) === generation) return result;
+      }
     });
 
     return Service.of({ validate });

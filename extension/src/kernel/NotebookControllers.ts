@@ -128,9 +128,13 @@ export const layer = Layer.effectDiscard(
       });
     }).pipe(Effect.withSpan("NotebookControllers.refresh"));
 
+    // Acquire the listener first so an environment change during the initial
+    // refresh is buffered rather than dropped.
+    const environmentChanges = yield* pyExt.subscribeEnvironmentChanges;
     yield* refresh;
     yield* Effect.forkScoped(
-      pyExt.environmentChanges.pipe(Stream.runForEach(() => refresh)),
+      environmentChanges.pipe(Stream.runForEach(() => refresh)),
+      { startImmediately: true },
     );
 
     // Subscribe to notebook editor changes to update affinity
@@ -153,11 +157,13 @@ export const layer = Layer.effectDiscard(
           }),
         ),
       ),
+      { startImmediately: true },
     );
 
     // Track sandbox controller selections
     yield* Effect.forkScoped(
       trackControllerSelections(sandboxController, notebooks),
+      { startImmediately: true },
     );
   }).pipe(Effect.withSpan("NotebookControllers.layer")),
 ).pipe(
@@ -305,6 +311,7 @@ const createOrUpdateController = Effect.fn(
 
           yield* Effect.forkScoped(
             trackControllerSelections(controller, notebooks),
+            { startImmediately: true },
           );
 
           return controller;

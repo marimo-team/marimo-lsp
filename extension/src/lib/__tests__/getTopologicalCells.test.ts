@@ -1,19 +1,17 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, Layer, Option, Stream } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Option } from "effect";
 
-import { createTestNotebookDocument, Uri } from "../../__mocks__/TestVsCode.ts";
-import { makeTestNotebookDocumentSession } from "../../__tests__/__utils__/TestNotebookDocumentSession.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { NOTEBOOK_TYPE } from "../../constants.ts";
-import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
-import * as NotebookVariables from "../../panel/variables/NotebookVariables.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
-  type NotebookId,
 } from "../../schemas/MarimoNotebookDocument.ts";
 import type { VariablesNotification } from "../../types.ts";
 import { getTopologicalCells } from "../getTopologicalCells.ts";
 import { cellId, variableName } from "./branded.ts";
+import * as TestTopologicalCells from "./TestTopologicalCells.ts";
 
 function createMockVariablesOp(
   vars: Array<{
@@ -35,7 +33,7 @@ function createMockVariablesOp(
 function makeNotebookWithCells(
   cellConfigs: Array<{ stableId: string; code: string }>,
 ) {
-  const uri = Uri.file("/test/notebook.py");
+  const uri = VsCodeValues.Uri.file("/test/notebook.py");
   const cells = cellConfigs.map((config) => ({
     kind: 2 as const, // Code cell
     value: config.code,
@@ -45,7 +43,7 @@ function makeNotebookWithCells(
     }),
   }));
 
-  const raw = createTestNotebookDocument(uri, {
+  const raw = VsCodeValues.createTestNotebookDocument(uri, {
     notebookType: NOTEBOOK_TYPE,
     data: { cells, metadata: {} },
   });
@@ -53,41 +51,21 @@ function makeNotebookWithCells(
   return MarimoNotebookDocument.from(raw);
 }
 
-const sessions = new Map<NotebookId, NotebookDocumentSessions.Session>();
-const documentSessions = Layer.succeed(NotebookDocumentSessions.Service, {
-  current: (id: NotebookId) => Option.fromNullishOr(sessions.get(id)),
-  forDocument: (document) =>
-    Option.fromNullishOr(
-      Array.from(sessions.values()).find(
-        (session) => session.document === document,
-      ),
-    ),
-  active: Stream.empty,
-});
-const withTestLayer = () =>
-  NotebookVariables.layer.pipe(Layer.provide(documentSessions));
-
 const stableId = (cell: { metadata?: unknown }) =>
   Option.getOrUndefined(MarimoNotebookCell.decodeMetadata(cell.metadata))
     ?.marimoRuntime.stableId ?? undefined;
 
-const sessionFor = (notebook: MarimoNotebookDocument) => {
-  const current = sessions.get(notebook.id);
-  if (current?.document === notebook.rawNotebookDocument) return current;
-  const session = makeTestNotebookDocumentSession(notebook.rawNotebookDocument);
-  sessions.set(notebook.id, session);
-  return session;
-};
+const it = EffectTest.make(TestTopologicalCells.layer);
 
-describe("getTopologicalCells", () => {
+Vitest.describe("getTopologicalCells", () => {
   it.effect("returns empty array for notebook with no cells", () =>
     Effect.gen(function* () {
       const doc = makeNotebookWithCells([]);
 
       const result = yield* getTopologicalCells(doc);
 
-      expect(result).toEqual([]);
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(result).toEqual([]);
+    }),
   );
 
   it.effect(
@@ -102,12 +80,12 @@ describe("getTopologicalCells", () => {
 
         const result = yield* getTopologicalCells(doc);
 
-        expect(result.length).toBe(3);
+        Vitest.expect(result.length).toBe(3);
         // Document order since no variables registered
-        expect(stableId(result[0])).toBe("cell-a");
-        expect(stableId(result[1])).toBe("cell-b");
-        expect(stableId(result[2])).toBe("cell-c");
-      }).pipe(Effect.provide(withTestLayer())),
+        Vitest.expect(stableId(result[0])).toBe("cell-a");
+        Vitest.expect(stableId(result[1])).toBe("cell-b");
+        Vitest.expect(stableId(result[2])).toBe("cell-c");
+      }),
   );
 
   it.effect("reorders cells based on variable dependencies", () =>
@@ -117,10 +95,10 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* NotebookVariables.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* service.updateVariables(
-        sessionFor(doc),
+      yield* cells.updateVariables(
+        doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
         ]),
@@ -128,11 +106,11 @@ describe("getTopologicalCells", () => {
 
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.length).toBe(2);
+      Vitest.expect(result.length).toBe(2);
       // cell-a should come before cell-b because cell-a defines x which cell-b uses
-      expect(stableId(result[0])).toBe("cell-a");
-      expect(stableId(result[1])).toBe("cell-b");
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(stableId(result[0])).toBe("cell-a");
+      Vitest.expect(stableId(result[1])).toBe("cell-b");
+    }),
   );
 
   it.effect("handles chain of dependencies", () =>
@@ -145,10 +123,10 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" }, // defines x
       ]);
 
-      const service = yield* NotebookVariables.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* service.updateVariables(
-        sessionFor(doc),
+      yield* cells.updateVariables(
+        doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
           { name: "y", declared_by: ["cell-b"], used_by: ["cell-c"] },
@@ -157,18 +135,18 @@ describe("getTopologicalCells", () => {
 
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.length).toBe(3);
+      Vitest.expect(result.length).toBe(3);
       // Should be topologically sorted: A, B, C
-      expect(stableId(result[0])).toBe("cell-a");
-      expect(stableId(result[1])).toBe("cell-b");
-      expect(stableId(result[2])).toBe("cell-c");
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(stableId(result[0])).toBe("cell-a");
+      Vitest.expect(stableId(result[1])).toBe("cell-b");
+      Vitest.expect(stableId(result[2])).toBe("cell-c");
+    }),
   );
 
   it.effect("places cells without stableId at the end", () =>
     Effect.gen(function* () {
-      const uri = Uri.file("/test/notebook.py");
-      const raw = createTestNotebookDocument(uri, {
+      const uri = VsCodeValues.Uri.file("/test/notebook.py");
+      const raw = VsCodeValues.createTestNotebookDocument(uri, {
         notebookType: NOTEBOOK_TYPE,
         data: {
           cells: [
@@ -200,10 +178,10 @@ describe("getTopologicalCells", () => {
       });
       const doc = MarimoNotebookDocument.from(raw);
 
-      const service = yield* NotebookVariables.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* service.updateVariables(
-        sessionFor(doc),
+      yield* cells.updateVariables(
+        doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: ["cell-b"] },
         ]),
@@ -211,12 +189,12 @@ describe("getTopologicalCells", () => {
 
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.length).toBe(3);
+      Vitest.expect(result.length).toBe(3);
       // cell-a first (defines x), cell-b second (uses x), cell without id last
-      expect(stableId(result[0])).toBe("cell-a");
-      expect(stableId(result[1])).toBe("cell-b");
-      expect(stableId(result[2])).toBeUndefined();
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(stableId(result[0])).toBe("cell-a");
+      Vitest.expect(stableId(result[1])).toBe("cell-b");
+      Vitest.expect(stableId(result[2])).toBeUndefined();
+    }),
   );
 
   it.effect("handles independent cells (no shared variables)", () =>
@@ -227,11 +205,11 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-c", code: "z = 3" },
       ]);
 
-      const service = yield* NotebookVariables.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
       // Each cell defines its own variable, no cross-cell dependencies
-      yield* service.updateVariables(
-        sessionFor(doc),
+      yield* cells.updateVariables(
+        doc,
         createMockVariablesOp([
           { name: "x", declared_by: ["cell-a"], used_by: [] },
           { name: "y", declared_by: ["cell-b"], used_by: [] },
@@ -243,12 +221,12 @@ describe("getTopologicalCells", () => {
 
       // All cells are independent, so they should all be present
       // Order is determined by getTopologicalCellIds (cells with no deps go to end)
-      expect(result.length).toBe(3);
+      Vitest.expect(result.length).toBe(3);
       const stableIds = result.map(stableId);
-      expect(stableIds).toContain("cell-a");
-      expect(stableIds).toContain("cell-b");
-      expect(stableIds).toContain("cell-c");
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(stableIds).toContain("cell-a");
+      Vitest.expect(stableIds).toContain("cell-b");
+      Vitest.expect(stableIds).toContain("cell-c");
+    }),
   );
 
   it.effect("handles diamond dependency pattern", () =>
@@ -261,10 +239,10 @@ describe("getTopologicalCells", () => {
         { stableId: "cell-a", code: "x = 1" },
       ]);
 
-      const service = yield* NotebookVariables.Service;
+      const cells = yield* TestTopologicalCells.Service;
 
-      yield* service.updateVariables(
-        sessionFor(doc),
+      yield* cells.updateVariables(
+        doc,
         createMockVariablesOp([
           {
             name: "x",
@@ -278,7 +256,7 @@ describe("getTopologicalCells", () => {
 
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.length).toBe(4);
+      Vitest.expect(result.length).toBe(4);
 
       const stableIds = result.map(stableId);
       const indexA = stableIds.indexOf("cell-a");
@@ -287,18 +265,18 @@ describe("getTopologicalCells", () => {
       const indexD = stableIds.indexOf("cell-d");
 
       // A must come before B and C
-      expect(indexA).toBeLessThan(indexB);
-      expect(indexA).toBeLessThan(indexC);
+      Vitest.expect(indexA).toBeLessThan(indexB);
+      Vitest.expect(indexA).toBeLessThan(indexC);
       // B and C must come before D
-      expect(indexB).toBeLessThan(indexD);
-      expect(indexC).toBeLessThan(indexD);
-    }).pipe(Effect.provide(withTestLayer())),
+      Vitest.expect(indexB).toBeLessThan(indexD);
+      Vitest.expect(indexC).toBeLessThan(indexD);
+    }),
   );
 
   it.effect("filters out non-Python cells (SQL, markdown)", () =>
     Effect.gen(function* () {
-      const uri = Uri.file("/test/notebook.py");
-      const raw = createTestNotebookDocument(uri, {
+      const uri = VsCodeValues.Uri.file("/test/notebook.py");
+      const raw = VsCodeValues.createTestNotebookDocument(uri, {
         notebookType: NOTEBOOK_TYPE,
         data: {
           cells: [
@@ -349,11 +327,11 @@ describe("getTopologicalCells", () => {
       const doc = MarimoNotebookDocument.from(raw);
       const result = yield* getTopologicalCells(doc);
 
-      expect(result.map(stableId)).toEqual([
+      Vitest.expect(result.map(stableId)).toEqual([
         "python-1",
         "python-2",
         "python-3",
       ]);
-    }).pipe(Effect.provide(withTestLayer())),
+    }),
   );
 });

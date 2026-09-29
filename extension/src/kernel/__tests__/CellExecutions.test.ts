@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { createCellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import {
   Context,
@@ -14,11 +14,8 @@ import {
 import type * as vscode from "vscode";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import {
-  createNotebookCell,
-  NotebookRange,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { makeTestNotebookRuntime } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import * as CellExecutionsModule from "../../kernel/CellExecutions.ts";
 import { CellCommand } from "../../kernel/CellRunReducer.ts";
@@ -28,6 +25,7 @@ import {
   runId,
   UNSAFE_castForNegativeTest,
 } from "../../lib/__tests__/branded.ts";
+import * as DocumentLifecycle from "../../notebook/__tests__/documentLifecycle.ts";
 import * as NotebookDocumentSessions from "../../notebook/NotebookDocumentSessions.ts";
 import * as VsCode from "../../platform/VsCode.ts";
 import {
@@ -38,24 +36,20 @@ import {
 import type { CellOutputReplay } from "../../schemas/Models.gen.ts";
 import type { CellRuntimeState } from "../../types.ts";
 
-const TestNotebookRuntime = makeTestNotebookRuntime();
+const TestNotebookRuntimeLayer = makeTestNotebookRuntime();
 const CellExecutions = CellExecutionsModule.Service;
 type Drive = CellExecutionsModule.Drive;
 type NotebookExecutions = CellExecutionsModule.NotebookExecutions;
 
-const withTestCtx = Effect.fn(function* (
-  options: Parameters<(typeof TestVsCode)["make"]>[0] = {},
-) {
-  const vscode = yield* TestVsCode.make(options);
-  const layer = Layer.empty.pipe(
+const it = EffectTest.make(
+  Layer.empty.pipe(
     Layer.merge(CellExecutionsModule.defaultLayer),
     Layer.provideMerge(NotebookDocumentSessions.layer),
-    Layer.provide(TestNotebookRuntime),
+    Layer.provide(TestNotebookRuntimeLayer),
     Layer.provide(TestTelemetryLive),
-    Layer.provideMerge(vscode.layer),
-  );
-  return { vscode, layer };
-});
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
 
 const CELL_ID = cellId("test-cell-id");
 
@@ -78,13 +72,11 @@ function normalizeOutputsForSnapshot(
   }));
 }
 
-describe("buildCellOutputs", () => {
+Vitest.describe("buildCellOutputs", () => {
   it.effect(
     "handles stdout output",
 
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -99,17 +91,15 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles stderr output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -125,17 +115,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles multiple console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -163,17 +151,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles marimo error output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -192,16 +178,15 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles HTML output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -215,17 +200,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles JSON output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -238,16 +221,15 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles mixed output and console streams",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -275,17 +257,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles stdin output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -301,33 +281,29 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles empty state",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = createCellRuntimeState();
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Should still have the marimo UI output
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles multiple errors in marimo error output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -351,17 +327,15 @@ describe("buildCellOutputs", () => {
           },
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles multiple stderr errors",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -389,17 +363,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles stdout + stderr + output together",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -433,17 +405,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles application/vnd.marimo+traceback output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -456,17 +426,15 @@ describe("buildCellOutputs", () => {
         };
 
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "filters out empty text/plain stdout output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -482,17 +450,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "filters out empty text/plain stderr output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -508,17 +474,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "suppresses redundant exception marimo-error when a traceback is also present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -545,17 +509,15 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "keeps strict-exception marimo-error even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -583,17 +545,15 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "keeps exception marimo-error with raising_cell even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -621,17 +581,15 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "keeps marimo-error rule violations even when a traceback is present",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -658,9 +616,9 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
@@ -669,8 +627,6 @@ describe("buildCellOutputs", () => {
     // both stderr console outputs; they must not collapse into one output.
     "keeps the traceback in its own output when a stderr log precedes it",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         const state: CellRuntimeState = {
@@ -703,7 +659,7 @@ describe("buildCellOutputs", () => {
           ],
         };
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       const normalized = normalizeOutputsForSnapshot(outputs);
 
@@ -712,16 +668,16 @@ describe("buildCellOutputs", () => {
           (i) => typeof i.data === "string" && i.data.includes("some message"),
         ),
       );
-      expect(hasLog, "stderr log should be rendered").toBe(true);
+      Vitest.expect(hasLog, "stderr log should be rendered").toBe(true);
 
       const errorOutput = normalized.find((o) =>
         o.items.some((i) => i.mime === "application/vnd.code.notebook.error"),
       );
-      expect(
+      Vitest.expect(
         errorOutput,
         "traceback should render as a structured error output",
       ).toBeDefined();
-      expect(
+      Vitest.expect(
         errorOutput?.items.every(
           (i) => i.mime === "application/vnd.code.notebook.error",
         ),
@@ -733,8 +689,6 @@ describe("buildCellOutputs", () => {
   it.effect(
     "filters out empty traceback output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -747,17 +701,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "filters out null output data",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -770,17 +722,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "filters out undefined output data",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -793,16 +743,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles mix of empty and non-empty console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -836,17 +785,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles null output object",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
-
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: null,
@@ -855,16 +802,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles empty marimo error data array",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -878,16 +824,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "preserves whitespace-only output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -903,16 +848,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles numeric zero output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -926,16 +870,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles boolean false output",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         output: {
@@ -949,16 +892,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "handles media channel in console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -974,16 +916,15 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "ignores output/marimo-error/pdb channels in console outputs",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1017,17 +958,16 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Should only have stdout output, the other channels should be ignored
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "separates console outputs from main output correctly",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1049,17 +989,16 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
       // Both outputs should be present but in separate channels
-      expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
+      Vitest.expect(normalizeOutputsForSnapshot(outputs)).toMatchSnapshot();
     }),
   );
 
   it.effect(
     "offers native stdout and rich media as alternate MIME representations",
     Effect.fn(function* () {
-      const ctx = yield* withTestCtx();
       const state: CellRuntimeState = {
         ...createCellRuntimeState(),
         consoleOutputs: [
@@ -1081,47 +1020,67 @@ describe("buildCellOutputs", () => {
       const outputs = yield* Effect.gen(function* () {
         const code = yield* VsCode.Service;
         return buildCellOutputs(CELL_ID, state, code);
-      }).pipe(Effect.provide(ctx.layer));
+      });
 
-      expect(outputs).toHaveLength(1);
+      Vitest.expect(outputs).toHaveLength(1);
       const output = outputs.at(0);
       if (output === undefined) throw new Error("Expected stdout output");
-      expect(output.metadata).toEqual({ channel: "stdout" });
-      expect(output.items.map((item) => item.mime)).toEqual([
+      Vitest.expect(output.metadata).toEqual({ channel: "stdout" });
+      Vitest.expect(output.items.map((item) => item.mime)).toEqual([
         "application/vnd.code.notebook.stdout",
         "application/vnd.marimo.ui+json",
       ]);
 
       const richItem = output.items.at(1);
       if (richItem === undefined) throw new Error("Expected rich MIME item");
-      expect(JSON.parse(new TextDecoder().decode(richItem.data))).toMatchObject(
-        {
-          state: { consoleOutputs: state.consoleOutputs },
-        },
-      );
+      Vitest.expect(
+        JSON.parse(new TextDecoder().decode(richItem.data)),
+      ).toMatchObject({
+        state: { consoleOutputs: state.consoleOutputs },
+      });
     }),
   );
 });
 
-describe("NotebookExecutions", () => {
+Vitest.describe("NotebookExecutions", () => {
   const openNotebook = Effect.fn(function* (
     executions: Context.Service.Shape<typeof CellExecutions>,
     document: vscode.NotebookDocument,
     getDrive = Effect.succeed(Option.none<Drive>()),
   ) {
-    yield* Effect.yieldNow;
+    const vscode = yield* TestVsCode.Service;
     const sessions = yield* NotebookDocumentSessions.Service;
-    const session = sessions.forDocument(document);
-    if (Option.isNone(session)) {
-      return yield* Effect.die("Expected an open notebook document session");
-    }
+    yield* vscode.setActiveNotebookEditor(
+      Option.some(TestVsCode.createTestNotebookEditor(document)),
+    );
+    const session = yield* sessions.active.pipe(
+      Stream.filter(Option.exists((active) => active.document === document)),
+      Stream.runHead,
+      Effect.map((active) => Option.getOrThrow(Option.flatten(active))),
+    );
     const notebook = yield* executions
-      .open(session.value, {
+      .open(session, {
         getDrive,
       })
       .pipe(Effect.orDie);
-    return { notebook, session: session.value };
+    return { notebook, session };
   });
+
+  const observeWhen = <A, E, R>(
+    stream: Stream.Stream<A, E, R>,
+    predicate: (value: A) => boolean,
+  ) =>
+    Effect.gen(function* () {
+      const ready = yield* Latch.make();
+      const observed = yield* stream.pipe(
+        Stream.tap(() => ready.open),
+        Stream.filter(predicate),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* ready.await;
+      return observed;
+    });
 
   const acknowledgeSubmission = Effect.fn(function* (
     notebook: NotebookExecutions,
@@ -1155,7 +1114,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1209,14 +1169,14 @@ describe("NotebookExecutions", () => {
         });
         yield* presented.await;
 
-        expect(events).toEqual([
+        Vitest.expect(events).toEqual([
           "first:OpenRun:run-1",
           "first:CloseRun:run-1",
           "second:OpenRun:run-2",
           "second:StartRun:run-2",
           "second:RenderOutputs:run-2",
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1237,7 +1197,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1353,7 +1314,7 @@ describe("NotebookExecutions", () => {
         yield* releaseProjection.open;
         yield* latestClosed.await;
 
-        expect(events.map((event) => event.label)).toEqual([
+        Vitest.expect(events.map((event) => event.label)).toEqual([
           "SetDiagnostic",
           "OpenRun:run-1",
           "StartRun:run-1",
@@ -1367,7 +1328,7 @@ describe("NotebookExecutions", () => {
           "SetDiagnostic",
           "CloseRun:run-2",
         ]);
-        expect(
+        Vitest.expect(
           events.filter((event) => event.label.startsWith("RenderOutputs")),
         ).toEqual([
           { label: "RenderOutputs:run-1", console: ["first"] },
@@ -1376,7 +1337,7 @@ describe("NotebookExecutions", () => {
             console: ["firstrun-2-startmiddlelatest"],
           },
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1397,7 +1358,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1460,8 +1422,8 @@ describe("NotebookExecutions", () => {
         yield* releaseProjection.open;
         yield* runClosed.await;
 
-        expect(rendered).toEqual([undefined, "42"]);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(rendered).toEqual([undefined, "42"]);
+      });
     }),
   );
 
@@ -1482,7 +1444,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1520,7 +1483,7 @@ describe("NotebookExecutions", () => {
         yield* notebook.remove(id);
         yield* removed.await;
 
-        expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
+        Vitest.expect(events).toEqual(["OpenRun:run-1", "CloseRun:run-1"]);
         yield* notebook.apply({
           op: "cell-op",
           cell_id: id,
@@ -1548,12 +1511,12 @@ describe("NotebookExecutions", () => {
         });
         yield* restored.await;
 
-        expect(events).toEqual([
+        Vitest.expect(events).toEqual([
           "OpenRun:run-1",
           "CloseRun:run-1",
           "OpenRun:restored-run",
         ]);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -1571,7 +1534,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1585,15 +1549,15 @@ describe("NotebookExecutions", () => {
         );
 
         // The editor moves ahead before the kernel acknowledges the submission.
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 2";
-        expect(editor.notebook.cellAt(0).document.getText()).toBe("x = 2");
-        yield* ctx.vscode.notebookChange({
+        Vitest.expect(editor.notebook.cellAt(0).document.getText()).toBe(
+          "x = 2",
+        );
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1614,8 +1578,10 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
+      });
     }),
   );
 
@@ -1623,7 +1589,7 @@ describe("NotebookExecutions", () => {
     "tracks sources for cells added after the notebook opens",
     Effect.fn(function* () {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py");
-      const addedCell = createNotebookCell(
+      const addedCell = TestVsCode.createNotebookCell(
         editor.notebook,
         {
           kind: 1,
@@ -1636,25 +1602,24 @@ describe("NotebookExecutions", () => {
         0,
       );
       const id = Option.getOrThrow(MarimoNotebookCell.from(addedCell).id);
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
         const { notebook } = yield* openNotebook(executions, editor.notebook);
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
 
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [],
           contentChanges: [
             {
-              range: new NotebookRange(0, 0),
+              range: new TestVsCode.NotebookRange(0, 0),
               removedCells: [],
               addedCells: [addedCell],
             },
@@ -1669,8 +1634,10 @@ describe("NotebookExecutions", () => {
           stale_inputs: true,
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
+      });
     }),
   );
 
@@ -1688,7 +1655,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1706,8 +1674,10 @@ describe("NotebookExecutions", () => {
           run_id: "run-2",
         });
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -1725,7 +1695,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1734,7 +1705,7 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
         const notifyChange = () =>
-          ctx.vscode.notebookChange({
+          vscode.notebookChange({
             notebook: editor.notebook,
             metadata: undefined,
             cellChanges: [
@@ -1749,30 +1720,31 @@ describe("NotebookExecutions", () => {
             contentChanges: [],
           });
 
-        yield* Effect.yieldNow;
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((cells) => HashSet.has(cells, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (cells) => HashSet.has(cells, id),
         );
-        yield* Effect.yieldNow;
         cellData.value = "x = 2";
         yield* notifyChange();
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-
-        const becomesCurrent = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((cells) => !HashSet.has(cells, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
         );
-        yield* Effect.yieldNow;
+
+        const becomesCurrent = yield* observeWhen(
+          notebook.staleCells.changes,
+          (cells) => !HashSet.has(cells, id),
+        );
         cellData.value = "x = 1";
         yield* notifyChange();
-        expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesCurrent))).toBe(
+          true,
+        );
+      });
     }),
   );
 
@@ -1800,7 +1772,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1811,14 +1784,12 @@ describe("NotebookExecutions", () => {
         yield* acknowledgeSubmission(notebook, id, "x = 0", "run-1");
         reads.fill(0);
 
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
         );
-        yield* Effect.yieldNow;
         sources[0] = "x = 100";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1832,11 +1803,13 @@ describe("NotebookExecutions", () => {
           ],
           contentChanges: [],
         });
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
 
-        expect(reads[0]).toBe(1);
-        expect(reads.slice(1).every((count) => count === 0)).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(reads[0]).toBe(1);
+        Vitest.expect(reads.slice(1).every((count) => count === 0)).toBe(true);
+      });
     }),
   );
 
@@ -1857,7 +1830,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1873,11 +1847,15 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
           stale_inputs: true,
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-2");
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -1898,7 +1876,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1930,9 +1909,11 @@ describe("NotebookExecutions", () => {
 
         yield* notebook.restoreOutput(replay);
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
-        expect(commands).toEqual([]);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
+        Vitest.expect(commands).toEqual([]);
+      });
     }),
   );
 
@@ -1950,7 +1931,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -1974,16 +1956,16 @@ describe("NotebookExecutions", () => {
             stale_inputs: false,
           },
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-
-        const becomesStale = yield* notebook.staleCells.changes.pipe(
-          Stream.filter((stale) => HashSet.has(stale, id)),
-          Stream.runHead,
-          Effect.forkChild,
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
         );
-        yield* Effect.yieldNow;
+
+        const becomesStale = yield* observeWhen(
+          notebook.staleCells.changes,
+          (stale) => HashSet.has(stale, id),
+        );
         cellData.value = "x = 2";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -1998,8 +1980,10 @@ describe("NotebookExecutions", () => {
           contentChanges: [],
         });
 
-        expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(Option.isSome(yield* Fiber.join(becomesStale))).toBe(
+          true,
+        );
+      });
     }),
   );
 
@@ -2020,7 +2004,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2040,20 +2025,24 @@ describe("NotebookExecutions", () => {
         const id = Option.getOrThrow(document.cellAt(0).id);
 
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
 
         yield* executions.invalidate(document.id);
         yield* invalidated.await;
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
-        expect(commands.at(-1)).toEqual(
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
+        Vitest.expect(commands.at(-1)).toEqual(
           CellCommand.CloseRun({
             runId: runId("run-1"),
             success: false,
             at: Option.none(),
           }),
         );
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2074,7 +2063,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2086,8 +2076,10 @@ describe("NotebookExecutions", () => {
         yield* notebook.remove(id);
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -2108,7 +2100,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2121,8 +2114,10 @@ describe("NotebookExecutions", () => {
           .pipe(Effect.ignore);
         yield* acknowledgeSubmission(notebook, id, "x = 1", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -2143,7 +2138,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2176,7 +2172,9 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-1",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2184,12 +2182,14 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-2",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
 
         yield* release.open;
         yield* Fiber.join(first);
         yield* Fiber.join(second);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2207,7 +2207,8 @@ describe("NotebookExecutions", () => {
       const editor = TestVsCode.makeNotebookEditor("/test/notebook.py", {
         data: { cells: [cellData] },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2238,10 +2239,12 @@ describe("NotebookExecutions", () => {
           status: "queued",
           run_id: "run-1",
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(true);
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          true,
+        );
 
         cellData.value = "x = 2";
-        yield* ctx.vscode.notebookChange({
+        yield* vscode.notebookChange({
           notebook: editor.notebook,
           metadata: undefined,
           cellChanges: [
@@ -2255,8 +2258,10 @@ describe("NotebookExecutions", () => {
           ],
           contentChanges: [],
         });
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -2277,7 +2282,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2290,8 +2296,10 @@ describe("NotebookExecutions", () => {
         yield* notebook.interrupt;
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -2312,7 +2320,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2336,8 +2345,10 @@ describe("NotebookExecutions", () => {
         );
         yield* acknowledgeSubmission(notebook, id, "x = 2", "run-1");
 
-        expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(false);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(HashSet.has(yield* notebook.staleCells.current, id)).toBe(
+          false,
+        );
+      });
     }),
   );
 
@@ -2358,7 +2369,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2367,12 +2379,14 @@ describe("NotebookExecutions", () => {
           MarimoNotebookDocument.from(editor.notebook).cellAt(0).id,
         );
 
+        const ready = yield* Latch.make();
         const snapshots = yield* notebook.staleCells.changes.pipe(
+          Stream.tap(() => ready.open),
           Stream.take(2),
           Stream.runCollect,
           Effect.forkChild,
         );
-        yield* Effect.yieldNow;
+        yield* ready.await;
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2382,10 +2396,10 @@ describe("NotebookExecutions", () => {
         });
 
         const values = Array.from(yield* Fiber.join(snapshots));
-        expect(values).toHaveLength(2);
-        expect(HashSet.size(values[0])).toBe(0);
-        expect(HashSet.has(values[1], id)).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(values).toHaveLength(2);
+        Vitest.expect(HashSet.size(values[0])).toBe(0);
+        Vitest.expect(HashSet.has(values[1], id)).toBe(true);
+      });
     }),
   );
 
@@ -2406,7 +2420,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2437,11 +2452,11 @@ describe("NotebookExecutions", () => {
           })
           .pipe(Effect.flip);
 
-        expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
-        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
-        expect(error.reason).toBe("superseded-run");
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error.expectedRunId).toEqual(Option.some(runId("run-2")));
+        Vitest.expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
+        Vitest.expect(error.reason).toBe("superseded-run");
+      });
     }),
   );
 
@@ -2462,7 +2477,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2505,7 +2521,7 @@ describe("NotebookExecutions", () => {
             },
           })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
 
         yield* notebook.apply({
           op: "cell-op",
@@ -2519,11 +2535,11 @@ describe("NotebookExecutions", () => {
         });
         yield* rendered.await;
 
-        expect(finalRenders).toHaveLength(1);
-        expect(
+        Vitest.expect(finalRenders).toHaveLength(1);
+        Vitest.expect(
           finalRenders[0]?.consoleOutputs.map((output) => output.data),
         ).toContain("late line");
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2552,7 +2568,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2590,10 +2607,10 @@ describe("NotebookExecutions", () => {
           stale_inputs: true,
         });
 
-        expect(
+        Vitest.expect(
           HashSet.has(yield* notebook.staleCells.current, descendantId),
         ).toBe(true);
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 
@@ -2614,7 +2631,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2649,7 +2667,7 @@ describe("NotebookExecutions", () => {
           run_id: "run-1",
         });
         yield* runOpened.await;
-        expect(opened).toBe(1);
+        Vitest.expect(opened).toBe(1);
 
         const error = yield* notebook
           .apply({
@@ -2665,11 +2683,11 @@ describe("NotebookExecutions", () => {
           })
           .pipe(Effect.flip);
 
-        expect(error._tag).toBe("RunCorrelationError");
-        expect(error.expectedRunId).toEqual(Option.none());
-        expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
-        expect(opened).toBe(1);
-      }).pipe(Effect.provide(ctx.layer));
+        Vitest.expect(error._tag).toBe("RunCorrelationError");
+        Vitest.expect(error.expectedRunId).toEqual(Option.none());
+        Vitest.expect(error.receivedRunId).toEqual(Option.some(runId("run-1")));
+        Vitest.expect(opened).toBe(1);
+      });
     }),
   );
 
@@ -2690,7 +2708,8 @@ describe("NotebookExecutions", () => {
           ],
         },
       });
-      const ctx = yield* withTestCtx({ initialDocuments: [editor.notebook] });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(editor.notebook);
 
       yield* Effect.gen(function* () {
         const executions = yield* CellExecutions;
@@ -2709,8 +2728,7 @@ describe("NotebookExecutions", () => {
             ],
           },
         });
-        yield* ctx.vscode.openNotebook(replacement.notebook);
-        yield* Effect.yieldNow;
+        yield* vscode.openNotebook(replacement.notebook);
         const second = yield* openNotebook(executions, replacement.notebook);
         const id = Option.getOrThrow(
           MarimoNotebookDocument.from(replacement.notebook).cellAt(0).id,
@@ -2719,10 +2737,9 @@ describe("NotebookExecutions", () => {
         const error = yield* executions
           .open(first.session, { getDrive: Effect.succeed(Option.none()) })
           .pipe(Effect.flip);
-        expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
+        Vitest.expect(error._tag).toBe("NotebookDocumentSessions.EndedError");
 
-        yield* ctx.vscode.closeNotebook(editor.notebook);
-        yield* Effect.yieldNow;
+        yield* DocumentLifecycle.transition(editor.notebook, "closed");
 
         yield* second.notebook.apply({
           op: "cell-op",
@@ -2731,10 +2748,10 @@ describe("NotebookExecutions", () => {
           run_id: "replacement-run",
         });
 
-        expect(executions.find(replacement.notebook)).toEqual(
+        Vitest.expect(executions.find(replacement.notebook)).toEqual(
           Option.some(second.notebook),
         );
-      }).pipe(Effect.provide(ctx.layer));
+      });
     }),
   );
 });

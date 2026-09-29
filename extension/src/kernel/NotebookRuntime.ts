@@ -16,6 +16,7 @@ import {
   Stream,
   Array as EffectArray,
 } from "effect";
+import { FetchHttpClient } from "effect/unstable/http";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";
@@ -50,6 +51,7 @@ import type {
 } from "../schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
+  DocumentAnalysis,
   KernelNotification,
   NotificationOf,
 } from "../types.ts";
@@ -98,6 +100,33 @@ export interface NotebookControllerSelection {
   readonly notebookUri: NotebookId;
   readonly controller: NotebookController;
 }
+
+export type InputProgress =
+  | { readonly _tag: "AnalysisDispatched"; readonly message: DocumentAnalysis }
+  | {
+      readonly _tag: "KernelMutationQueued";
+      readonly notebookId: NotebookId;
+      readonly request: object;
+    }
+  | {
+      readonly _tag: "StdinResponded";
+      readonly notebookId: NotebookId;
+      readonly sessionId: KernelSessionId;
+      readonly result: Option.Option<string>;
+      readonly exit: Exit.Exit<
+        unknown,
+        Effect.Error<ReturnType<RespondToStdin>>
+      >;
+    }
+  | {
+      readonly _tag: "ScratchpadQueued";
+      readonly notebookId: NotebookId;
+      readonly code: string;
+    }
+  | {
+      readonly _tag: "NotebookChanged";
+      readonly event: vscode.NotebookDocumentChangeEvent;
+    };
 
 /** No matching kernel session is bound to the notebook. */
 export class NoActiveKernelError extends Data.TaggedError(
@@ -256,6 +285,12 @@ export interface Interface {
     controller: NotebookController,
   ) => Effect.Effect<void>;
   readonly controllerChanges: Stream.Stream<NotebookControllerSelection>;
+  /** Acquired observations of input admission, contention, and completion. */
+  readonly subscribeInputProgress: Effect.Effect<
+    Stream.Stream<InputProgress>,
+    never,
+    Scope.Scope
+  >;
   readonly getRuntimeSession: (
     notebookId: NotebookId,
   ) => Effect.Effect<Option.Option<RuntimeSession>>;
@@ -320,10 +355,15 @@ export const layer = Layer.effect(
     const executor = yield* makeNotebookExecutor<RuntimeWorkRequirements>();
     const controllerSelections =
       yield* PubSub.unbounded<NotebookControllerSelection>();
+    const inputProgress = yield* PubSub.unbounded<InputProgress>();
 
     yield* Effect.addFinalizer(() =>
       Effect.all(
-        [PubSub.shutdown(operations), PubSub.shutdown(controllerSelections)],
+        [
+          PubSub.shutdown(operations),
+          PubSub.shutdown(controllerSelections),
+          PubSub.shutdown(inputProgress),
+        ],
         { discard: true },
       ),
     );
@@ -362,6 +402,7 @@ export const layer = Layer.effect(
       notebookId: NotebookId,
       effect: (sessionId: KernelSessionId) => Effect.Effect<A, E, R>,
       expectedSessionId?: KernelSessionId,
+      request?: object,
     ) =>
       runInNotebook(
         notebookId,
@@ -378,6 +419,13 @@ export const layer = Layer.effect(
           }
           return yield* effect(sessionId);
         }),
+        request === undefined
+          ? Effect.void
+          : PubSub.publish(inputProgress, {
+              _tag: "KernelMutationQueued",
+              notebookId,
+              request,
+            }).pipe(Effect.asVoid),
       );
 
     const mutateKernelSession = <E>(
@@ -411,6 +459,16 @@ export const layer = Layer.effect(
               }),
           }),
         sessionId,
+      ).pipe(
+        Effect.onExit((exit) =>
+          PubSub.publish(inputProgress, {
+            _tag: "StdinResponded",
+            notebookId,
+            sessionId,
+            result,
+            exit,
+          }),
+        ),
       );
 
     const makeDocumentHandle = (
@@ -491,8 +549,17 @@ export const layer = Layer.effect(
         Stream.unwrap(
           Effect.gen(function* () {
             // Hold one permit for the lifetime of the stream's scope.
-            yield* Effect.acquireRelease(scratchpadLock.take(1), () =>
-              scratchpadLock.release(1),
+            yield* Effect.acquireRelease(
+              Effect.gen(function* () {
+                if (yield* scratchpadLock.takeIfAvailable(1)) return;
+                yield* PubSub.publish(inputProgress, {
+                  _tag: "ScratchpadQueued",
+                  notebookId,
+                  code: sourceCode,
+                });
+                yield* scratchpadLock.take(1);
+              }),
+              () => scratchpadLock.release(1),
             );
             const subscription = yield* PubSub.subscribe(operations);
             const runId = crypto.randomUUID();
@@ -581,36 +648,52 @@ export const layer = Layer.effect(
           }),
         ),
       updateUIElements: (request) =>
-        runInKernelSession(notebookId, (sessionId) =>
-          marimo.updateUiElement({
-            ...request,
-            notebookUri: notebookId,
-            kernelSessionId: sessionId,
-          }),
+        runInKernelSession(
+          notebookId,
+          (sessionId) =>
+            marimo.updateUiElement({
+              ...request,
+              notebookUri: notebookId,
+              kernelSessionId: sessionId,
+            }),
+          undefined,
+          request,
         ),
       updateModel: (request) =>
-        runInKernelSession(notebookId, (sessionId) =>
-          marimo.setModelValue({
-            ...request,
-            notebookUri: notebookId,
-            kernelSessionId: sessionId,
-          }),
+        runInKernelSession(
+          notebookId,
+          (sessionId) =>
+            marimo.setModelValue({
+              ...request,
+              notebookUri: notebookId,
+              kernelSessionId: sessionId,
+            }),
+          undefined,
+          request,
         ),
       invokeFunction: (request) =>
-        runInKernelSession(notebookId, (sessionId) =>
-          marimo.invokeFunction({
-            ...request,
-            notebookUri: notebookId,
-            kernelSessionId: sessionId,
-          }),
+        runInKernelSession(
+          notebookId,
+          (sessionId) =>
+            marimo.invokeFunction({
+              ...request,
+              notebookUri: notebookId,
+              kernelSessionId: sessionId,
+            }),
+          undefined,
+          request,
         ),
       deleteCell: (request) =>
-        runInKernelSession(notebookId, (sessionId) =>
-          marimo.deleteCell({
-            ...request,
-            notebookUri: notebookId,
-            kernelSessionId: sessionId,
-          }),
+        runInKernelSession(
+          notebookId,
+          (sessionId) =>
+            marimo.deleteCell({
+              ...request,
+              notebookUri: notebookId,
+              kernelSessionId: sessionId,
+            }),
+          undefined,
+          request,
         ),
       interrupt: runInKernelSession(notebookId, (sessionId) =>
         marimo.interrupt({
@@ -644,6 +727,7 @@ export const layer = Layer.effect(
       code.window.activeNotebookEditorChanges.pipe(
         Stream.runForEach(updateKernelContext),
       ),
+      { startImmediately: true },
     );
     const makeState = (notebookId: NotebookId): NotebookState => {
       const controller = Ref.makeUnsafe<Option.Option<NotebookController>>(
@@ -736,6 +820,7 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      { startImmediately: true },
     );
     yield* Effect.forkScoped(
       marimo.kernelNotifications.pipe(
@@ -832,24 +917,30 @@ export const layer = Layer.effect(
           );
         }),
       ),
+      { startImmediately: true },
     );
     yield* Effect.forkScoped(
       marimo.documentAnalysis.pipe(
-        Stream.runForEach((message) => {
-          const session = documentSessions.current(message.notebookUri);
-          if (Option.isNone(session)) return Effect.void;
-          return stateForDocumentSession(session.value).pipe(
-            Effect.andThen(
-              executor
+        Stream.runForEach((message) =>
+          Effect.gen(function* () {
+            const session = documentSessions.current(message.notebookUri);
+            if (Option.isSome(session)) {
+              yield* stateForDocumentSession(session.value);
+              yield* executor
                 .postScoped(
                   message.notebookUri,
                   variables.updateVariables(session.value, message.analysis),
                 )
-                .pipe(Scope.provide(session.value.scope)),
-            ),
-          );
-        }),
+                .pipe(Scope.provide(session.value.scope));
+            }
+            yield* PubSub.publish(inputProgress, {
+              _tag: "AnalysisDispatched",
+              message,
+            });
+          }),
+        ),
       ),
+      { startImmediately: true },
     );
 
     yield* Effect.forkScoped(
@@ -946,6 +1037,7 @@ export const layer = Layer.effect(
           ),
         ),
       ),
+      { startImmediately: true },
     );
 
     yield* Effect.forkScoped(
@@ -955,21 +1047,29 @@ export const layer = Layer.effect(
             (event: vscode.NotebookDocumentChangeEvent) =>
               Option.map(
                 MarimoNotebookDocument.tryFrom(event.notebook),
-                (notebook) => ({ ...event, notebook }),
+                (notebook) => ({ event, notebook }),
               ),
           ),
         ),
-        Stream.runForEach((event) =>
+        Stream.runForEach(({ event, notebook: document }) =>
           Effect.gen(function* () {
-            const notebook = yield* forNotebook(event.notebook.id);
-            yield* syncCellIdentity(event, {
-              code,
-              executions,
-              notebook,
+            const notebook = yield* forNotebook(document.id);
+            yield* syncCellIdentity(
+              { ...event, notebook: document },
+              {
+                code,
+                executions,
+                notebook,
+              },
+            );
+            yield* PubSub.publish(inputProgress, {
+              _tag: "NotebookChanged",
+              event,
             });
           }),
         ),
       ),
+      { startImmediately: true },
     );
 
     const attachController = Effect.fn("NotebookRuntime.attachController")(
@@ -1087,6 +1187,9 @@ export const layer = Layer.effect(
     return Service.of({
       attachController,
       controllerChanges: Stream.fromPubSub(controllerSelections),
+      subscribeInputProgress: PubSub.subscribe(inputProgress).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
       getRuntimeSession,
       getRuntimeSessions: liveSessions.get.pipe(
         Effect.map((sessions) =>
@@ -1188,6 +1291,7 @@ export const defaultLayer = layer.pipe(
     PythonEnvInvalidation.layer,
     LiveSessions.layer,
     NotebookDocumentSessions.layer,
+    FetchHttpClient.layer,
   ]),
 );
 

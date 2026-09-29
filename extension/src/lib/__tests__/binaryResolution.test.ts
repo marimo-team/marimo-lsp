@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Logger, Option, References } from "effect";
 
 import {
@@ -8,33 +8,33 @@ import {
   resolveBinary,
 } from "../binaryResolution.ts";
 
-describe("parseVersionOutput", () => {
-  it("parses ruff version output", () => {
-    expect(parseVersionOutput("ruff 0.15.0")).toBe("0.15.0");
+Vitest.describe("parseVersionOutput", () => {
+  Vitest.it("parses ruff version output", () => {
+    Vitest.expect(parseVersionOutput("ruff 0.15.0")).toBe("0.15.0");
   });
 
-  it("parses ty version output", () => {
-    expect(parseVersionOutput("ty 0.0.15")).toBe("0.0.15");
+  Vitest.it("parses ty version output", () => {
+    Vitest.expect(parseVersionOutput("ty 0.0.15")).toBe("0.0.15");
   });
 
-  it("handles version with prerelease info", () => {
-    expect(parseVersionOutput("ruff 0.15.0-dev")).toBe("0.15.0-dev");
+  Vitest.it("handles version with prerelease info", () => {
+    Vitest.expect(parseVersionOutput("ruff 0.15.0-dev")).toBe("0.15.0-dev");
   });
 
-  it("handles trailing whitespace/newlines", () => {
-    expect(parseVersionOutput("ruff 0.15.0\n")).toBe("0.15.0");
+  Vitest.it("handles trailing whitespace/newlines", () => {
+    Vitest.expect(parseVersionOutput("ruff 0.15.0\n")).toBe("0.15.0");
   });
 
-  it("returns null for empty output", () => {
-    expect(parseVersionOutput("")).toBeNull();
+  Vitest.it("returns null for empty output", () => {
+    Vitest.expect(parseVersionOutput("")).toBeNull();
   });
 
-  it("returns null for malformed output", () => {
-    expect(parseVersionOutput("not a version")).toBeNull();
+  Vitest.it("returns null for malformed output", () => {
+    Vitest.expect(parseVersionOutput("not a version")).toBeNull();
   });
 
-  it("returns null for output without version number", () => {
-    expect(parseVersionOutput("ruff")).toBeNull();
+  Vitest.it("returns null for output without version number", () => {
+    Vitest.expect(parseVersionOutput("ruff")).toBeNull();
   });
 });
 
@@ -74,28 +74,28 @@ function emptySource(label: string): ResolutionSource {
   return { label, resolve: Effect.succeed(Option.none()) };
 }
 
-describe("resolveBinary", () => {
-  it.effect(
+Vitest.describe("resolveBinary", () => {
+  Vitest.it.effect(
     "returns the first source that resolves",
     Effect.fn(function* () {
       const result = yield* resolveBinary("test", [
         userSource("/first"),
         companionSource("/second"),
       ]);
-      expect(result).toStrictEqual(
+      Vitest.expect(result).toStrictEqual(
         Option.some(BinarySource.UserConfigured({ path: "/first" })),
       );
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "skips empty sources and returns the next match",
     Effect.fn(function* () {
       const result = yield* resolveBinary("test", [
         emptySource("skip"),
         companionSource("/good", "configured"),
       ]);
-      expect(result).toStrictEqual(
+      Vitest.expect(result).toStrictEqual(
         Option.some(
           BinarySource.CompanionExtension({
             extensionId: "test.ext",
@@ -107,35 +107,35 @@ describe("resolveBinary", () => {
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "returns none when every source is empty",
     Effect.fn(function* () {
       const result = yield* resolveBinary("test", [
         emptySource("a"),
         emptySource("b"),
       ]);
-      expect(result).toStrictEqual(Option.none());
+      Vitest.expect(result).toStrictEqual(Option.none());
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "returns none when there are no sources at all",
     Effect.fn(function* () {
       const sources: ReadonlyArray<ResolutionSource> = [];
-      expect(yield* resolveBinary("test", sources)).toStrictEqual(
+      Vitest.expect(yield* resolveBinary("test", sources)).toStrictEqual(
         Option.none(),
       );
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "preserves CompanionExtension kind=bundled",
     Effect.fn(function* () {
       const result = yield* resolveBinary("ruff", [
         emptySource("user"),
         companionSource("/ext/bundled/libs/bin/ruff", "bundled"),
       ]);
-      expect(
+      Vitest.expect(
         Option.map(result, (source) =>
           BinarySource.$is("CompanionExtension")(source) ? source.kind : null,
         ),
@@ -143,7 +143,7 @@ describe("resolveBinary", () => {
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "emits structured logs with server and source annotations",
     Effect.fn(function* () {
       const logs = yield* collectLogs(
@@ -151,16 +151,16 @@ describe("resolveBinary", () => {
       );
 
       const serverAnnotated = logs.filter((l) => l.annotations.server === "ty");
-      expect(serverAnnotated.length).toBeGreaterThan(0);
+      Vitest.expect(serverAnnotated.length).toBeGreaterThan(0);
 
       const resolved = logs.find((l) => l.message.includes("Resolved"));
-      expect(resolved).toMatchObject({
+      Vitest.expect(resolved).toMatchObject({
         annotations: { source: "UserConfigured", path: "/bin/ty" },
       });
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "logs every source it tried when nothing resolves",
     Effect.fn(function* () {
       const logs = yield* collectLogs(
@@ -170,7 +170,7 @@ describe("resolveBinary", () => {
       const unresolved = logs.find((l) =>
         l.message.includes("No source resolved a binary"),
       );
-      expect(unresolved).toMatchObject({
+      Vitest.expect(unresolved).toMatchObject({
         annotations: { server: "ty", sources: ["tier-1", "tier-2"] },
       });
     }),

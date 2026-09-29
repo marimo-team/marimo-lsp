@@ -47,14 +47,18 @@ export const layer = Layer.effectDiscard(
       },
     );
 
+    // Acquire the listener first so a change during the initial update is
+    // buffered rather than dropped.
+    const activeTextEditorChanges =
+      yield* code.window.subscribeActiveTextEditorChanges;
+
     // Set initial context for current active editor
     yield* updateContext(yield* code.window.getActiveTextEditor);
 
     // Listen for active text editor changes
     yield* Effect.forkScoped(
-      code.window.activeTextEditorChanges.pipe(
-        Stream.runForEach(updateContext),
-      ),
+      activeTextEditorChanges.pipe(Stream.runForEach(updateContext)),
+      { startImmediately: true },
     );
   }).pipe(Effect.withSpan("MarimoFileDetector.layer")),
 );

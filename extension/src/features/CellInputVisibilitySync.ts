@@ -1,13 +1,16 @@
 import {
   Cause,
+  Context,
   Data,
   Effect,
   Filter,
   HashMap,
   Layer,
   Option,
+  PubSub,
   Queue,
   Ref,
+  Scope,
   Stream,
 } from "effect";
 import type * as vscode from "vscode";
@@ -66,6 +69,11 @@ export function hiddenInputRanges(
 
 type HiddenCodeSnapshot = HashMap.HashMap<NotebookCellId, boolean>;
 
+interface NotebookSnapshot {
+  readonly document: vscode.NotebookDocument;
+  readonly hiddenCode: HiddenCodeSnapshot;
+}
+
 function snapshotHiddenCode(
   cells: readonly MarimoNotebookCell[],
 ): HiddenCodeSnapshot {
@@ -87,10 +95,34 @@ type Event = Data.TaggedEnum<{
   Synchronize: {
     readonly notebook: MarimoNotebookDocument;
     readonly initialize: boolean;
+    readonly processed: Processed;
   };
-  Close: { readonly notebookId: NotebookId };
+  Close: {
+    readonly notebook: MarimoNotebookDocument;
+    readonly processed: Processed;
+  };
 }>;
 const Event = Data.taggedEnum<Event>();
+
+export type Processed = Data.TaggedEnum<{
+  Activated: { readonly editor: vscode.NotebookEditor };
+  Changed: { readonly event: vscode.NotebookDocumentChangeEvent };
+  Closed: { readonly document: vscode.NotebookDocument };
+}>;
+const Processed = Data.taggedEnum<Processed>();
+
+export interface Interface {
+  /** Subscribes now; emits each source event after its synchronization attempt. */
+  readonly subscribeProcessed: Effect.Effect<
+    Stream.Stream<Processed>,
+    never,
+    Scope.Scope
+  >;
+}
+
+export class Service extends Context.Service<Service, Interface>()(
+  "@marimo/CellInputVisibilitySync",
+) {}
 
 function visibilityChanges(
   previous: Option.Option<HiddenCodeSnapshot>,
@@ -147,17 +179,27 @@ function visibilityChanges(
  * cell ID and apply only `hide_code` transitions. Refocusing and unrelated
  * edits therefore do not override a user's temporary manual expansion.
  */
-export const layer = Layer.effectDiscard(
+export const layer = Layer.effect(
+  Service,
   Effect.gen(function* () {
     const code = yield* VsCode.Service;
+    const processed = yield* PubSub.unbounded<Processed>();
 
     const snapshots = yield* Ref.make(
-      HashMap.empty<NotebookId, HiddenCodeSnapshot>(),
+      HashMap.empty<NotebookId, NotebookSnapshot>(),
     );
 
     const synchronize = Effect.fn("CellInputVisibilitySync.synchronize")(
       function* (notebook: MarimoNotebookDocument, initialize: boolean) {
-        const previous = HashMap.get(yield* Ref.get(snapshots), notebook.id);
+        const previous = HashMap.get(
+          yield* Ref.get(snapshots),
+          notebook.id,
+        ).pipe(
+          Option.filter(
+            (snapshot) => snapshot.document === notebook.rawNotebookDocument,
+          ),
+          Option.map((snapshot) => snapshot.hiddenCode),
+        );
         if (!initialize && Option.isNone(previous)) return;
 
         const cells = notebook.getCells();
@@ -185,7 +227,13 @@ export const layer = Layer.effectDiscard(
 
         yield* apply("notebook.cell.collapseCellInput", changes.collapse);
         yield* apply("notebook.cell.expandCellInput", changes.expand);
-        yield* Ref.update(snapshots, HashMap.set(notebook.id, next));
+        yield* Ref.update(
+          snapshots,
+          HashMap.set(notebook.id, {
+            document: notebook.rawNotebookDocument,
+            hiddenCode: next,
+          }),
+        );
       },
     );
 
@@ -215,15 +263,18 @@ export const layer = Layer.effectDiscard(
       Stream.filterMap(
         Filter.fromPredicateOption((editor) =>
           Option.flatMap(editor, (editor) =>
-            MarimoNotebookDocument.tryFrom(editor.notebook),
+            MarimoNotebookDocument.tryFrom(editor.notebook).pipe(
+              Option.map((notebook) => ({ notebook, editor })),
+            ),
           ),
         ),
       ),
       Stream.map(
-        (notebook): Event =>
+        ({ notebook, editor }): Event =>
           Event.Synchronize({
             notebook,
             initialize: true,
+            processed: Processed.Activated({ editor }),
           }),
       ),
     );
@@ -231,14 +282,17 @@ export const layer = Layer.effectDiscard(
     const changes = code.workspace.notebookDocumentChanges.pipe(
       Stream.filterMap(
         Filter.fromPredicateOption((event) =>
-          MarimoNotebookDocument.tryFrom(event.notebook),
+          MarimoNotebookDocument.tryFrom(event.notebook).pipe(
+            Option.map((notebook) => ({ notebook, event })),
+          ),
         ),
       ),
       Stream.map(
-        (notebook): Event =>
+        ({ notebook, event }): Event =>
           Event.Synchronize({
             notebook,
             initialize: false,
+            processed: Processed.Changed({ event }),
           }),
       ),
     );
@@ -249,7 +303,15 @@ export const layer = Layer.effectDiscard(
           MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
-      Stream.map((notebook): Event => Event.Close({ notebookId: notebook.id })),
+      Stream.map(
+        (notebook): Event =>
+          Event.Close({
+            notebook,
+            processed: Processed.Closed({
+              document: notebook.rawNotebookDocument,
+            }),
+          }),
+      ),
     );
 
     // Each source has its own fiber that writes to one queue. A
@@ -260,6 +322,7 @@ export const layer = Layer.effectDiscard(
     for (const source of [activations, changes, closures]) {
       yield* Effect.forkScoped(
         source.pipe(Stream.runForEach((event) => Queue.offer(events, event))),
+        { startImmediately: true },
       );
     }
 
@@ -268,13 +331,26 @@ export const layer = Layer.effectDiscard(
       Stream.fromQueue(events).pipe(
         Stream.runForEach((event) =>
           Event.$match(event, {
-            Close: ({ notebookId }) =>
-              Ref.update(snapshots, HashMap.remove(notebookId)),
+            Close: ({ notebook }) =>
+              Ref.update(snapshots, (current) => {
+                const snapshot = HashMap.get(current, notebook.id);
+                return Option.isSome(snapshot) &&
+                  snapshot.value.document === notebook.rawNotebookDocument
+                  ? HashMap.remove(current, notebook.id)
+                  : current;
+              }),
             Synchronize: ({ notebook, initialize }) =>
               synchronizeSafely(notebook, initialize),
-          }),
+          }).pipe(Effect.andThen(PubSub.publish(processed, event.processed))),
         ),
       ),
+      { startImmediately: true },
     );
+
+    return Service.of({
+      subscribeProcessed: PubSub.subscribe(processed).pipe(
+        Effect.map(Stream.fromSubscription),
+      ),
+    });
   }).pipe(Effect.withSpan("CellInputVisibilitySync.layer")),
 );

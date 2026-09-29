@@ -1,4 +1,12 @@
-import { Context, Duration, Effect, Layer, PubSub, Stream } from "effect";
+import {
+  Context,
+  Duration,
+  Effect,
+  Layer,
+  PubSub,
+  Stream,
+  SubscriptionRef,
+} from "effect";
 
 import * as PythonExtension from "./PythonExtension.ts";
 
@@ -11,6 +19,7 @@ import * as PythonExtension from "./PythonExtension.ts";
 export interface Interface {
   readonly invalidate: (reason: string) => Effect.Effect<boolean>;
   readonly changes: Stream.Stream<string>;
+  readonly generation: Effect.Effect<number>;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
@@ -22,22 +31,31 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const pyExt = yield* PythonExtension.Service;
     const pubsub = yield* PubSub.unbounded<string>();
-
-    // Forward Python extension env changes into the invalidation channel
-    yield* Effect.forkScoped(
-      pyExt.activeEnvironmentPathChanges.pipe(
-        Stream.debounce(Duration.seconds(2)),
-        Stream.runForEach(() => PubSub.publish(pubsub, "python-env-change")),
-      ),
-    );
+    const generation = yield* SubscriptionRef.make(0);
 
     const invalidate = Effect.fn("PythonEnvInvalidation.invalidate")(function* (
       reason: string,
     ) {
+      yield* SubscriptionRef.update(generation, (value) => value + 1);
       return yield* PubSub.publish(pubsub, reason);
     });
+
+    // Forward Python extension env changes into the invalidation channel
+    const environmentChanges =
+      yield* pyExt.subscribeActiveEnvironmentPathChanges;
+    yield* Effect.forkScoped(
+      environmentChanges.pipe(
+        Stream.debounce(Duration.seconds(2)),
+        Stream.runForEach(() => invalidate("python-env-change")),
+      ),
+    );
+
     const changes = Stream.fromPubSub(pubsub);
 
-    return Service.of({ invalidate, changes });
+    return Service.of({
+      invalidate,
+      changes,
+      generation: SubscriptionRef.get(generation),
+    });
   }),
 );

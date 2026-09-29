@@ -48,9 +48,11 @@ export class NotebookExecutionScopeClosedError extends Data.TaggedError(
 
 /** Runs admitted work in FIFO order, independently for each notebook. */
 export interface NotebookExecutor<R> {
+  /** `onAdmitted` runs after ownership transfers, before awaiting the reply. */
   readonly submit: <A, E>(
     notebookId: NotebookId,
     effect: Effect.Effect<A, E, R>,
+    onAdmitted?: Effect.Effect<void>,
   ) => Effect.Effect<A, E>;
   /** Like `submit`, but owned by the `Scope` in the Effect environment. */
   readonly submitScoped: <A, E>(
@@ -218,6 +220,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
       const submitWork = <A, E>(
         notebookId: NotebookId,
         effect: Effect.Effect<A, E, R>,
+        onAdmitted = Effect.void,
       ): Effect.Effect<A, E> =>
         Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
@@ -231,6 +234,8 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
 
             if (!(yield* Queue.offer(ingress, Ingress.Work({ work })))) {
               yield* work.reject;
+            } else {
+              yield* onAdmitted;
             }
 
             // A successful offer transfers ownership to the executor. Caller
@@ -239,8 +244,7 @@ export function makeNotebookExecutor<R>(): Effect.Effect<
           }),
         );
 
-      const submit: NotebookExecutor<R>["submit"] = (notebookId, effect) =>
-        submitWork(notebookId, effect);
+      const submit: NotebookExecutor<R>["submit"] = submitWork;
       const submitScoped: NotebookExecutor<R>["submitScoped"] = (
         notebookId,
         effect,

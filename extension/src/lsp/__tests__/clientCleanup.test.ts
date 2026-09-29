@@ -1,9 +1,9 @@
-import { expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Logger } from "effect";
 
 import { runLspCleanup } from "../client.ts";
 
-it.effect(
+Vitest.it.effect(
   "suppresses canceled LSP cleanup",
   Effect.fn(function* () {
     const logs: Array<{ level: string; message: unknown }> = [];
@@ -17,11 +17,11 @@ it.effect(
       throw canceled;
     }).pipe(Effect.provide(Logger.layer([logger])));
 
-    expect(logs).toEqual([]);
+    Vitest.expect(logs).toEqual([]);
   }),
 );
 
-it.effect(
+Vitest.it.effect(
   "downgrades other LSP cleanup failures to warnings",
   Effect.fn(function* () {
     const logs: Array<{ level: string; message: unknown }> = [];
@@ -33,7 +33,7 @@ it.effect(
       throw new Error("boom");
     }).pipe(Effect.provide(Logger.layer([logger])));
 
-    expect(logs).toEqual([
+    Vitest.expect(logs).toEqual([
       {
         level: "Warn",
         message: ["LSP cleanup failed during connection.dispose"],

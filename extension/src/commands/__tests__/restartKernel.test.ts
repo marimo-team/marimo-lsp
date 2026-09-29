@@ -1,56 +1,53 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect, Option } from "effect";
 
-import {
-  createNotebookCell,
-  createTestNotebookDocument,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import { decodeCommandArguments } from "../../commands.ts";
 import restartKernel from "../restartKernel.ts";
 
-describe("restartKernel invocation", () => {
-  it.effect("resolves the notebook referenced by toolbar context", () =>
+const test = EffectTest.make(TestVsCode.layer);
+
+Vitest.describe("restartKernel invocation", () => {
+  test.effect("resolves the notebook referenced by toolbar context", () =>
     Effect.gen(function* () {
       const target = TestVsCode.makeNotebookEditor("/test/target.py");
       const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [target.notebook, active.notebook],
-        visibleNotebookEditors: [target, active],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(target.notebook);
+      yield* vscode.openNotebook(active.notebook);
+      yield* vscode.setActiveNotebookEditor(Option.some(target));
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
       const [resolved] = yield* decodeCommandArguments(restartKernel.command, [
         { notebookEditor: { notebookUri: target.notebook.uri } },
-      ]).pipe(Effect.provide(vscode.layer));
+      ]);
 
-      expect(Option.getOrThrow(resolved).editor).toBe(target);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(target);
     }),
   );
 
-  it.effect("uses the active notebook without toolbar context", () =>
+  test.effect("uses the active notebook without toolbar context", () =>
     Effect.gen(function* () {
       const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [active.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(active.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
       const [resolved] = yield* decodeCommandArguments(
         restartKernel.command,
         [],
-      ).pipe(Effect.provide(vscode.layer));
+      );
 
-      expect(Option.getOrThrow(resolved).editor).toBe(active);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(active);
     }),
   );
 
-  it.effect("falls back for an incomplete toolbar lifecycle hint", () =>
+  test.effect("falls back for an incomplete toolbar lifecycle hint", () =>
     Effect.gen(function* () {
       const active = TestVsCode.makeNotebookEditor("/test/active.py");
-      const vscode = yield* TestVsCode.make({
-        initialDocuments: [active.notebook],
-      });
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.openNotebook(active.notebook);
       yield* vscode.setActiveNotebookEditor(Option.some(active));
 
       const [resolved] = yield* decodeCommandArguments(restartKernel.command, [
@@ -59,38 +56,34 @@ describe("restartKernel invocation", () => {
           source: "notebookToolbar",
           notebookEditor: {},
         },
-      ]).pipe(Effect.provide(vscode.layer));
+      ]);
 
-      expect(Option.getOrThrow(resolved).editor).toBe(active);
+      Vitest.expect(Option.getOrThrow(resolved).editor).toBe(active);
     }),
   );
 
-  it.effect("rejects unrelated UI metadata", () =>
+  test.effect("rejects unrelated UI metadata", () =>
     Effect.gen(function* () {
-      const vscode = yield* TestVsCode.make();
       const result = yield* Effect.result(
         decodeCommandArguments(restartKernel.command, [
           { ui: true, source: "editorToolbar", notebookEditor: {} },
-        ]).pipe(Effect.provide(vscode.layer)),
+        ]),
       );
-      expect(result._tag).toBe("Failure");
+      Vitest.expect(result._tag).toBe("Failure");
     }),
   );
 
-  it.effect("rejects notebook-cell context", () =>
+  test.effect("rejects notebook-cell context", () =>
     Effect.gen(function* () {
-      const vscode = yield* TestVsCode.make();
-      const cell = createNotebookCell(
-        createTestNotebookDocument("/test/notebook_mo.py"),
+      const cell = TestVsCode.createNotebookCell(
+        TestVsCode.createTestNotebookDocument("/test/notebook_mo.py"),
         { kind: 2, value: "x = 1", languageId: "python" },
         0,
       );
       const result = yield* Effect.result(
-        decodeCommandArguments(restartKernel.command, [cell]).pipe(
-          Effect.provide(vscode.layer),
-        ),
+        decodeCommandArguments(restartKernel.command, [cell]),
       );
-      expect(result._tag).toBe("Failure");
+      Vitest.expect(result._tag).toBe("Failure");
     }),
   );
 });

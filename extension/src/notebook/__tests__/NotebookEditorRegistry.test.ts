@@ -1,66 +1,69 @@
-import { expect, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Option, Stream } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
 
 import { TestTelemetryLive } from "../../__mocks__/TestTelemetry.ts";
-import {
-  createTestNotebookDocument,
-  createTestNotebookEditor,
-  TestVsCode,
-} from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as NotebookEditorRegistry from "../../notebook/NotebookEditorRegistry.ts";
-import * as VsCode from "../../platform/VsCode.ts";
 
-function makeRegistryLayer(vscode: TestVsCode) {
-  return Layer.empty.pipe(
-    Layer.provideMerge(NotebookEditorRegistry.layer),
+const it = EffectTest.make(
+  NotebookEditorRegistry.layer.pipe(
     Layer.provide(TestTelemetryLive),
-    Layer.provideMerge(vscode.layer),
+    Layer.provideMerge(TestVsCode.layer),
+  ),
+);
+const initiallyActiveEditor = TestVsCode.createTestNotebookEditor(
+  TestVsCode.createTestNotebookDocument("/test/already-active_mo.py"),
+);
+const initiallyActiveIt = EffectTest.make(
+  NotebookEditorRegistry.layer.pipe(
+    Layer.provide(TestTelemetryLive),
+    Layer.provideMerge(
+      TestVsCode.layerWith({
+        initialActiveNotebookEditor: Option.some(initiallyActiveEditor),
+      }),
+    ),
+  ),
+);
+
+const awaitActive = (
+  registry: NotebookEditorRegistry.Interface,
+  expected: Option.Option<string>,
+) =>
+  registry.streamActiveNotebookChanges.pipe(
+    Stream.filter((actual) =>
+      Option.match(expected, {
+        onNone: () => Option.isNone(actual),
+        onSome: (id) => Option.isSome(actual) && actual.value === id,
+      }),
+    ),
+    Stream.runHead,
+    Effect.asVoid,
   );
-}
 
 it.effect(
   "should return None when no active notebook editor",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
+    const registry = yield* NotebookEditorRegistry.Service;
 
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const registry = yield* NotebookEditorRegistry.Service;
+    const activeUri = yield* registry.getActiveNotebookUri;
+    Vitest.expect(Option.isNone(activeUri)).toBe(true);
 
-        const activeUri = yield* registry.getActiveNotebookUri;
-        expect(Option.isNone(activeUri)).toBe(true);
-
-        const activeEditor = yield* registry.getActiveNotebookEditor;
-        expect(Option.isNone(activeEditor)).toBe(true);
-      }),
-      makeRegistryLayer(vscode),
-    );
+    const activeEditor = yield* registry.getActiveNotebookEditor;
+    Vitest.expect(Option.isNone(activeEditor)).toBe(true);
   }),
 );
 
-it.effect(
+initiallyActiveIt.effect(
   "should seed an already-active notebook editor",
   Effect.fn(function* () {
-    const editor = createTestNotebookEditor(
-      createTestNotebookDocument("/test/already-active_mo.py"),
+    const registry = yield* NotebookEditorRegistry.Service;
+
+    Vitest.expect(yield* registry.getActiveNotebookUri).toEqual(
+      Option.some(initiallyActiveEditor.notebook.uri.toString()),
     );
-    const vscode = yield* TestVsCode.make({
-      initialActiveNotebookEditor: Option.some(editor),
-    });
-
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const registry = yield* NotebookEditorRegistry.Service;
-        yield* Effect.yieldNow;
-
-        expect(yield* registry.getActiveNotebookUri).toEqual(
-          Option.some(editor.notebook.uri.toString()),
-        );
-        expect(yield* registry.getActiveNotebookEditor).toEqual(
-          Option.some(editor),
-        );
-      }),
-      makeRegistryLayer(vscode),
+    Vitest.expect(yield* registry.getActiveNotebookEditor).toEqual(
+      Option.some(initiallyActiveEditor),
     );
   }),
 );
@@ -68,101 +71,85 @@ it.effect(
 it.effect(
   "should track active notebook editor changes",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
+    const vscode = yield* TestVsCode.Service;
+    const registry = yield* NotebookEditorRegistry.Service;
 
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        const registry = yield* NotebookEditorRegistry.Service;
-
-        // Create a mock notebook
-        const notebook = createTestNotebookDocument(
-          code.Uri.file("/test/notebook_mo.py"),
-        );
-
-        // Create a mock notebook editor
-        const mockEditor = createTestNotebookEditor(notebook);
-
-        // Initially, no active editor
-        const initialActive = yield* registry.getActiveNotebookUri;
-        expect(Option.isNone(initialActive)).toBe(true);
-
-        // Set active notebook editor
-        yield* vscode.setActiveNotebookEditor(Option.some(mockEditor));
-
-        // Tick
-        yield* Effect.yieldNow;
-
-        // Verify the registry tracked the change
-        const activeUri = yield* registry.getActiveNotebookUri;
-        expect(Option.isSome(activeUri)).toBe(true);
-        if (Option.isSome(activeUri)) {
-          expect(activeUri.value).toBe(notebook.uri.toString());
-        }
-
-        // Verify we can get the editor back
-        const editor = yield* registry.getActiveNotebookEditor;
-        expect(Option.isSome(editor)).toBe(true);
-        if (Option.isSome(editor)) {
-          expect(editor.value.notebook.uri.toString()).toBe(
-            notebook.uri.toString(),
-          );
-        }
-
-        // Clear active editor
-        yield* vscode.setActiveNotebookEditor(Option.none());
-        yield* Effect.yieldNow;
-
-        const clearedActive = yield* registry.getActiveNotebookUri;
-        expect(Option.isNone(clearedActive)).toBe(true);
-      }),
-      makeRegistryLayer(vscode),
+    const notebook = TestVsCode.createTestNotebookDocument(
+      TestVsCode.Uri.file("/test/notebook_mo.py"),
     );
+    const mockEditor = TestVsCode.createTestNotebookEditor(notebook);
+
+    const initialActive = yield* registry.getActiveNotebookUri;
+    Vitest.expect(Option.isNone(initialActive)).toBe(true);
+
+    yield* vscode.setActiveNotebookEditor(Option.some(mockEditor));
+    yield* awaitActive(registry, Option.some(notebook.uri.toString()));
+
+    const activeUri = yield* registry.getActiveNotebookUri;
+    Vitest.expect(Option.isSome(activeUri)).toBe(true);
+    if (Option.isSome(activeUri)) {
+      Vitest.expect(activeUri.value).toBe(notebook.uri.toString());
+    }
+
+    const editor = yield* registry.getActiveNotebookEditor;
+    Vitest.expect(Option.isSome(editor)).toBe(true);
+    if (Option.isSome(editor)) {
+      Vitest.expect(editor.value.notebook.uri.toString()).toBe(
+        notebook.uri.toString(),
+      );
+    }
+
+    yield* vscode.setActiveNotebookEditor(Option.none());
+    yield* awaitActive(registry, Option.none());
+
+    const clearedActive = yield* registry.getActiveNotebookUri;
+    Vitest.expect(Option.isNone(clearedActive)).toBe(true);
   }),
 );
 
 it.effect(
   "should track stream of active notebook editor changes",
   Effect.fn(function* () {
-    const vscode = yield* TestVsCode.make();
+    const vscode = yield* TestVsCode.Service;
+    const registry = yield* NotebookEditorRegistry.Service;
 
-    yield* Effect.provide(
-      Effect.gen(function* () {
-        const code = yield* VsCode.Service;
-        const registry = yield* NotebookEditorRegistry.Service;
+    const stream = registry.streamActiveNotebookChanges;
+    const mockEditor = TestVsCode.createTestNotebookEditor(
+      TestVsCode.createTestNotebookDocument(
+        TestVsCode.Uri.file("file:///test/notebook_mo.py"),
+      ),
+    );
+    const otherEditor = TestVsCode.createTestNotebookEditor(
+      TestVsCode.createTestNotebookDocument(
+        TestVsCode.Uri.file("file:///test/notebook_other.py"),
+      ),
+    );
 
-        const stream = registry.streamActiveNotebookChanges;
-        const mockEditor = createTestNotebookEditor(
-          createTestNotebookDocument(
-            code.Uri.file("file:///test/notebook_mo.py"),
-          ),
-        );
-        const otherEditor = createTestNotebookEditor(
-          createTestNotebookDocument(
-            code.Uri.file("file:///test/notebook_other.py"),
-          ),
-        );
+    const subscriptionReady = yield* Deferred.make<void>();
+    const streamResult = yield* Effect.forkChild(
+      stream.pipe(
+        Stream.tap(() => Deferred.succeed(subscriptionReady, undefined)),
+        Stream.drop(1),
+        Stream.take(4),
+        Stream.runCollect,
+      ),
+    );
+    yield* Deferred.await(subscriptionReady);
 
-        // Create a stream and fork
-        const streamResult = yield* Effect.forkChild(
-          stream.pipe(Stream.take(4)).pipe(Stream.runCollect),
-        );
+    const changes = [
+      Option.some(mockEditor),
+      Option.none(),
+      Option.some(otherEditor),
+      Option.some(otherEditor),
+      Option.some(mockEditor),
+    ];
 
-        const changes = [
-          Option.some(mockEditor),
-          Option.none(),
-          Option.some(otherEditor),
-          Option.some(otherEditor),
-          Option.some(mockEditor),
-        ];
+    for (const change of changes) {
+      yield* vscode.setActiveNotebookEditor(change);
+    }
 
-        for (const change of changes) {
-          yield* vscode.setActiveNotebookEditor(change);
-          yield* Effect.yieldNow;
-        }
-
-        const collected = yield* Fiber.join(streamResult);
-        expect(collected).toMatchInlineSnapshot(`
+    const collected = yield* Fiber.join(streamResult);
+    Vitest.expect(collected).toMatchInlineSnapshot(`
           [
             {
               "_id": "Option",
@@ -185,8 +172,5 @@ it.effect(
             },
           ]
         `);
-      }),
-      makeRegistryLayer(vscode),
-    );
   }),
 );

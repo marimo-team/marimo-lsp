@@ -1,696 +1,570 @@
-import { assert, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Option,
-  Scope,
-  Stream,
-} from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Fiber, Option } from "effect";
 import { TestClock } from "effect/testing";
 
-import {
-  createTestNotebookDocument,
-  Uri,
-} from "../../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../../__tests__/__utils__/EffectTest.ts";
 import { makeScopedResourceCounter } from "../../../__tests__/__utils__/scopedResourceCounter.ts";
-import {
-  makeTestMarimoClient,
-  type TestCommand,
-} from "../../../__tests__/__utils__/TestMarimoClient.ts";
-import { makeTestNotebookDocumentSession } from "../../../__tests__/__utils__/TestNotebookDocumentSession.ts";
-import { NOTEBOOK_TYPE } from "../../../constants.ts";
-import {
-  kernelSessionId,
-  notebookId,
-  requestId,
-} from "../../../lib/__tests__/branded.ts";
-import * as NotebookDocumentSessions from "../../../notebook/NotebookDocumentSessions.ts";
-import type {
-  DataSourceConnectionsNotification,
-  DatabaseSchema,
-  DataTable,
-  SqlSchemaListPreviewNotification,
-  SqlTableListPreviewNotification,
-} from "../../../types.ts";
-import * as NotebookDatasources from "../NotebookDatasources.ts";
+import type { TestCommand } from "../../../__tests__/__utils__/TestMarimoClient.ts";
+import { requestId } from "../../../lib/__tests__/branded.ts";
+import type { SqlTableListPreviewNotification } from "../../../types.ts";
+import * as TestNotebookDatasources from "./TestNotebookDatasources.ts";
 
-const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
-const KERNEL_SESSION_ID = kernelSessionId(
-  "00000000-0000-4000-8000-000000000001",
-);
-const SESSION = makeTestNotebookDocumentSession(
-  createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-    notebookType: NOTEBOOK_TYPE,
-  }),
-);
-
-const makeLayer = (
-  send: (request: TestCommand) => Effect.Effect<unknown> = () =>
-    Effect.succeed(null),
-  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
-) =>
-  NotebookDatasources.layer.pipe(
-    Layer.provide([
-      makeTestMarimoClient({ send }),
-      Layer.succeed(NotebookDocumentSessions.Service, {
-        current: (notebookUri) =>
-          notebookUri === currentSession().notebookId
-            ? Option.some(currentSession())
-            : Option.none(),
-        forDocument: (document) => {
-          const session = currentSession();
-          return session.document === document
-            ? Option.some(session)
-            : Option.none();
-        },
-        active: Stream.empty,
-      }),
-    ]),
-  );
-
-const makeRecordingLayer = (
-  currentSession: () => NotebookDocumentSessions.Session = () => SESSION,
-) => {
-  const calls: TestCommand[] = [];
-  const waiters = new Map<number, Deferred.Deferred<TestCommand>>();
-  const nextCall = (index: number): Effect.Effect<TestCommand> =>
-    Effect.gen(function* () {
-      const call = calls[index];
-      if (call !== undefined) return call;
-      const waiter = yield* Deferred.make<TestCommand>();
-      const current = calls[index];
-      if (current !== undefined) return current;
-      waiters.set(index, waiter);
-      return yield* Deferred.await(waiter).pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (waiters.get(index) === waiter) waiters.delete(index);
-          }),
-        ),
-      );
-    });
-  return {
-    calls,
-    nextCall,
-    layer: makeLayer(
-      (request) =>
-        Effect.gen(function* () {
-          const index = calls.push(request) - 1;
-          const waiter = waiters.get(index);
-          if (waiter !== undefined) yield* Deferred.succeed(waiter, request);
-          return null;
-        }),
-      currentSession,
-    ),
-  };
+const schemaRequest = (request: TestCommand) => {
+  if (request.kind !== "list-sql-schemas") {
+    throw new Error(`Expected list-sql-schemas, received ${request.kind}`);
+  }
+  return request;
 };
 
-const table = (name: string): DataTable => ({
-  name,
-  source: "warehouse",
-  source_type: "connection",
-  num_rows: null,
-  num_columns: null,
-  variable_name: null,
-  columns: [],
-});
-
-const schema = (
-  name: string,
-  options: Partial<DatabaseSchema> = {},
-): DatabaseSchema => ({
-  name,
-  tables: [],
-  ...options,
-});
-
-const connections = (
-  schemas: DatabaseSchema[],
-  schemasResolved = true,
-): DataSourceConnectionsNotification => ({
-  op: "data-source-connections",
-  connections: [
-    {
-      name: "warehouse",
-      source: "postgres",
-      dialect: "postgres",
-      display_name: "Warehouse",
-      databases: [
-        {
-          name: "analytics",
-          dialect: "postgres",
-          schemas,
-          schemas_resolved: schemasResolved,
-        },
-      ],
-    },
-  ],
-});
+const tableRequest = (request: TestCommand) => {
+  if (request.kind !== "list-sql-tables") {
+    throw new Error(`Expected list-sql-tables, received ${request.kind}`);
+  }
+  return request;
+};
 
 const getDatabase = Effect.fn(function* () {
-  const service = yield* NotebookDatasources.Service;
-  const state = yield* service.getConnections(NOTEBOOK_URI);
-  assert(Option.isSome(state));
-  const database = state.value.connections
-    .get("warehouse")
-    ?.databases.get("analytics");
-  assert(database !== undefined);
-  return database;
+  const datasources = yield* TestNotebookDatasources.Service;
+  const state = Option.getOrThrow(
+    yield* datasources.getConnections(TestNotebookDatasources.NOTEBOOK_URI),
+  );
+  return Option.fromNullishOr(
+    state.connections.get("warehouse")?.databases.get("analytics"),
+  ).pipe(Option.getOrThrow);
 });
 
-it.effect("preserves recursive schemas and deferred discovery", () =>
-  Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections(
-        [
-          schema("catalog", {
-            tables_resolved: false,
+Vitest.describe("NotebookDatasources", () => {
+  const it = EffectTest.make(TestNotebookDatasources.layer);
+
+  it.effect("preserves recursive schemas and deferred discovery", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections(
+          [
+            TestNotebookDatasources.schema("catalog", {
+              tables_resolved: false,
+              child_schemas_resolved: false,
+              child_schemas: [
+                TestNotebookDatasources.schema("loaded", {
+                  tables: [TestNotebookDatasources.table("events")],
+                }),
+              ],
+            }),
+          ],
+          false,
+        ),
+      );
+
+      const database = yield* getDatabase();
+      const catalog = database.schemas.get("catalog");
+      Vitest.expect(database.schemasResolved).toBe(false);
+      Vitest.expect(catalog?.tablesResolved).toBe(false);
+      Vitest.expect(catalog?.childSchemasResolved).toBe(false);
+      Vitest.expect(
+        catalog?.childSchemas.get("loaded")?.tables.has("events"),
+      ).toBe(true);
+    }),
+  );
+
+  it.effect("isolates datasource state by document session", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const displaced = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        displaced,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("old"),
+        ]),
+      );
+
+      yield* datasources.replaceSession;
+      Vitest.expect(
+        Option.isNone(
+          yield* datasources.getConnections(
+            TestNotebookDatasources.NOTEBOOK_URI,
+          ),
+        ),
+      ).toBe(true);
+      const replacement = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        replacement,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("new"),
+        ]),
+      );
+      yield* datasources.closeDisplaced;
+      yield* datasources.updateConnections(
+        displaced,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("late"),
+        ]),
+      );
+      yield* datasources.selectDisplaced;
+      Vitest.expect(
+        Option.isNone(
+          yield* datasources.getConnections(
+            TestNotebookDatasources.NOTEBOOK_URI,
+          ),
+        ),
+      ).toBe(true);
+      yield* datasources.selectReplacement;
+
+      const database = yield* getDatabase();
+      Vitest.expect(database.schemas.has("new")).toBe(true);
+      Vitest.expect(database.schemas.has("old")).toBe(false);
+    }),
+  );
+
+  it.effect(
+    "keeps kernel replacement independent from document ownership",
+    () =>
+      Effect.gen(function* () {
+        const datasources = yield* TestNotebookDatasources.Service;
+        const session = yield* datasources.currentSession;
+        yield* datasources.updateConnections(
+          session,
+          TestNotebookDatasources.KERNEL_SESSION_ID,
+          TestNotebookDatasources.connections([
+            TestNotebookDatasources.schema("old"),
+          ]),
+        );
+        yield* datasources.updateDatasets(
+          session,
+          TestNotebookDatasources.REPLACEMENT_KERNEL_SESSION_ID,
+          {
+            op: "datasets",
+            tables: [TestNotebookDatasources.table("fresh")],
+          },
+        );
+        Vitest.expect(
+          Option.isNone(
+            yield* datasources.getConnections(
+              TestNotebookDatasources.NOTEBOOK_URI,
+            ),
+          ),
+        ).toBe(true);
+        yield* datasources.updateConnections(
+          session,
+          TestNotebookDatasources.REPLACEMENT_KERNEL_SESSION_ID,
+          TestNotebookDatasources.connections([
+            TestNotebookDatasources.schema("new"),
+          ]),
+        );
+        yield* datasources.clearKernelSession(
+          TestNotebookDatasources.NOTEBOOK_URI,
+          TestNotebookDatasources.KERNEL_SESSION_ID,
+        );
+
+        const datasets = Option.getOrThrow(
+          yield* datasources.getDatasets(TestNotebookDatasources.NOTEBOOK_URI),
+        );
+        Vitest.expect(datasets.tables.has("fresh")).toBe(true);
+      }),
+  );
+
+  it.effect("merges child schemas at their parent path", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("catalog", {
+            tables: [TestNotebookDatasources.table("existing")],
             child_schemas_resolved: false,
-            child_schemas: [schema("loaded", { tables: [table("events")] })],
           }),
-        ],
+        ]),
+      );
+      const load = yield* datasources
+        .loadSchemas(session, "warehouse", "analytics", ["catalog"])
+        .pipe(Effect.forkChild);
+      const call = schemaRequest(yield* datasources.nextRequest);
+      yield* datasources.updateSchemaList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-schema-list-preview",
+          request_id: requestId(call.requestId),
+          metadata: {
+            connection: "warehouse",
+            database: "analytics",
+            schema_path: ["catalog"],
+          },
+          schemas: [
+            TestNotebookDatasources.schema("events", {
+              tables_resolved: false,
+            }),
+          ],
+        },
+      );
+      yield* Fiber.join(load);
+
+      const catalog = (yield* getDatabase()).schemas.get("catalog");
+      Vitest.expect(catalog?.childSchemasResolved).toBe(true);
+      Vitest.expect(catalog?.childSchemas.get("events")?.tablesResolved).toBe(
         false,
-      ),
-    );
-
-    const database = yield* getDatabase();
-    const catalog = database.schemas.get("catalog");
-    assert(catalog !== undefined);
-    expect(database.schemasResolved).toBe(false);
-    expect(catalog.tablesResolved).toBe(false);
-    expect(catalog.childSchemasResolved).toBe(false);
-    expect(catalog.childSchemas.get("loaded")?.tables.has("events")).toBe(true);
-  }).pipe(Effect.provide(makeLayer())),
-);
-
-it.effect("isolates datasource state by document session", () => {
-  const displaced = makeTestNotebookDocumentSession(
-    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-      notebookType: NOTEBOOK_TYPE,
+      );
+      Vitest.expect(catalog?.tables.has("existing")).toBe(true);
     }),
   );
-  const replacement = makeTestNotebookDocumentSession(
-    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-      notebookType: NOTEBOOK_TYPE,
+
+  it.effect("merges tables at a nested schema path", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("catalog", {
+            child_schemas: [
+              TestNotebookDatasources.schema("events", {
+                tables_resolved: false,
+              }),
+            ],
+          }),
+        ]),
+      );
+      const load = yield* datasources
+        .loadTables(session, "warehouse", "analytics", "events", [
+          "catalog",
+          "events",
+        ])
+        .pipe(Effect.forkChild);
+      const call = tableRequest(yield* datasources.nextRequest);
+      yield* datasources.updateTableList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-table-list-preview",
+          request_id: requestId(call.requestId),
+          metadata: {
+            type: "sql-metadata",
+            connection: "warehouse",
+            database: "analytics",
+            schema: "events",
+            schema_path: ["catalog", "events"],
+          },
+          tables: [TestNotebookDatasources.table("clicks")],
+        },
+      );
+      yield* Fiber.join(load);
+
+      const events = (yield* getDatabase()).schemas
+        .get("catalog")
+        ?.childSchemas.get("events");
+      Vitest.expect(events?.tablesResolved).toBe(true);
+      Vitest.expect(events?.tables.has("clicks")).toBe(true);
     }),
   );
-  let current = displaced;
-  const layer = makeLayer(
-    () => Effect.succeed(null),
-    () => current,
-  );
 
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      displaced,
-      KERNEL_SESSION_ID,
-      connections([schema("old")]),
-    );
-
-    current = replacement;
-    expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
-      true,
-    );
-
-    yield* service.updateConnections(
-      replacement,
-      KERNEL_SESSION_ID,
-      connections([schema("new")]),
-    );
-    yield* Scope.close(displaced.scope, Exit.void);
-
-    // A delayed notification cannot repopulate the ended session.
-    yield* service.updateConnections(
-      displaced,
-      KERNEL_SESSION_ID,
-      connections([schema("late")]),
-    );
-    current = displaced;
-    expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
-      true,
-    );
-    current = replacement;
-
-    const state = yield* service.getConnections(NOTEBOOK_URI);
-    assert(Option.isSome(state));
-    const database = state.value.connections
-      .get("warehouse")
-      ?.databases.get("analytics");
-    expect(database?.schemas.has("new")).toBe(true);
-    expect(database?.schemas.has("old")).toBe(false);
-  }).pipe(Effect.provide(layer));
-});
-
-it.effect(
-  "keeps kernel replacement independent from document ownership",
-  () => {
-    const replacementKernelSessionId = kernelSessionId(
-      "00000000-0000-4000-8000-000000000002",
-    );
-
-    return Effect.gen(function* () {
-      const service = yield* NotebookDatasources.Service;
-      yield* service.updateConnections(
-        SESSION,
-        KERNEL_SESSION_ID,
-        connections([schema("old")]),
+  it.effect("does not resolve deferred state after an error", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("public", { tables_resolved: false }),
+        ]),
       );
-
-      // The first notification from a replacement kernel starts fresh state.
-      yield* service.updateDatasets(SESSION, replacementKernelSessionId, {
-        op: "datasets",
-        tables: [table("fresh")],
-      });
-      expect(Option.isNone(yield* service.getConnections(NOTEBOOK_URI))).toBe(
-        true,
-      );
-      expect(Option.isSome(yield* service.getDatasets(NOTEBOOK_URI))).toBe(
-        true,
-      );
-
-      yield* service.updateConnections(
-        SESSION,
-        replacementKernelSessionId,
-        connections([schema("new")]),
-      );
-      yield* service.clearKernelSession(NOTEBOOK_URI, KERNEL_SESSION_ID);
-
-      expect(Option.isSome(yield* service.getConnections(NOTEBOOK_URI))).toBe(
-        true,
-      );
-      const datasets = yield* service.getDatasets(NOTEBOOK_URI);
-      assert(Option.isSome(datasets));
-      expect(datasets.value.tables.has("fresh")).toBe(true);
-    }).pipe(Effect.provide(makeLayer()));
-  },
-);
-
-it.effect("merges child schemas at their parent path", () => {
-  const { layer, nextCall } = makeRecordingLayer();
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([
-        schema("catalog", {
-          tables: [table("existing")],
-          child_schemas_resolved: false,
-        }),
-      ]),
-    );
-
-    const load = yield* Effect.forkChild(
-      service.loadSchemas(SESSION, "warehouse", "analytics", ["catalog"]),
-    );
-    const call = yield* nextCall(0);
-    assert(call.kind === "list-sql-schemas");
-
-    const operation: SqlSchemaListPreviewNotification = {
-      op: "sql-schema-list-preview",
-      request_id: requestId(call.requestId),
-      metadata: {
-        connection: "warehouse",
-        database: "analytics",
-        schema_path: ["catalog"],
-      },
-      schemas: [schema("events", { tables_resolved: false })],
-    };
-    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, operation);
-    yield* Fiber.join(load);
-
-    const catalog = (yield* getDatabase()).schemas.get("catalog");
-    assert(catalog !== undefined);
-    expect(catalog.childSchemasResolved).toBe(true);
-    expect(catalog.childSchemas.get("events")?.tablesResolved).toBe(false);
-    expect(catalog.tables.has("existing")).toBe(true);
-  }).pipe(Effect.provide(layer));
-});
-
-it.effect("merges tables at a nested schema path", () => {
-  const { layer, nextCall } = makeRecordingLayer();
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([
-        schema("catalog", {
-          child_schemas: [schema("events", { tables_resolved: false })],
-        }),
-      ]),
-    );
-
-    const load = yield* Effect.forkChild(
-      service.loadTables(SESSION, "warehouse", "analytics", "events", [
-        "catalog",
-        "events",
-      ]),
-    );
-    const call = yield* nextCall(0);
-    assert(call.kind === "list-sql-tables");
-
-    const operation: SqlTableListPreviewNotification = {
-      op: "sql-table-list-preview",
-      request_id: requestId(call.requestId),
-      metadata: {
-        type: "sql-metadata",
-        connection: "warehouse",
-        database: "analytics",
-        schema: "events",
-        schema_path: ["catalog", "events"],
-      },
-      tables: [table("clicks")],
-    };
-    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, operation);
-    yield* Fiber.join(load);
-
-    const events = (yield* getDatabase()).schemas
-      .get("catalog")
-      ?.childSchemas.get("events");
-    expect(events?.tablesResolved).toBe(true);
-    expect(events?.tables.has("clicks")).toBe(true);
-  }).pipe(Effect.provide(layer));
-});
-
-it.effect("does not resolve deferred state after an error", () => {
-  const { layer, nextCall } = makeRecordingLayer();
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([schema("public", { tables_resolved: false })]),
-    );
-
-    const load = yield* Effect.forkChild(
-      Effect.result(
-        service.loadTables(SESSION, "warehouse", "analytics", "public", [
+      const load = yield* Effect.result(
+        datasources.loadTables(session, "warehouse", "analytics", "public", [
           "public",
         ]),
-      ),
-    );
-    const call = yield* nextCall(0);
-    assert(call.kind === "list-sql-tables");
-
-    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
-      op: "sql-table-list-preview",
-      request_id: requestId(call.requestId),
-      metadata: {
-        type: "sql-metadata",
-        connection: "warehouse",
-        database: "analytics",
-        schema: "public",
-      },
-      tables: [],
-      error: "connection lost",
-    });
-    expect((yield* Fiber.join(load))._tag).toBe("Failure");
-
-    expect((yield* getDatabase()).schemas.get("public")?.tablesResolved).toBe(
-      false,
-    );
-  }).pipe(Effect.provide(layer));
-});
-
-it.effect("ignores uncorrelated expansion responses", () =>
-  Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([schema("public", { tables_resolved: false })], false),
-    );
-
-    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, {
-      op: "sql-schema-list-preview",
-      request_id: requestId("stale-schemas"),
-      metadata: { connection: "warehouse", database: "analytics" },
-      schemas: [schema("stale")],
-    });
-    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
-      op: "sql-table-list-preview",
-      request_id: requestId("stale-tables"),
-      metadata: {
-        type: "sql-metadata",
-        connection: "warehouse",
-        database: "analytics",
-        schema: "public",
-      },
-      tables: [table("stale")],
-    });
-
-    const database = yield* getDatabase();
-    expect(database.schemasResolved).toBe(false);
-    expect(database.schemas.has("stale")).toBe(false);
-    expect(database.schemas.get("public")?.tablesResolved).toBe(false);
-    expect(database.schemas.get("public")?.tables.has("stale")).toBe(false);
-  }).pipe(Effect.provide(makeLayer())),
-);
-
-it.effect("deduplicates concurrent schema expansion requests", () => {
-  const { calls, layer, nextCall } = makeRecordingLayer();
-
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([], false),
-    );
-
-    const first = yield* Effect.forkChild(
-      service.loadSchemas(SESSION, "warehouse", "analytics", []),
-    );
-    const second = yield* Effect.forkChild(
-      service.loadSchemas(SESSION, "warehouse", "analytics", []),
-    );
-    const call = yield* nextCall(0);
-    assert(call.kind === "list-sql-schemas");
-    yield* service.updateSchemaList(SESSION, KERNEL_SESSION_ID, {
-      op: "sql-schema-list-preview",
-      request_id: requestId(call.requestId),
-      metadata: {
-        connection: "warehouse",
-        database: "analytics",
-      },
-      schemas: [schema("public")],
-    });
-
-    yield* Fiber.join(first);
-    yield* Fiber.join(second);
-    expect(calls).toHaveLength(1);
-    const database = yield* getDatabase();
-    expect(database.schemasResolved).toBe(true);
-    expect(database.schemas.has("public")).toBe(true);
-  }).pipe(Effect.provide(layer));
-});
-
-it.effect("interrupts an expansion send when its document session closes", () =>
-  Effect.gen(function* () {
-    const session = makeTestNotebookDocumentSession(
-      createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-        notebookType: NOTEBOOK_TYPE,
-      }),
-    );
-    const sendStarted = yield* Deferred.make<void>();
-    const releaseSend = yield* Deferred.make<void>();
-    const sendFinalized = yield* Deferred.make<void>();
-    const calls: TestCommand[] = [];
-    const layer = makeLayer(
-      (request) =>
-        Deferred.succeed(sendStarted, undefined).pipe(
-          Effect.andThen(Deferred.await(releaseSend)),
-          Effect.andThen(
-            Effect.sync(() => {
-              calls.push(request);
-            }),
-          ),
-          Effect.ensuring(Deferred.succeed(sendFinalized, undefined)),
-        ),
-      () => session,
-    );
-
-    yield* Effect.gen(function* () {
-      const service = yield* NotebookDatasources.Service;
-      yield* service.updateConnections(
+      ).pipe(Effect.forkChild);
+      const call = tableRequest(yield* datasources.nextRequest);
+      yield* datasources.updateTableList(
         session,
-        KERNEL_SESSION_ID,
-        connections([], false),
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-table-list-preview",
+          request_id: requestId(call.requestId),
+          metadata: {
+            type: "sql-metadata",
+            connection: "warehouse",
+            database: "analytics",
+            schema: "public",
+          },
+          tables: [],
+          error: "connection lost",
+        },
       );
 
-      const load = yield* service
-        .loadSchemas(session, "warehouse", "analytics", [])
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(sendStarted);
-      yield* Scope.close(session.scope, Exit.void).pipe(
-        Effect.forkChild,
-        Effect.flatMap(Fiber.join),
-      );
-
-      expect((yield* Fiber.await(load))._tag).toBe("Failure");
-      expect(yield* Deferred.isDone(sendFinalized)).toBe(true);
-      yield* Deferred.succeed(releaseSend, undefined);
-
-      expect(calls).toHaveLength(0);
-    }).pipe(Effect.provide(layer));
-  }),
-);
-
-it.effect("releases resources owned by completed expansions", () => {
-  const session = makeTestNotebookDocumentSession(
-    createTestNotebookDocument(Uri.parse(NOTEBOOK_URI), {
-      notebookType: NOTEBOOK_TYPE,
+      Vitest.expect((yield* Fiber.join(load))._tag).toBe("Failure");
+      Vitest.expect(
+        (yield* getDatabase()).schemas.get("public")?.tablesResolved,
+      ).toBe(false);
     }),
   );
-  const { layer, nextCall } = makeRecordingLayer(() => session);
 
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    const resources = yield* makeScopedResourceCounter();
-    yield* service.updateConnections(
-      session,
-      KERNEL_SESSION_ID,
-      connections([], false),
-    );
-
-    for (let index = 0; index < 3; index++) {
-      const load = yield* resources
-        .track(service.loadSchemas(session, "warehouse", "analytics", []))
-        .pipe(Effect.forkChild);
-      const request = yield* nextCall(index);
-      assert(request.kind === "list-sql-schemas");
-      expect(yield* resources.counts).toEqual({
-        acquired: index + 1,
-        released: index,
-        active: 1,
-      });
-
-      yield* service.updateSchemaList(session, KERNEL_SESSION_ID, {
-        op: "sql-schema-list-preview",
-        request_id: requestId(request.requestId),
-        metadata: {
-          connection: "warehouse",
-          database: "analytics",
-        },
-        schemas: [schema(`schema_${index}`)],
-      });
-      yield* Fiber.join(load);
-      expect(yield* resources.counts).toEqual({
-        acquired: index + 1,
-        released: index + 1,
-        active: 0,
-      });
-
-      yield* service.updateConnections(
+  it.effect("ignores uncorrelated expansion responses", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
         session,
-        KERNEL_SESSION_ID,
-        connections([], false),
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections(
+          [
+            TestNotebookDatasources.schema("public", {
+              tables_resolved: false,
+            }),
+          ],
+          false,
+        ),
       );
-    }
+      yield* datasources.updateSchemaList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-schema-list-preview",
+          request_id: requestId("stale-schemas"),
+          metadata: { connection: "warehouse", database: "analytics" },
+          schemas: [TestNotebookDatasources.schema("stale")],
+        },
+      );
+      yield* datasources.updateTableList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-table-list-preview",
+          request_id: requestId("stale-tables"),
+          metadata: {
+            type: "sql-metadata",
+            connection: "warehouse",
+            database: "analytics",
+            schema: "public",
+          },
+          tables: [TestNotebookDatasources.table("stale")],
+        },
+      );
 
-    yield* Scope.close(session.scope, Exit.void);
-  }).pipe(Effect.provide(layer));
-});
+      const database = yield* getDatabase();
+      Vitest.expect(database.schemasResolved).toBe(false);
+      Vitest.expect(database.schemas.has("stale")).toBe(false);
+      Vitest.expect(database.schemas.get("public")?.tablesResolved).toBe(false);
+      Vitest.expect(database.schemas.get("public")?.tables.has("stale")).toBe(
+        false,
+      );
+    }),
+  );
 
-it.effect("retries nested table expansion after an error", () => {
-  const { calls, layer, nextCall } = makeRecordingLayer();
+  it.effect("deduplicates concurrent schema expansion requests", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([], false),
+      );
+      const first = yield* datasources
+        .loadSchemas(session, "warehouse", "analytics", [])
+        .pipe(Effect.forkChild);
+      const second = yield* datasources
+        .loadSchemas(session, "warehouse", "analytics", [])
+        .pipe(Effect.forkChild);
+      const call = schemaRequest(yield* datasources.nextRequest);
+      yield* datasources.updateSchemaList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        {
+          op: "sql-schema-list-preview",
+          request_id: requestId(call.requestId),
+          metadata: { connection: "warehouse", database: "analytics" },
+          schemas: [TestNotebookDatasources.schema("public")],
+        },
+      );
+      yield* Fiber.join(first);
+      yield* Fiber.join(second);
 
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([
-        schema("catalog", {
-          child_schemas: [schema("events", { tables_resolved: false })],
-        }),
-      ]),
-    );
+      Vitest.expect(yield* datasources.requests).toHaveLength(1);
+      Vitest.expect((yield* getDatabase()).schemas.has("public")).toBe(true);
+    }),
+  );
 
-    const first = yield* Effect.forkChild(
-      Effect.result(
-        service.loadTables(SESSION, "warehouse", "analytics", "events", [
+  it.effect("releases resources owned by completed expansions", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      const resources = yield* makeScopedResourceCounter();
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([], false),
+      );
+
+      for (let index = 0; index < 3; index++) {
+        const load = yield* resources
+          .track(datasources.loadSchemas(session, "warehouse", "analytics", []))
+          .pipe(Effect.forkChild);
+        const request = schemaRequest(yield* datasources.nextRequest);
+        Vitest.expect(yield* resources.counts).toEqual({
+          acquired: index + 1,
+          released: index,
+          active: 1,
+        });
+        yield* datasources.updateSchemaList(
+          session,
+          TestNotebookDatasources.KERNEL_SESSION_ID,
+          {
+            op: "sql-schema-list-preview",
+            request_id: requestId(request.requestId),
+            metadata: { connection: "warehouse", database: "analytics" },
+            schemas: [TestNotebookDatasources.schema(`schema_${index}`)],
+          },
+        );
+        yield* Fiber.join(load);
+        Vitest.expect(yield* resources.counts).toEqual({
+          acquired: index + 1,
+          released: index + 1,
+          active: 0,
+        });
+        yield* datasources.updateConnections(
+          session,
+          TestNotebookDatasources.KERNEL_SESSION_ID,
+          TestNotebookDatasources.connections([], false),
+        );
+      }
+      yield* datasources.closeCurrent;
+    }),
+  );
+
+  it.effect("retries nested table expansion after an error", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([
+          TestNotebookDatasources.schema("catalog", {
+            child_schemas: [
+              TestNotebookDatasources.schema("events", {
+                tables_resolved: false,
+              }),
+            ],
+          }),
+        ]),
+      );
+      const first = yield* Effect.result(
+        datasources.loadTables(session, "warehouse", "analytics", "events", [
           "catalog",
           "events",
         ]),
-      ),
-    );
-    const call = yield* nextCall(0);
-    assert(call.kind === "list-sql-tables");
-    expect(call).toMatchObject({
-      engine: "warehouse",
-      database: "analytics",
-      schema: "events",
-      schemaPath: ["catalog", "events"],
-    });
-    yield* service.updateTableList(SESSION, KERNEL_SESSION_ID, {
-      op: "sql-table-list-preview",
-      request_id: requestId(call.requestId),
-      metadata: {
-        type: "sql-metadata",
-        connection: "warehouse",
+      ).pipe(Effect.forkChild);
+      const call = tableRequest(yield* datasources.nextRequest);
+      Vitest.expect(call).toMatchObject({
+        engine: "warehouse",
         database: "analytics",
         schema: "events",
-        schema_path: ["catalog", "events"],
-      },
-      tables: [],
-      error: "connection lost",
-    });
-    expect((yield* Fiber.join(first))._tag).toBe("Failure");
+        schemaPath: ["catalog", "events"],
+      });
+      const error: SqlTableListPreviewNotification = {
+        op: "sql-table-list-preview",
+        request_id: requestId(call.requestId),
+        metadata: {
+          type: "sql-metadata",
+          connection: "warehouse",
+          database: "analytics",
+          schema: "events",
+          schema_path: ["catalog", "events"],
+        },
+        tables: [],
+        error: "connection lost",
+      };
+      yield* datasources.updateTableList(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        error,
+      );
+      Vitest.expect((yield* Fiber.join(first))._tag).toBe("Failure");
 
-    const retry = yield* Effect.forkChild(
-      service.loadTables(SESSION, "warehouse", "analytics", "events", [
-        "catalog",
-        "events",
-      ]),
+      const retry = yield* datasources
+        .loadTables(session, "warehouse", "analytics", "events", [
+          "catalog",
+          "events",
+        ])
+        .pipe(Effect.forkChild);
+      const retryCall = yield* datasources.nextRequest;
+      Vitest.expect(retryCall.kind).toBe("list-sql-tables");
+      Vitest.expect(yield* datasources.requests).toHaveLength(2);
+      yield* Fiber.interrupt(retry);
+    }),
+  );
+
+  it.effect("shares one timeout deadline and retries after it expires", () =>
+    Effect.gen(function* () {
+      const datasources = yield* TestNotebookDatasources.Service;
+      const session = yield* datasources.currentSession;
+      yield* datasources.updateConnections(
+        session,
+        TestNotebookDatasources.KERNEL_SESSION_ID,
+        TestNotebookDatasources.connections([], false),
+      );
+      const first = yield* Effect.result(
+        datasources.loadSchemas(session, "warehouse", "analytics", []),
+      ).pipe(Effect.forkChild);
+      const firstCall = yield* datasources.nextRequest;
+      Vitest.expect(firstCall.kind).toBe("list-sql-schemas");
+      yield* TestClock.adjust("20 seconds");
+      const joined = yield* Effect.result(
+        datasources.loadSchemas(session, "warehouse", "analytics", []),
+      ).pipe(Effect.forkChild);
+      yield* TestClock.adjust("10 seconds");
+      Vitest.expect((yield* Fiber.join(first))._tag).toBe("Failure");
+      Vitest.expect((yield* Fiber.join(joined))._tag).toBe("Failure");
+      Vitest.expect(yield* datasources.requests).toHaveLength(1);
+
+      const retry = yield* datasources
+        .loadSchemas(session, "warehouse", "analytics", [])
+        .pipe(Effect.forkChild);
+      const retryCall = yield* datasources.nextRequest;
+      Vitest.expect(retryCall.kind).toBe("list-sql-schemas");
+      Vitest.expect(yield* datasources.requests).toHaveLength(2);
+      yield* Fiber.interrupt(retry);
+    }),
+  );
+
+  Vitest.describe("when a transport send is blocked", () => {
+    const it = EffectTest.make(
+      TestNotebookDatasources.layerWith(
+        TestNotebookDatasources.Scenario.BlockedSend(),
+      ),
     );
-    const retryCall = yield* nextCall(1);
-    assert(retryCall.kind === "list-sql-tables");
-    expect(calls).toHaveLength(2);
-    yield* Fiber.interrupt(retry);
-  }).pipe(Effect.provide(layer));
-});
 
-it.effect("shares one timeout deadline and retries after it expires", () => {
-  const { calls, layer, nextCall } = makeRecordingLayer();
+    it.effect(
+      "interrupts an expansion send when its document session closes",
+      Effect.fn(function* () {
+        const datasources = yield* TestNotebookDatasources.Service;
+        const session = yield* datasources.currentSession;
+        yield* datasources.updateConnections(
+          session,
+          TestNotebookDatasources.KERNEL_SESSION_ID,
+          TestNotebookDatasources.connections([], false),
+        );
+        const load = yield* datasources
+          .loadSchemas(session, "warehouse", "analytics", [])
+          .pipe(Effect.forkChild);
+        yield* datasources.sendStarted;
+        const close = yield* datasources.closeCurrent.pipe(Effect.forkChild);
+        yield* Fiber.join(close);
 
-  return Effect.gen(function* () {
-    const service = yield* NotebookDatasources.Service;
-    yield* service.updateConnections(
-      SESSION,
-      KERNEL_SESSION_ID,
-      connections([], false),
+        Vitest.expect((yield* Fiber.await(load))._tag).toBe("Failure");
+        yield* datasources.sendFinalized;
+        yield* datasources.releaseSend;
+        Vitest.expect(yield* datasources.requests).toEqual([]);
+      }),
     );
-
-    const first = yield* Effect.forkChild(
-      Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
-    );
-    const firstCall = yield* nextCall(0);
-    assert(firstCall.kind === "list-sql-schemas");
-
-    yield* TestClock.adjust("20 seconds");
-    const joined = yield* Effect.forkChild(
-      Effect.result(service.loadSchemas(SESSION, "warehouse", "analytics", [])),
-    );
-    yield* TestClock.adjust("10 seconds");
-    expect((yield* Fiber.join(first))._tag).toBe("Failure");
-    expect((yield* Fiber.join(joined))._tag).toBe("Failure");
-    expect(calls).toHaveLength(1);
-
-    const retry = yield* Effect.forkChild(
-      service.loadSchemas(SESSION, "warehouse", "analytics", []),
-    );
-    const retryCall = yield* nextCall(1);
-    assert(retryCall.kind === "list-sql-schemas");
-    expect(calls).toHaveLength(2);
-    yield* Fiber.interrupt(retry);
-  }).pipe(Effect.provide(layer));
+  });
 });

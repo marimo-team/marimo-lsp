@@ -1,4 +1,4 @@
-import { assert, describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Cause, Effect, Exit, Fiber, Latch, Ref, Scope } from "effect";
 
 import { makeScopedResourceCounter } from "../../__tests__/__utils__/scopedResourceCounter.ts";
@@ -8,14 +8,15 @@ import {
   NotebookExecutionScopeClosedError,
 } from "../NotebookExecutor.ts";
 
-describe("NotebookExecutor", () => {
-  it.effect(
+Vitest.describe("NotebookExecutor", () => {
+  Vitest.it.effect(
     "keeps admitted work after its caller stops waiting",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
       const started = yield* Latch.make();
       const release = yield* Latch.make();
       const completed = yield* Latch.make();
+      const secondCompleted = yield* Latch.make();
       const order = yield* Ref.make<ReadonlyArray<string>>([]);
       const notebook = notebookId("notebook");
 
@@ -35,18 +36,20 @@ describe("NotebookExecutor", () => {
       yield* Fiber.interrupt(caller);
       yield* executor.post(
         notebook,
-        Ref.update(order, (events) => [...events, "second"]),
+        Ref.update(order, (events) => [...events, "second"]).pipe(
+          Effect.andThen(secondCompleted.open),
+        ),
       );
 
-      assert.deepStrictEqual(yield* Ref.get(order), []);
+      Vitest.assert.deepStrictEqual(yield* Ref.get(order), []);
       yield* release.open;
       yield* completed.await;
-      yield* Effect.yieldNow;
-      assert.deepStrictEqual(yield* Ref.get(order), ["first", "second"]);
+      yield* secondCompleted.await;
+      Vitest.assert.deepStrictEqual(yield* Ref.get(order), ["first", "second"]);
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "interrupts active and buffered replies when its scope closes",
     Effect.fn(function* () {
       const scope = yield* Scope.make();
@@ -67,8 +70,7 @@ describe("NotebookExecutor", () => {
           notebook,
           Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
-        .pipe(Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(Effect.forkDetach({ startImmediately: true }));
 
       yield* Scope.close(scope, Exit.void);
       const [activeExit, bufferedExit] = yield* Effect.all([
@@ -76,23 +78,23 @@ describe("NotebookExecutor", () => {
         Fiber.await(buffered),
       ]);
 
-      assert.isTrue(Exit.hasInterrupts(activeExit));
-      assert.isTrue(Exit.hasInterrupts(bufferedExit));
-      assert.isFalse(yield* Ref.get(bufferedStarted));
+      Vitest.assert.isTrue(Exit.hasInterrupts(activeExit));
+      Vitest.assert.isTrue(Exit.hasInterrupts(bufferedExit));
+      Vitest.assert.isFalse(yield* Ref.get(bufferedStarted));
 
       const afterClose = yield* Effect.exit(
         executor.submit(notebook, Effect.void),
       );
-      assert.isTrue(Exit.hasInterrupts(afterClose));
+      Vitest.assert.isTrue(Exit.hasInterrupts(afterClose));
 
       const postAfterClose = yield* Effect.exit(
         executor.post(notebook, Effect.void),
       );
-      assert.isTrue(Exit.hasInterrupts(postAfterClose));
+      Vitest.assert.isTrue(Exit.hasInterrupts(postAfterClose));
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "interrupts work owned by a document scope without closing the executor",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -113,8 +115,7 @@ describe("NotebookExecutor", () => {
           Ref.set(bufferedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
         .pipe(Scope.provide(documentScope))
-        .pipe(Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(Effect.forkDetach({ startImmediately: true }));
 
       yield* Scope.close(documentScope, Exit.void);
       const [activeExit, bufferedExit] = yield* Effect.all([
@@ -123,20 +124,23 @@ describe("NotebookExecutor", () => {
       ]);
 
       for (const exit of [activeExit, bufferedExit]) {
-        assert.isTrue(Exit.isFailure(exit));
+        Vitest.assert.isTrue(Exit.isFailure(exit));
         if (!Exit.isFailure(exit)) continue;
         const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookExecutionScopeClosedError);
-        expect(failure?.error).toMatchObject({ notebookId: notebook });
+        Vitest.assert.instanceOf(
+          failure?.error,
+          NotebookExecutionScopeClosedError,
+        );
+        Vitest.expect(failure?.error).toMatchObject({ notebookId: notebook });
       }
-      assert.isFalse(yield* Ref.get(bufferedStarted));
+      Vitest.assert.isFalse(yield* Ref.get(bufferedStarted));
 
       const result = yield* executor.submit(notebook, Effect.succeed("done"));
-      assert.strictEqual(result, "done");
+      Vitest.assert.strictEqual(result, "done");
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "rejects queued scoped work as soon as its scope closes",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -157,27 +161,32 @@ describe("NotebookExecutor", () => {
           notebook,
           Ref.set(queuedStarted, true).pipe(Effect.andThen(Effect.never)),
         )
-        .pipe(Scope.provide(documentScope), Effect.forkDetach);
-      yield* Effect.yieldNow;
+        .pipe(
+          Scope.provide(documentScope),
+          Effect.forkDetach({ startImmediately: true }),
+        );
 
       yield* Scope.close(documentScope, Exit.void);
       const exit = yield* Fiber.await(queued);
-      assert.isTrue(Exit.isFailure(exit));
+      Vitest.assert.isTrue(Exit.isFailure(exit));
       if (Exit.isFailure(exit)) {
         const failure = exit.cause.reasons.find(Cause.isFailReason);
-        assert.instanceOf(failure?.error, NotebookExecutionScopeClosedError);
+        Vitest.assert.instanceOf(
+          failure?.error,
+          NotebookExecutionScopeClosedError,
+        );
       }
 
       yield* releaseBlocker.open;
-      assert.strictEqual(
+      Vitest.assert.strictEqual(
         yield* executor.submit(notebook, Effect.succeed("done")),
         "done",
       );
-      assert.isFalse(yield* Ref.get(queuedStarted));
+      Vitest.assert.isFalse(yield* Ref.get(queuedStarted));
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "releases resources owned by completed scoped submissions",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -191,7 +200,7 @@ describe("NotebookExecutor", () => {
           .pipe(Scope.provide(documentScope));
       }
 
-      assert.deepStrictEqual(yield* resources.counts, {
+      Vitest.assert.deepStrictEqual(yield* resources.counts, {
         acquired: 100,
         released: 100,
         active: 0,
@@ -200,7 +209,7 @@ describe("NotebookExecutor", () => {
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "preserves self-interruption while the owning scope remains open",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -211,12 +220,12 @@ describe("NotebookExecutor", () => {
         .submitScoped(notebook, Effect.interrupt)
         .pipe(Scope.provide(documentScope), Effect.forkDetach);
 
-      assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(submitted)));
+      Vitest.assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(submitted)));
       yield* Scope.close(documentScope, Exit.void);
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "keeps processing after a posted defect or interruption",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -226,11 +235,11 @@ describe("NotebookExecutor", () => {
       yield* executor.post(notebook, Effect.interrupt);
 
       const result = yield* executor.submit(notebook, Effect.succeed("done"));
-      assert.strictEqual(result, "done");
+      Vitest.assert.strictEqual(result, "done");
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "preserves FIFO while idle workers retire",
     Effect.fn(function* () {
       const executor = yield* makeNotebookExecutor<never>();
@@ -244,7 +253,7 @@ describe("NotebookExecutor", () => {
         );
       }
 
-      assert.deepStrictEqual(
+      Vitest.assert.deepStrictEqual(
         yield* Ref.get(order),
         Array.from({ length: 100 }, (_, index) => String(index)),
       );

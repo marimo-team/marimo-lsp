@@ -1,149 +1,28 @@
-import { assert, describe, expect, it } from "@effect/vitest";
-import {
-  Deferred,
-  Effect,
-  Fiber,
-  Layer,
-  Option,
-  Schema,
-  Scope,
-  Stream,
-} from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Fiber, Latch, Schema } from "effect";
 
-import {
-  createTestNotebookDocument,
-  TestVsCode,
-  Uri,
-} from "../../__mocks__/TestVsCode.ts";
-import {
-  makeTestNotebookRuntime,
-  type TestCommand,
-} from "../../__tests__/__utils__/TestMarimoClient.ts";
-import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
-import { notebookId } from "../../lib/__tests__/branded.ts";
-import type { NotebookId } from "../../schemas/MarimoNotebookDocument.ts";
-import type { DependencyTreeNode } from "../../schemas/Models.gen.ts";
-import * as NotebookDependencies from "../NotebookDependencies.ts";
-import * as NotebookDocumentSessions from "../NotebookDocumentSessions.ts";
-import * as NotebookSessionResources from "../NotebookSessionResources.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as TestNotebookDependencies from "./TestNotebookDependencies.ts";
 
-const NOTEBOOK_URI = notebookId("file:///test/notebook.py");
-const OTHER_NOTEBOOK_URI = notebookId("file:///test/other.py");
+Vitest.describe("NotebookDependencies", () => {
+  const it = EffectTest.make(TestNotebookDependencies.layer);
 
-const TREE: DependencyTreeNode = {
-  name: "<root>",
-  version: null,
-  tags: [],
-  dependencies: [],
-};
-
-function makeController(options: {
-  readonly id: string;
-  readonly executable?: string;
-}): NotebookRuntime.NotebookController {
-  return {
-    ...options,
-    drive: () => () => Effect.void,
-    presentOutputs: () => Effect.void,
-    resolveExecutable: () =>
-      Effect.succeed(options.executable ?? "/unused/python"),
-  };
-}
-
-const isTerminal = (state: NotebookDependencies.State) =>
-  state._tag === "Loaded" || state._tag === "Failed";
-
-const makeContext = Effect.fn(function* (options: {
-  readonly notebookIds?: ReadonlyArray<NotebookId>;
-  readonly controllers?: ReadonlyArray<NotebookRuntime.NotebookControllerSelection>;
-  readonly send: (
-    request: TestCommand,
-  ) => Effect.Effect<unknown, Schema.SchemaError>;
-}) {
-  const notebookIds = options.notebookIds ?? [NOTEBOOK_URI];
-  const documents = notebookIds.map((uri) =>
-    createTestNotebookDocument(Uri.parse(uri)),
-  );
-  const vscode = yield* TestVsCode.make({ initialDocuments: documents });
-  const requests: TestCommand[] = [];
-  const runtime = makeTestNotebookRuntime({
-    initialControllers: options.controllers,
-    send: (request) =>
-      Effect.sync(() => requests.push(request)).pipe(
-        Effect.andThen(options.send(request)),
-      ),
-  });
-  const sessions = NotebookDocumentSessions.layer.pipe(
-    Layer.provide(vscode.layer),
-  );
-  const resources = NotebookSessionResources.layer.pipe(
-    Layer.provide(sessions),
-    Layer.provide(runtime),
-  );
-
-  return {
-    requests,
-    layer: Layer.mergeAll(vscode.layer, sessions, resources),
-  };
-});
-
-const inNotebook = <A, E, R>(
-  notebookUri: NotebookId,
-  effect: Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const sessions = yield* NotebookDocumentSessions.Service;
-    const resources = yield* NotebookSessionResources.Service;
-    const session = sessions.current(notebookUri);
-    assert(Option.isSome(session));
-    return yield* resources
-      .runScoped(session.value, effect)
-      .pipe(Scope.provide(session.value.scope));
-  });
-
-const collectUntilTerminal = (notebookUri: NotebookId) =>
-  inNotebook(
-    notebookUri,
-    NotebookDependencies.Service.pipe(
-      Effect.flatMap((dependencies) =>
-        dependencies.changes.pipe(
-          Stream.takeUntil(isTerminal),
-          Stream.runCollect,
-        ),
-      ),
-    ),
-  );
-
-describe("NotebookDependencies", () => {
-  it.effect("loads through the controller owned by its notebook session", () =>
-    Effect.gen(function* () {
-      const ctx = yield* makeContext({
-        notebookIds: [NOTEBOOK_URI, OTHER_NOTEBOOK_URI],
-        controllers: [
-          {
-            notebookUri: NOTEBOOK_URI,
-            controller: makeController({ id: "script" }),
-          },
-          {
-            notebookUri: OTHER_NOTEBOOK_URI,
-            controller: makeController({
-              id: "python",
-              executable: "/other/.venv/bin/python",
-            }),
-          },
-        ],
-        send: () => Effect.succeed({ tree: TREE }),
+  it.effect(
+    "loads through the controller owned by its notebook session",
+    Effect.fn(function* () {
+      const dependencies = yield* TestNotebookDependencies.Service;
+      const states = yield* dependencies.collect({
+        notebookId: TestNotebookDependencies.OTHER_NOTEBOOK_URI,
       });
 
-      const states = yield* collectUntilTerminal(OTHER_NOTEBOOK_URI).pipe(
-        Effect.provide(ctx.layer),
-      );
-
-      expect(states.at(-1)).toEqual({ _tag: "Loaded", tree: TREE });
-      expect(ctx.requests).toEqual([
+      Vitest.expect(states.at(-1)).toEqual({
+        _tag: "Loaded",
+        tree: TestNotebookDependencies.TREE,
+      });
+      Vitest.expect(yield* dependencies.requests).toEqual([
         {
           kind: "get-dependency-tree",
-          notebookUri: OTHER_NOTEBOOK_URI,
+          notebookUri: TestNotebookDependencies.OTHER_NOTEBOOK_URI,
           source: {
             kind: "venv",
             executable: "/other/.venv/bin/python",
@@ -153,80 +32,59 @@ describe("NotebookDependencies", () => {
     }),
   );
 
-  it.effect("shares one in-flight load between changes subscribers", () =>
-    Effect.gen(function* () {
-      const requestStarted = yield* Deferred.make<void>();
-      const releaseRequest = yield* Deferred.make<void>();
-      const firstSubscribed = yield* Deferred.make<void>();
-      const secondSubscribed = yield* Deferred.make<void>();
-      const controller = makeController({ id: "script" });
-      const ctx = yield* makeContext({
-        controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        send: () =>
-          Deferred.succeed(requestStarted, undefined).pipe(
-            Effect.andThen(Deferred.await(releaseRequest)),
-            Effect.as({ tree: TREE }),
-          ),
-      });
+  Vitest.describe("with a shared load", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.SharedLoad(),
+      ),
+    );
 
-      const collect = (subscribed: Deferred.Deferred<void>) =>
-        inNotebook(
-          NOTEBOOK_URI,
-          NotebookDependencies.Service.pipe(
-            Effect.flatMap((dependencies) =>
-              dependencies.changes.pipe(
-                Stream.tap(() => Deferred.succeed(subscribed, undefined)),
-                Stream.takeUntil(isTerminal),
-                Stream.runCollect,
-              ),
-            ),
-          ),
-        );
-
-      yield* Effect.gen(function* () {
+    it.effect(
+      "shares one in-flight load between changes subscribers",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const firstSubscribed = yield* Latch.make();
+        const secondSubscribed = yield* Latch.make();
         const subscribers = yield* Effect.all(
-          [collect(firstSubscribed), collect(secondSubscribed)],
+          [
+            dependencies.collect({ onState: firstSubscribed.open }),
+            dependencies.collect({ onState: secondSubscribed.open }),
+          ],
           { concurrency: "unbounded" },
         ).pipe(Effect.forkChild);
-        yield* Deferred.await(firstSubscribed);
-        yield* Deferred.await(secondSubscribed);
-        yield* Deferred.await(requestStarted);
+        yield* firstSubscribed.await;
+        yield* secondSubscribed.await;
+        yield* dependencies.requestStarted;
 
-        expect(ctx.requests).toHaveLength(1);
-        yield* Deferred.succeed(releaseRequest, undefined);
+        Vitest.expect(yield* dependencies.requests).toHaveLength(1);
+        yield* dependencies.releaseRequest;
         const results = yield* Fiber.join(subscribers);
-        expect(results[0].at(-1)).toEqual({ _tag: "Loaded", tree: TREE });
-        expect(results[1].at(-1)).toEqual({ _tag: "Loaded", tree: TREE });
-      }).pipe(Effect.provide(ctx.layer));
-    }),
-  );
-
-  it.effect(
-    "falls back to the flat package list for a Python environment",
-    () =>
-      Effect.gen(function* () {
-        const treeFailure = Schema.decodeUnknownEffect(Schema.Number)(
-          "invalid",
-        );
-        const controller = makeController({
-          id: "python",
-          executable: "/test/.venv/bin/python",
+        Vitest.expect(results[0]?.at(-1)).toEqual({
+          _tag: "Loaded",
+          tree: TestNotebookDependencies.TREE,
         });
-        const ctx = yield* makeContext({
-          controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-          send: (request) =>
-            request.kind === "get-dependency-tree"
-              ? treeFailure
-              : Effect.succeed({
-                  packages: [{ name: "effect", version: "4.0.0" }],
-                }),
+        Vitest.expect(results[1]?.at(-1)).toEqual({
+          _tag: "Loaded",
+          tree: TestNotebookDependencies.TREE,
         });
+      }),
+    );
+  });
 
-        const states = yield* collectUntilTerminal(NOTEBOOK_URI).pipe(
-          Effect.provide(ctx.layer),
-        );
+  Vitest.describe("with a Python environment", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.PythonFallback(),
+      ),
+    );
 
-        expect(states.at(-1)).toEqual({
+    it.effect(
+      "falls back to the flat package list for a Python environment",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const states = yield* dependencies.collect();
+
+        Vitest.expect(states.at(-1)).toEqual({
           _tag: "Loaded",
           tree: {
             name: "installed-packages",
@@ -242,164 +100,118 @@ describe("NotebookDependencies", () => {
             ],
           },
         });
-        expect(ctx.requests.map((request) => request.kind)).toEqual([
-          "get-dependency-tree",
-          "list-packages",
-        ]);
+        Vitest.expect(
+          (yield* dependencies.requests).map((request) => request.kind),
+        ).toEqual(["get-dependency-tree", "list-packages"]);
       }),
-  );
+    );
+  });
 
-  it.effect(
-    "preserves script-mode failures without using the venv fallback",
-    () =>
-      Effect.gen(function* () {
+  Vitest.describe("with a script failure", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.ScriptFailure(),
+      ),
+    );
+
+    it.effect(
+      "preserves script-mode failures without using the venv fallback",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
         const failure = Schema.decodeUnknownEffect(Schema.Number)("invalid");
         const expectedError = String(yield* Effect.flip(failure));
-        const controller = makeController({ id: "script" });
-        const ctx = yield* makeContext({
-          controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-          send: () => failure,
-        });
+        const states = yield* dependencies.collect();
 
-        const states = yield* collectUntilTerminal(NOTEBOOK_URI).pipe(
-          Effect.provide(ctx.layer),
-        );
-
-        expect(states.at(-1)).toEqual({
+        Vitest.expect(states.at(-1)).toEqual({
           _tag: "Failed",
           error: expectedError,
         });
-        expect(ctx.requests.map((request) => request.kind)).toEqual([
-          "get-dependency-tree",
-        ]);
+        Vitest.expect(
+          (yield* dependencies.requests).map((request) => request.kind),
+        ).toEqual(["get-dependency-tree"]);
       }),
-  );
+    );
+  });
 
-  it.effect("reports a missing controller without calling the server", () =>
-    Effect.gen(function* () {
-      const ctx = yield* makeContext({
-        send: (request) => Effect.die(`Unexpected command: ${request.kind}`),
-      });
+  Vitest.describe("without a controller", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.MissingController(),
+      ),
+    );
 
-      const states = yield* collectUntilTerminal(NOTEBOOK_URI).pipe(
-        Effect.provide(ctx.layer),
-      );
+    it.effect(
+      "reports a missing controller without calling the server",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const states = yield* dependencies.collect();
 
-      expect(states.at(-1)).toEqual({
-        _tag: "Failed",
-        error: "No kernel selected",
-      });
-      expect(ctx.requests).toEqual([]);
-    }),
-  );
+        Vitest.expect(states.at(-1)).toEqual({
+          _tag: "Failed",
+          error: "No kernel selected",
+        });
+        Vitest.expect(yield* dependencies.requests).toEqual([]);
+      }),
+    );
+  });
 
-  it.effect("refreshes a successfully cached dependency tree", () =>
-    Effect.gen(function* () {
-      const firstTree = { ...TREE, name: "first" };
-      const refreshedTree = { ...TREE, name: "refreshed" };
-      let request = 0;
-      const controller = makeController({ id: "script" });
-      const ctx = yield* makeContext({
-        controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        send: (command) => {
-          if (command.kind !== "get-dependency-tree") {
-            return Effect.die(`Unexpected command: ${command.kind}`);
-          }
-          return Effect.succeed({
-            tree: request++ === 0 ? firstTree : refreshedTree,
-          });
-        },
-      });
+  Vitest.describe("with a cached load", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.Refresh(),
+      ),
+    );
 
-      yield* inNotebook(
-        NOTEBOOK_URI,
-        NotebookDependencies.Service.pipe(
-          Effect.flatMap((dependencies) =>
-            Effect.gen(function* () {
-              const initial = yield* dependencies.changes.pipe(
-                Stream.takeUntil(isTerminal),
-                Stream.runCollect,
-              );
-              expect(initial.at(-1)).toEqual({
-                _tag: "Loaded",
-                tree: firstTree,
-              });
+    it.effect(
+      "refreshes a successfully cached dependency tree",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const initial = yield* dependencies.collect();
+        Vitest.expect(initial.at(-1)).toEqual({
+          _tag: "Loaded",
+          tree: { ...TestNotebookDependencies.TREE, name: "first" },
+        });
 
-              const cached = yield* dependencies.changes.pipe(
-                Stream.take(1),
-                Stream.runHead,
-              );
-              expect(Option.getOrThrow(cached)).toEqual({
-                _tag: "Loaded",
-                tree: firstTree,
-              });
+        Vitest.expect(yield* dependencies.current()).toEqual({
+          _tag: "Loaded",
+          tree: { ...TestNotebookDependencies.TREE, name: "first" },
+        });
 
-              yield* dependencies.refresh;
-              const refreshed = yield* dependencies.changes.pipe(
-                Stream.take(1),
-                Stream.runHead,
-              );
-              expect(Option.getOrThrow(refreshed)).toEqual({
-                _tag: "Loaded",
-                tree: refreshedTree,
-              });
-            }),
-          ),
-        ),
-      ).pipe(Effect.provide(ctx.layer));
-      expect(ctx.requests).toHaveLength(2);
-    }),
-  );
+        yield* dependencies.refresh();
+        Vitest.expect(yield* dependencies.current()).toEqual({
+          _tag: "Loaded",
+          tree: { ...TestNotebookDependencies.TREE, name: "refreshed" },
+        });
+        Vitest.expect(yield* dependencies.requests).toHaveLength(2);
+      }),
+    );
+  });
 
-  it.effect("does not publish a load invalidated by refresh", () =>
-    Effect.gen(function* () {
-      const firstRequestStarted = yield* Deferred.make<void>();
-      const releaseFirstRequest = yield* Deferred.make<void>();
-      const olderTree = { ...TREE, name: "older" };
-      const newerTree = { ...TREE, name: "newer" };
-      let request = 0;
-      const controller = makeController({ id: "script" });
-      const ctx = yield* makeContext({
-        controllers: [{ notebookUri: NOTEBOOK_URI, controller }],
-        send: (command) => {
-          if (command.kind !== "get-dependency-tree") {
-            return Effect.die(`Unexpected command: ${command.kind}`);
-          }
-          return request++ === 0
-            ? Deferred.succeed(firstRequestStarted, undefined).pipe(
-                Effect.andThen(Deferred.await(releaseFirstRequest)),
-                Effect.as({ tree: olderTree }),
-              )
-            : Effect.succeed({ tree: newerTree });
-        },
-      });
+  Vitest.describe("while a refresh is in flight", () => {
+    const it = EffectTest.make(
+      TestNotebookDependencies.layerWith(
+        TestNotebookDependencies.Scenario.InvalidatedRefresh(),
+      ),
+    );
 
-      yield* inNotebook(
-        NOTEBOOK_URI,
-        NotebookDependencies.Service.pipe(
-          Effect.flatMap((dependencies) =>
-            Effect.gen(function* () {
-              const staleRefresh = yield* dependencies.refresh.pipe(
-                Effect.forkChild,
-              );
-              yield* Deferred.await(firstRequestStarted);
+    it.effect(
+      "does not publish a load invalidated by refresh",
+      Effect.fn(function* () {
+        const dependencies = yield* TestNotebookDependencies.Service;
+        const staleRefresh = yield* dependencies
+          .refresh()
+          .pipe(Effect.forkChild);
+        yield* dependencies.requestStarted;
 
-              yield* dependencies.refresh;
-              yield* Deferred.succeed(releaseFirstRequest, undefined);
-              yield* Fiber.join(staleRefresh);
+        yield* dependencies.refresh();
+        yield* dependencies.releaseRequest;
+        yield* Fiber.join(staleRefresh);
 
-              const current = yield* dependencies.changes.pipe(
-                Stream.take(1),
-                Stream.runHead,
-              );
-              expect(Option.getOrThrow(current)).toEqual({
-                _tag: "Loaded",
-                tree: newerTree,
-              });
-            }),
-          ),
-        ),
-      ).pipe(Effect.provide(ctx.layer));
-    }),
-  );
+        Vitest.expect(yield* dependencies.current()).toEqual({
+          _tag: "Loaded",
+          tree: { ...TestNotebookDependencies.TREE, name: "newer" },
+        });
+      }),
+    );
+  });
 });

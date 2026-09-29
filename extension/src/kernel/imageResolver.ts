@@ -1,4 +1,5 @@
 import { Data, Effect, Option } from "effect";
+import { HttpClient } from "effect/unstable/http";
 import type * as vscode from "vscode";
 
 import * as VsCode from "../platform/VsCode.ts";
@@ -53,27 +54,26 @@ export const resolveImageBytes = Effect.fn("resolveImageBytes")(function* (
       new ImageFetchError({ cause: `unsupported URL scheme: ${url.protocol}` }),
     );
   }
-  const response = yield* Effect.tryPromise({
-    try: (signal) => fetch(src, { signal }),
-    catch: (cause) => new ImageFetchError({ cause }),
-  });
-  if (!response.ok) {
+  const client = yield* HttpClient.HttpClient;
+  const response = yield* client
+    .get(url)
+    .pipe(Effect.mapError((cause) => new ImageFetchError({ cause })));
+  if (response.status < 200 || response.status >= 300) {
     return yield* Effect.fail(
       new ImageFetchError({
-        cause: `fetch returned ${response.status} ${response.statusText}`,
+        cause: `fetch returned ${response.status}`,
       }),
     );
   }
-  const contentType = response.headers.get("content-type");
+  const contentType = response.headers["content-type"];
   if (contentType && !contentType.startsWith("image/")) {
     return yield* Effect.fail(
       new ImageFetchError({ cause: `non-image content-type: ${contentType}` }),
     );
   }
-  const buffer = yield* Effect.tryPromise({
-    try: () => response.arrayBuffer(),
-    catch: (cause) => new ImageFetchError({ cause }),
-  });
+  const buffer = yield* response.arrayBuffer.pipe(
+    Effect.mapError((cause) => new ImageFetchError({ cause })),
+  );
   return {
     bytes: new Uint8Array(buffer),
     mime: contentType ?? "application/octet-stream",

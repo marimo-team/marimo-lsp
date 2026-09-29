@@ -1,18 +1,18 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Effect } from "effect";
 import type * as vscode from "vscode";
 
-import {
-  createNotebookCell,
-  createNotebookUri,
-  createTestNotebookDocument,
-} from "../../__mocks__/TestVsCode.ts";
+import * as VsCodeValues from "../../__mocks__/VsCodeValues.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import * as Constants from "../../platform/Constants.ts";
 import { MarimoNotebookCell } from "../../schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../schemas/Models.gen.ts";
 import { getCellExecutableCode } from "../getCellExecutableCode.ts";
 
-const notebookUri = createNotebookUri("file:///test/notebook_mo.py");
+const notebookUri = VsCodeValues.createNotebookUri(
+  "file:///test/notebook_mo.py",
+);
+const effectIt = EffectTest.make(Constants.defaultLayer);
 
 // Helper to create a mock cell with proper MarimoNotebookCell wrapping
 function createMockCell(
@@ -21,8 +21,8 @@ function createMockCell(
   value: string,
   metadata: typeof Api.CellMetadata.Encoded = {},
 ) {
-  const rawCell = createNotebookCell(
-    createTestNotebookDocument(uri),
+  const rawCell = VsCodeValues.createNotebookCell(
+    VsCodeValues.createTestNotebookDocument(uri),
     {
       kind: 2, // Code
       value,
@@ -34,8 +34,8 @@ function createMockCell(
   return MarimoNotebookCell.from(rawCell);
 }
 
-describe("getCellExecutableCode", () => {
-  it.effect("should transform SQL cell with custom dataframe name", () =>
+Vitest.describe("getCellExecutableCode", () => {
+  effectIt.effect("should transform SQL cell with custom dataframe name", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -58,29 +58,31 @@ describe("getCellExecutableCode", () => {
       const code = getCellExecutableCode(cell, LanguageId);
 
       // Should contain the custom dataframe name
-      expect(code).toContain("my_results = mo.sql(");
+      Vitest.expect(code).toContain("my_results = mo.sql(");
       // Should not use default _df
-      expect(code).not.toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+      Vitest.expect(code).not.toContain("_df = mo.sql(");
+    }),
   );
 
-  it.effect("should use default metadata when SQL cell has no metadata", () =>
-    Effect.gen(function* () {
-      const { LanguageId } = yield* Constants.Service;
+  effectIt.effect(
+    "should use default metadata when SQL cell has no metadata",
+    () =>
+      Effect.gen(function* () {
+        const { LanguageId } = yield* Constants.Service;
 
-      const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
-        marimoRuntime: { stableId: "test-cell-id" },
-        // No sourceProjections.sql
-      });
+        const cell = createMockCell(notebookUri, "sql", "SELECT * FROM users", {
+          marimoRuntime: { stableId: "test-cell-id" },
+          // No sourceProjections.sql
+        });
 
-      const code = getCellExecutableCode(cell, LanguageId);
+        const code = getCellExecutableCode(cell, LanguageId);
 
-      // Should use default _df when no metadata
-      expect(code).toContain("_df = mo.sql(");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+        // Should use default _df when no metadata
+        Vitest.expect(code).toContain("_df = mo.sql(");
+      }),
   );
 
-  it.effect("should pass through Python cells unchanged", () =>
+  effectIt.effect("should pass through Python cells unchanged", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -91,11 +93,11 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toBe(pythonCode);
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+      Vitest.expect(code).toBe(pythonCode);
+    }),
   );
 
-  it.effect("should handle SQL metadata with output=False", () =>
+  effectIt.effect("should handle SQL metadata with output=False", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -117,12 +119,12 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toContain("result = mo.sql(");
-      expect(code).toContain("output=False");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+      Vitest.expect(code).toContain("result = mo.sql(");
+      Vitest.expect(code).toContain("output=False");
+    }),
   );
 
-  it.effect("should handle SQL metadata with custom engine", () =>
+  effectIt.effect("should handle SQL metadata with custom engine", () =>
     Effect.gen(function* () {
       const { LanguageId } = yield* Constants.Service;
 
@@ -144,8 +146,8 @@ describe("getCellExecutableCode", () => {
 
       const code = getCellExecutableCode(cell, LanguageId);
 
-      expect(code).toContain("df = mo.sql(");
-      expect(code).toContain("engine=postgres_conn");
-    }).pipe(Effect.provide(Constants.defaultLayer)),
+      Vitest.expect(code).toContain("df = mo.sql(");
+      Vitest.expect(code).toContain("engine=postgres_conn");
+    }),
   );
 });

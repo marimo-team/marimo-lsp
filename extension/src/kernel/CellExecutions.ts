@@ -132,6 +132,7 @@ export const layer = Layer.effect(
           Stream.map(() => undefined),
         ),
       ).pipe(Stream.runForEach(updateStaleContext)),
+      { startImmediately: true },
     );
     yield* Effect.forkScoped(
       code.workspace.notebookDocumentChanges.pipe(
@@ -168,6 +169,7 @@ export const layer = Layer.effect(
           return entry.updateSources([...sources, ...addedSources]);
         }),
       ),
+      { startImmediately: true },
     );
 
     const makeNotebook = Effect.fn("CellExecutions.makeNotebook")(function* (

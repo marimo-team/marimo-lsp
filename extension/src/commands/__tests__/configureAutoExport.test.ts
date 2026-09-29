@@ -1,7 +1,8 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Effect, Option, Ref } from "effect";
+import * as Vitest from "@effect/vitest";
+import { Effect, Option } from "effect";
 
-import { getNotebookEdits, TestVsCode } from "../../__mocks__/TestVsCode.ts";
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
+import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import {
   MarimoNotebookCell,
   MarimoNotebookDocument,
@@ -10,6 +11,8 @@ import {
   configureAutoExport,
   mergeAutoDownloadFormats,
 } from "../configureAutoExport.ts";
+
+const it = EffectTest.make(TestVsCode.layer);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -24,22 +27,22 @@ const notebookFor = (
   editor: ReturnType<typeof TestVsCode.makeNotebookEditor>,
 ) => MarimoNotebookDocument.tryFrom(editor.notebook);
 
-describe("mergeAutoDownloadFormats", () => {
-  it("updates all managed formats from the selection", () => {
-    expect(mergeAutoDownloadFormats(["html", "markdown"], ["ipynb"])).toEqual([
-      "ipynb",
-    ]);
+Vitest.describe("mergeAutoDownloadFormats", () => {
+  Vitest.it("updates all managed formats from the selection", () => {
+    Vitest.expect(
+      mergeAutoDownloadFormats(["html", "markdown"], ["ipynb"]),
+    ).toEqual(["ipynb"]);
   });
 
-  it("uses stable format ordering", () => {
-    expect(mergeAutoDownloadFormats([], ["ipynb", "html"])).toEqual([
+  Vitest.it("uses stable format ordering", () => {
+    Vitest.expect(mergeAutoDownloadFormats([], ["ipynb", "html"])).toEqual([
       "html",
       "ipynb",
     ]);
   });
 
-  it("preserves the order of existing formats", () => {
-    expect(
+  Vitest.it("preserves the order of existing formats", () => {
+    Vitest.expect(
       mergeAutoDownloadFormats(["markdown", "html"], ["html", "markdown"]),
     ).toEqual(["markdown", "html"]);
   });
@@ -48,8 +51,7 @@ describe("mergeAutoDownloadFormats", () => {
 it.effect(
   "applies and saves selected automatic export formats",
   Effect.fn(function* () {
-    const applied = yield* Ref.make(false);
-    const information = yield* Ref.make(Option.none<string>());
+    const vscode = yield* TestVsCode.Service;
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         metadata: MarimoNotebookDocument.createMetadata({
@@ -67,39 +69,23 @@ it.effect(
         ],
       },
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.succeed(
-            Option.some(items.filter((item) => item.label === "IPYNB")),
-          ),
-        showInformationMessage: (message) =>
-          Ref.set(information, Option.some(message)).pipe(
-            Effect.as(Option.none()),
-          ),
-      },
-      workspace: {
-        applyEdit: () => Ref.set(applied, true).pipe(Effect.as(true)),
-      },
-    });
-
+    yield* vscode.openNotebook(editor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* vscode.selectQuickPickMany(["IPYNB"]);
+    yield* configureAutoExport(notebookFor(editor));
 
-    expect(yield* Ref.get(applied)).toBe(true);
-    expect(yield* Ref.get(information)).toEqual(
-      Option.some("Automatic exports enabled for IPYNB."),
-    );
+    const snapshot = yield* vscode.snapshot;
+    Vitest.expect(snapshot.workspaceEdits).toHaveLength(1);
+    Vitest.expect(snapshot.informationMessages).toEqual([
+      "Automatic exports enabled for IPYNB.",
+    ]);
   }),
 );
 
 it.effect(
   "does not save when the selected formats are unchanged",
   Effect.fn(function* () {
-    const applied = yield* Ref.make(false);
+    const vscode = yield* TestVsCode.Service;
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
@@ -108,36 +94,19 @@ it.effect(
         }),
       },
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.succeed(
-            Option.some(
-              items.filter(
-                (item) => item.label === "HTML" || item.label === "Markdown",
-              ),
-            ),
-          ),
-      },
-      workspace: {
-        applyEdit: () => Ref.set(applied, true).pipe(Effect.as(true)),
-      },
-    });
-
+    yield* vscode.openNotebook(editor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* vscode.selectQuickPickMany(["HTML", "Markdown"]);
+    yield* configureAutoExport(notebookFor(editor));
 
-    expect(yield* Ref.get(applied)).toBe(false);
+    Vitest.expect((yield* vscode.snapshot).workspaceEdits).toEqual([]);
   }),
 );
 
 it.effect(
   "reports when all automatic exports are disabled",
   Effect.fn(function* () {
-    const information = yield* Ref.make(Option.none<string>());
+    const vscode = yield* TestVsCode.Service;
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
@@ -146,37 +115,20 @@ it.effect(
         }),
       },
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: () => Effect.succeed(Option.some([])),
-        showInformationMessage: (message) =>
-          Ref.set(information, Option.some(message)).pipe(
-            Effect.as(Option.none()),
-          ),
-      },
-      workspace: {
-        applyEdit: () => Effect.succeed(true),
-      },
-    });
-
+    yield* vscode.openNotebook(editor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* vscode.selectQuickPickMany([]);
+    yield* configureAutoExport(notebookFor(editor));
 
-    expect(yield* Ref.get(information)).toEqual(
-      Option.some("Automatic exports disabled."),
-    );
+    Vitest.expect((yield* vscode.snapshot).informationMessages).toEqual([
+      "Automatic exports disabled.",
+    ]);
   }),
 );
 
-it.effect(
+Vitest.it.effect(
   "merges the selection into metadata changed while the picker is open",
   Effect.fn(function* () {
-    const updatedMetadata = yield* Ref.make(
-      Option.none<Record<string, unknown>>(),
-    );
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
@@ -185,50 +137,58 @@ it.effect(
         }),
       },
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.sync(() => {
-            const marimo = editor.notebook.metadata.marimo;
-            if (!isRecord(marimo)) {
-              throw new Error("Expected marimo notebook metadata");
-            }
-            const currentAppOptions = marimo.appOptions;
-            if (!isRecord(currentAppOptions)) {
-              throw new Error("Expected marimo app options");
-            }
-            marimo.appOptions = {
-              ...currentAppOptions,
-              passthrough: { width: "full" },
-            };
-            return Option.some(items.filter((item) => item.label === "IPYNB"));
-          }),
+    const layer = TestVsCode.layerWith(
+      {
+        initialDocuments: [editor.notebook],
       },
-      workspace: {
-        applyEdit: (edit) => {
-          const notebookEdits = getNotebookEdits(edit, editor.notebook.uri);
-          return Ref.set(
-            updatedMetadata,
-            Option.fromNullishOr(notebookEdits[0]?.newNotebookMetadata),
-          ).pipe(Effect.as(true));
+      {
+        window: {
+          showQuickPickItemsMany: (items) =>
+            Effect.sync(() => {
+              const marimo = editor.notebook.metadata.marimo;
+              if (!isRecord(marimo)) {
+                throw new Error("Expected marimo notebook metadata");
+              }
+              const currentAppOptions = marimo.appOptions;
+              if (!isRecord(currentAppOptions)) {
+                throw new Error("Expected marimo app options");
+              }
+              marimo.appOptions = {
+                ...currentAppOptions,
+                passthrough: { width: "full" },
+              };
+              return Option.some(
+                items.filter((item) => item.label === "IPYNB"),
+              );
+            }),
         },
       },
-    });
-
-    yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
     );
 
-    const metadata = Option.getOrThrow(yield* Ref.get(updatedMetadata));
+    const snapshot = yield* Effect.gen(function* () {
+      const vscode = yield* TestVsCode.Service;
+      yield* vscode.setActiveNotebookEditor(Option.some(editor));
+      yield* configureAutoExport(notebookFor(editor));
+      return yield* vscode.snapshot;
+    }).pipe(Effect.provide(layer));
+
+    const edit = Option.getOrThrow(
+      Option.fromNullishOr(snapshot.workspaceEdits[0]),
+    );
+    const notebookEdits = TestVsCode.getNotebookEdits(
+      edit,
+      editor.notebook.uri,
+    );
+    const metadata = Option.getOrThrow(
+      Option.fromNullishOr(notebookEdits[0]?.newNotebookMetadata),
+    );
     const updated = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: { cells: [], metadata },
     });
     const parsed = yield* MarimoNotebookDocument.from(
       updated.notebook,
     ).parseMetadata();
-    expect(parsed.appOptions).toMatchInlineSnapshot(`
+    Vitest.expect(parsed.appOptions).toMatchInlineSnapshot(`
       {
         "managed": {
           "autoDownload": [
@@ -246,8 +206,7 @@ it.effect(
 it.effect(
   "reports an error instead of success when the notebook cannot be saved",
   Effect.fn(function* () {
-    const information = yield* Ref.make(Option.none<string>());
-    const error = yield* Ref.make(Option.none<string>());
+    const vscode = yield* TestVsCode.Service;
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
@@ -259,44 +218,23 @@ it.effect(
     Object.defineProperty(editor.notebook, "save", {
       value: () => Promise.resolve(false),
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.succeed(
-            Option.some(items.filter((item) => item.label === "IPYNB")),
-          ),
-        showInformationMessage: (message) =>
-          Ref.set(information, Option.some(message)).pipe(
-            Effect.as(Option.none()),
-          ),
-        showErrorMessage: (message) =>
-          Ref.set(error, Option.some(message)).pipe(Effect.as(Option.none())),
-      },
-      workspace: {
-        applyEdit: () => Effect.succeed(true),
-      },
-    });
-
+    yield* vscode.openNotebook(editor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* vscode.selectQuickPickMany(["IPYNB"]);
+    yield* configureAutoExport(notebookFor(editor));
 
-    expect(yield* Ref.get(information)).toEqual(Option.none());
-    expect(yield* Ref.get(error)).toEqual(
-      Option.some(
-        "Export formats changed but the notebook could not be saved.",
-      ),
-    );
+    const snapshot = yield* vscode.snapshot;
+    Vitest.expect(snapshot.informationMessages).toEqual([]);
+    Vitest.expect(snapshot.errorMessages).toEqual([
+      "Export formats changed but the notebook could not be saved.",
+    ]);
   }),
 );
 
 it.effect(
   "reports an error instead of failing when saving rejects",
   Effect.fn(function* () {
-    const information = yield* Ref.make(Option.none<string>());
-    const error = yield* Ref.make(Option.none<string>());
+    const vscode = yield* TestVsCode.Service;
     const editor = TestVsCode.makeNotebookEditor("/test/report.py", {
       data: {
         cells: [],
@@ -308,35 +246,15 @@ it.effect(
     Object.defineProperty(editor.notebook, "save", {
       value: () => Promise.reject(new Error("disk full")),
     });
-    const vscode = yield* TestVsCode.make({
-      initialDocuments: [editor.notebook],
-      window: {
-        showQuickPickItemsMany: (items) =>
-          Effect.succeed(
-            Option.some(items.filter((item) => item.label === "IPYNB")),
-          ),
-        showInformationMessage: (message) =>
-          Ref.set(information, Option.some(message)).pipe(
-            Effect.as(Option.none()),
-          ),
-        showErrorMessage: (message) =>
-          Ref.set(error, Option.some(message)).pipe(Effect.as(Option.none())),
-      },
-      workspace: {
-        applyEdit: () => Effect.succeed(true),
-      },
-    });
-
+    yield* vscode.openNotebook(editor.notebook);
     yield* vscode.setActiveNotebookEditor(Option.some(editor));
-    yield* configureAutoExport(notebookFor(editor)).pipe(
-      Effect.provide(vscode.layer),
-    );
+    yield* vscode.selectQuickPickMany(["IPYNB"]);
+    yield* configureAutoExport(notebookFor(editor));
 
-    expect(yield* Ref.get(information)).toEqual(Option.none());
-    expect(yield* Ref.get(error)).toEqual(
-      Option.some(
-        "Export formats changed but the notebook could not be saved.",
-      ),
-    );
+    const snapshot = yield* vscode.snapshot;
+    Vitest.expect(snapshot.informationMessages).toEqual([]);
+    Vitest.expect(snapshot.errorMessages).toEqual([
+      "Export formats changed but the notebook could not be saved.",
+    ]);
   }),
 );

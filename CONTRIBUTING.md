@@ -38,13 +38,13 @@ This project uses [just](https://just.systems/) for common development tasks.
 Run `just --list` to see all recipes, grouped into `lint`, `fix`, `test`,
 `build`, and `setup`. Highlights:
 
-| Command              | Action                                       |
-| -------------------- | -------------------------------------------- |
-| `just lint`          | Lint + typecheck everything (py + ts)        |
-| `just fix`           | Autofix + format everything (py + ts)        |
-| `just test`          | Run all tests (`test-py` + `test-ts`)        |
-| `just test-vscode`   | VS Code extension integration tests (slow)   |
-| `just build`         | Embed the Python sdist and bundle the extension |
+| Command            | Action                                          |
+| ------------------ | ----------------------------------------------- |
+| `just lint`        | Lint + typecheck everything (py + ts)           |
+| `just fix`         | Autofix + format everything (py + ts)           |
+| `just test`        | Run all tests (`test-py` + `test-ts`)           |
+| `just test-vscode` | VS Code extension integration tests (slow)      |
+| `just build`       | Embed the Python sdist and bundle the extension |
 
 Recipes that wrap pytest or vitest forward trailing args:
 
@@ -69,5 +69,4 @@ change as the architecture evolves.
 
 ## Effect (Extension)
 
-See the [extension Effect guide](docs/effect-guide.md) and
-[migration TODO](docs/effect-todo.md).
+See the [extension Effect guide](docs/effect-guide.md).

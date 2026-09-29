@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import * as Vitest from "@effect/vitest";
 import { Data, Effect, Logger, PubSub, References, Result } from "effect";
 
 import { commandId } from "../../commands.ts";
@@ -12,8 +12,8 @@ class InvalidCommandArgument extends Data.TaggedError(
   "InvalidCommandArgument",
 )<{ readonly message: string }> {}
 
-describe("command error context", () => {
-  it.effect("logs failures with their command ID", () => {
+Vitest.describe("command error context", () => {
+  Vitest.it.effect("logs failures with their command ID", () => {
     const logs: Array<Record<string, unknown>> = [];
     const wireId = commandId(runStale.command);
     const logger = Logger.make(({ fiber }) => {
@@ -28,8 +28,8 @@ describe("command error context", () => {
       Effect.provide(Logger.layer([logger])),
       Effect.tap(() =>
         Effect.sync(() => {
-          expect(logs).toHaveLength(1);
-          expect(logs[0]).toMatchObject({
+          Vitest.expect(logs).toHaveLength(1);
+          Vitest.expect(logs[0]).toMatchObject({
             "command.id": wireId,
           });
         }),
@@ -38,8 +38,8 @@ describe("command error context", () => {
   });
 });
 
-describe("Commands pubsub", () => {
-  it.effect(
+Vitest.describe("Commands pubsub", () => {
+  Vitest.it.effect(
     "should receive command events through subscription",
     Effect.fn(function* () {
       const result = yield* Effect.scoped(
@@ -73,26 +73,28 @@ describe("Commands pubsub", () => {
         }),
       );
 
-      expect(result).toHaveLength(3);
+      Vitest.expect(result).toHaveLength(3);
 
       // Verify we got the expected events
-      expect(Result.isSuccess(result[0])).toBe(true);
-      expect(Result.isSuccess(result[1])).toBe(true);
-      expect(Result.isFailure(result[2])).toBe(true);
+      Vitest.expect(Result.isSuccess(result[0])).toBe(true);
+      Vitest.expect(Result.isSuccess(result[1])).toBe(true);
+      Vitest.expect(Result.isFailure(result[2])).toBe(true);
 
       if (Result.isSuccess(result[0])) {
-        expect(result[0].success).toBe(commandId(newMarimoNotebook.command));
+        Vitest.expect(result[0].success).toBe(
+          commandId(newMarimoNotebook.command),
+        );
       }
       if (Result.isSuccess(result[1])) {
-        expect(result[1].success).toBe(commandId(openTutorial.command));
+        Vitest.expect(result[1].success).toBe(commandId(openTutorial.command));
       }
       if (Result.isFailure(result[2])) {
-        expect(result[2].failure).toBe(commandId(restartKernel.command));
+        Vitest.expect(result[2].failure).toBe(commandId(restartKernel.command));
       }
     }),
   );
 
-  it.effect(
+  Vitest.it.effect(
     "should support multiple subscribers",
     Effect.fn(function* () {
       const result = yield* Effect.scoped(
@@ -122,12 +124,12 @@ describe("Commands pubsub", () => {
         }),
       );
 
-      expect(result.events1).toHaveLength(2);
-      expect(result.events2).toHaveLength(2);
+      Vitest.expect(result.events1).toHaveLength(2);
+      Vitest.expect(result.events2).toHaveLength(2);
 
       // Both should have received the same events
-      expect(result.events1[0]).toEqual(result.events2[0]);
-      expect(result.events1[1]).toEqual(result.events2[1]);
+      Vitest.expect(result.events1[0]).toEqual(result.events2[0]);
+      Vitest.expect(result.events1[1]).toEqual(result.events2[1]);
     }),
   );
 });
