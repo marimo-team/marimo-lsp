@@ -272,14 +272,20 @@ print(json.dumps(packages), flush=True)`,
       env: py.Environment,
     ) {
       const key = new EnvironmentKey(env);
-      yield* synchronizeInvalidation;
-      // Only reuse successes: drop failed entries so a just-fixed
-      // environment (e.g. marimo installed in a terminal) is re-checked
-      // on the next run. Concurrent lookups for the same key still
-      // dedupe while the inspection is in flight.
-      return yield* Cache.get(cache, key).pipe(
-        Effect.tapError(() => Cache.invalidate(cache, key)),
-      );
+      for (;;) {
+        yield* synchronizeInvalidation;
+        const generation = yield* invalidation.generation;
+        // Only reuse successes: drop failed entries so a just-fixed
+        // environment (e.g. marimo installed in a terminal) is re-checked
+        // on the next run. Concurrent lookups for the same key still
+        // dedupe while the inspection is in flight.
+        const result = yield* Cache.get(cache, key).pipe(
+          Effect.tapError(() => Cache.invalidate(cache, key)),
+        );
+        // An invalidation that arrived during the lookup may have raced the
+        // cached entry; synchronize and look up again.
+        if ((yield* invalidation.generation) === generation) return result;
+      }
     });
 
     return Service.of({ validate });
