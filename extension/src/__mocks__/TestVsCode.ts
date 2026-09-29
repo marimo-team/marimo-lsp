@@ -160,6 +160,9 @@ export interface Snapshot {
   readonly informationMessages: ReadonlyArray<string>;
   readonly warningMessages: ReadonlyArray<string>;
   readonly errorMessages: ReadonlyArray<string>;
+  /** Files written through `workspace.fs`, decoded as UTF-8. */
+  readonly files: ReadonlyMap<string, string>;
+  readonly directories: ReadonlyArray<string>;
 }
 
 export interface Interface {
@@ -317,6 +320,8 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
   const informationMessageResponses = yield* Queue.unbounded<string>();
   const errorMessageResponses = yield* Queue.unbounded<string>();
+  const files = new Map<string, Uint8Array | Error>(options.fileSystem);
+  const directories = yield* Ref.make<ReadonlyArray<string>>([]);
   const configurationChanges =
     yield* PubSub.unbounded<vscode.ConfigurationChangeEvent>();
 
@@ -725,15 +730,15 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
     },
     workspace: {
       fs: {
-        createDirectory() {
-          return Effect.void;
+        createDirectory(uri: vscode.Uri) {
+          return Ref.update(directories, (current) => [
+            ...current,
+            uri.toString(),
+          ]);
         },
         readFile(uri: vscode.Uri) {
-          const fileSystem: Map<string, Uint8Array | Error> =
-            options.fileSystem ?? new Map();
-
           const key = uri.toString();
-          const entry = fileSystem.get(key);
+          const entry = files.get(key);
 
           if (entry instanceof Error) {
             return Effect.fail(new Workspace.FileSystemError({ cause: entry }));
@@ -750,8 +755,11 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
             }),
           );
         },
-        writeFile() {
-          return Effect.succeed(true);
+        writeFile(uri: vscode.Uri, contents: Uint8Array) {
+          return Effect.sync(() => {
+            files.set(uri.toString(), contents);
+            return true;
+          });
         },
       },
       getNotebookDocuments: Effect.map(
@@ -1281,6 +1289,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
     const currentInformationMessages = yield* Ref.get(informationMessages);
     const currentWarningMessages = yield* Ref.get(warningMessages);
     const currentErrorMessages = yield* Ref.get(errorMessages);
+    const currentDirectories = yield* Ref.get(directories);
     const {
       documents: currentDocuments,
       active: currentActiveEditor,
@@ -1324,6 +1333,14 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
       informationMessages: [...currentInformationMessages],
       warningMessages: [...currentWarningMessages],
       errorMessages: [...currentErrorMessages],
+      files: new Map(
+        Array.from(files).flatMap(([key, value]) =>
+          value instanceof Error
+            ? []
+            : [[key, new TextDecoder().decode(value)] as const],
+        ),
+      ),
+      directories: [...currentDirectories],
     } satisfies Snapshot;
   });
 

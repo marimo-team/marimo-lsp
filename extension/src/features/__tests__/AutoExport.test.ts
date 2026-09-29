@@ -1,17 +1,24 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Context, Effect, Fiber, Latch, Layer, Option } from "effect";
+import { TestClock } from "effect/testing";
+import type * as vscode from "vscode";
 
 import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
+import * as TestMarimoClient from "../../__tests__/__utils__/TestMarimoClient.ts";
+import type * as NotebookRuntime from "../../kernel/NotebookRuntime.ts";
+import { kernelSessionId } from "../../lib/__tests__/branded.ts";
 import * as VsCode from "../../platform/VsCode.ts";
-import { MarimoNotebookDocument } from "../../schemas/MarimoNotebookDocument.ts";
+import {
+  MarimoNotebookCell,
+  MarimoNotebookDocument,
+} from "../../schemas/MarimoNotebookDocument.ts";
 import * as AutoExport from "../AutoExport.ts";
-import * as TestAutoExport from "./TestAutoExport.ts";
-
-const outputUriIt = EffectTest.make(TestVsCode.layer);
 
 Vitest.describe("outputUri", () => {
-  outputUriIt.effect(
+  const it = EffectTest.make(TestVsCode.layer);
+
+  it.effect(
     "writes beside the notebook under __marimo__",
     Effect.fn(function* () {
       const code = yield* VsCode.Service;
@@ -25,78 +32,180 @@ Vitest.describe("outputUri", () => {
   );
 });
 
-const it = EffectTest.make(TestAutoExport.layer);
-const markdownIt = EffectTest.make(
-  TestAutoExport.layerWith({ autoDownload: ["markdown"] }),
-);
-const noRuntimeIt = EffectTest.make(
-  TestAutoExport.layerWith({ hasRuntimeSession: false }),
-);
-const noOutputsIt = EffectTest.make(
-  TestAutoExport.layerWith({ hasOutputs: false }),
-);
-const blockedHtmlIt = EffectTest.make(
-  TestAutoExport.layerWith({ blockHtmlExport: true }),
-);
+const controller: NotebookRuntime.NotebookController = {
+  id: "test-controller",
+  drive: () => () => Effect.void,
+  presentOutputs: () => Effect.void,
+  resolveExecutable: () => Effect.succeed("/usr/bin/python"),
+};
 
-const requestKinds = (snapshot: TestAutoExport.Snapshot) =>
-  snapshot.requests.map((request) => request.kind);
+const sessionId = kernelSessionId("00000000-0000-4000-8000-000000000001");
+
+const output = () => ({
+  items: [
+    {
+      data: new TextEncoder().encode("2"),
+      mime: "text/plain",
+    },
+  ],
+});
+
+const makeEditor = (
+  autoDownload: ReadonlyArray<AutoExport.Format>,
+  outputs: vscode.NotebookCellOutput[],
+  value = "1 + 1",
+) =>
+  TestVsCode.makeNotebookEditor("/test/report.py", {
+    data: {
+      metadata: MarimoNotebookDocument.createMetadata({
+        appOptions: {
+          managed: { autoDownload: [...autoDownload] },
+          passthrough: {},
+        },
+      }),
+      cells: [
+        {
+          kind: 2,
+          value,
+          languageId: "python",
+          metadata: MarimoNotebookCell.createMetadata({
+            marimoRuntime: { stableId: "cell-1" },
+          }),
+          outputs,
+        },
+      ],
+    },
+  });
+
+interface Options {
+  readonly autoDownload?: ReadonlyArray<AutoExport.Format>;
+  readonly hasOutputs?: boolean;
+  readonly hasRuntimeSession?: boolean;
+  readonly blockHtmlExport?: boolean;
+}
+
+/** The notebook under test and the gate that holds an HTML export open. */
+class Notebook extends Context.Service<
+  Notebook,
+  {
+    readonly editor: vscode.NotebookEditor;
+    readonly formats: ReadonlyArray<AutoExport.Format>;
+    readonly cellOutputs: vscode.NotebookCellOutput[];
+    readonly htmlExportStarted: Latch.Latch;
+    readonly releaseHtmlExport: Latch.Latch;
+  }
+>()("@marimo/test/AutoExport/Notebook") {}
+
+const layerWith = (options: Options = {}) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const htmlExportStarted = yield* Latch.make();
+      const releaseHtmlExport = yield* Latch.make();
+      const formats = options.autoDownload ?? ["html", "ipynb"];
+      const cellOutputs = options.hasOutputs === false ? [] : [output()];
+      const editor = makeEditor(formats, cellOutputs);
+      const notebook = MarimoNotebookDocument.from(editor.notebook);
+
+      const runtimeLayer = TestMarimoClient.makeTestNotebookRuntime({
+        initialControllers: [{ notebookUri: notebook.id, controller }],
+        runtimeSession:
+          options.hasRuntimeSession === false
+            ? undefined
+            : { executable: "/usr/bin/python", workingDirectory: "/test" },
+        send: (request) =>
+          request.kind === "export-html" && options.blockHtmlExport
+            ? htmlExportStarted.open.pipe(
+                Effect.andThen(releaseHtmlExport.await),
+                Effect.as("<html>old report</html>"),
+              )
+            : Effect.succeed(
+                request.kind === "export-html"
+                  ? "<html>report</html>"
+                  : request.kind === "export-markdown"
+                    ? "# Report"
+                    : "{}",
+              ),
+      });
+
+      return Layer.merge(
+        AutoExport.layer.pipe(
+          Layer.provideMerge(runtimeLayer),
+          Layer.provideMerge(
+            TestVsCode.layerWith({ initialDocuments: [editor.notebook] }),
+          ),
+        ),
+        Layer.succeed(Notebook, {
+          editor,
+          formats,
+          cellOutputs,
+          htmlExportStarted,
+          releaseHtmlExport,
+        }),
+      );
+    }),
+  );
+
+const activate = Effect.gen(function* () {
+  const { editor } = yield* Notebook;
+  const vscode = yield* TestVsCode.Service;
+  yield* vscode.setActiveNotebookEditor(Option.some(editor));
+});
+
+const tick = TestClock.adjust(AutoExport.interval);
+
+const completeRun = Effect.gen(function* () {
+  const { editor } = yield* Notebook;
+  const marimo = yield* TestMarimoClient.Service;
+  yield* marimo.publishNotification({
+    notebookUri: MarimoNotebookDocument.from(editor.notebook).id,
+    sessionId,
+    notification: { op: "completed-run", run_id: null },
+  });
+});
+
+/** Closes the notebook and opens a fresh document at the same path. */
+const reopen = Effect.gen(function* () {
+  const { editor, formats, cellOutputs } = yield* Notebook;
+  const vscode = yield* TestVsCode.Service;
+  yield* vscode.setActiveNotebookEditor(Option.none());
+  yield* vscode.closeNotebook(editor.notebook);
+  const reopened = makeEditor(formats, cellOutputs, "2 + 2");
+  yield* vscode.openNotebook(reopened.notebook);
+  yield* vscode.setActiveNotebookEditor(Option.some(reopened));
+});
+
+const exportKinds = Effect.gen(function* () {
+  const marimo = yield* TestMarimoClient.Service;
+  return (yield* marimo.commands).map((request) => request.kind);
+});
 
 Vitest.describe("AutoExport", () => {
-  markdownIt.effect(
-    "exports Markdown to an md file",
-    Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      yield* autoExport.tick;
-
-      const snapshot = yield* autoExport.snapshot;
-      Vitest.expect(requestKinds(snapshot)).toEqual(["export-markdown"]);
-      Vitest.expect(Object.fromEntries(snapshot.writes)).toEqual({
-        "file:///test/__marimo__/report.md": "# Report",
-      });
-    }),
-  );
-
-  noRuntimeIt.effect(
-    "waits for a live runtime session before creating exports",
-    Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      yield* autoExport.tick;
-
-      Vitest.expect(yield* autoExport.snapshot).toEqual({
-        requests: [],
-        directories: [],
-        writes: new Map(),
-      });
-    }),
-  );
+  const it = EffectTest.make(layerWith());
 
   it.effect(
     "exports enabled formats once per live-session generation",
     Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      yield* autoExport.tick;
+      const vscode = yield* TestVsCode.Service;
+      yield* activate;
+      yield* tick;
 
-      const first = yield* autoExport.snapshot;
-      Vitest.expect(requestKinds(first)).toEqual([
+      const first = yield* vscode.snapshot;
+      Vitest.expect(yield* exportKinds).toEqual([
         "export-html",
         "export-ipynb",
       ]);
-      Vitest.expect(Object.fromEntries(first.writes)).toEqual({
+      Vitest.expect(Object.fromEntries(first.files)).toEqual({
         "file:///test/__marimo__/report.html": "<html>report</html>",
         "file:///test/__marimo__/report.ipynb": "{}",
       });
       Vitest.expect(first.directories).toEqual(["file:///test/__marimo__"]);
 
-      yield* autoExport.tick;
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toHaveLength(2);
+      yield* tick;
+      Vitest.expect(yield* exportKinds).toHaveLength(2);
 
-      yield* autoExport.completeRun;
-      yield* autoExport.tick;
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
+      yield* completeRun;
+      yield* tick;
+      Vitest.expect(yield* exportKinds).toEqual([
         "export-html",
         "export-ipynb",
         "export-html",
@@ -108,59 +217,104 @@ Vitest.describe("AutoExport", () => {
   it.effect(
     "exports a notebook once when it has multiple visible editors",
     Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      yield* autoExport.showAnotherEditor;
-      yield* autoExport.tick;
+      const { editor } = yield* Notebook;
+      const vscode = yield* TestVsCode.Service;
+      yield* activate;
+      yield* vscode.setActiveNotebookEditor(
+        Option.some(TestVsCode.createTestNotebookEditor(editor.notebook)),
+      );
+      yield* tick;
 
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
+      Vitest.expect(yield* exportKinds).toEqual([
         "export-html",
         "export-ipynb",
       ]);
     }),
   );
 
-  noOutputsIt.effect(
-    "waits for cell output before exporting HTML",
-    Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      yield* autoExport.tick;
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
-        "export-ipynb",
-      ]);
+  Vitest.describe("with Markdown enabled", () => {
+    const it = EffectTest.make(layerWith({ autoDownload: ["markdown"] }));
 
-      yield* autoExport.addOutput;
-      yield* autoExport.completeRun;
-      yield* autoExport.tick;
+    it.effect(
+      "exports Markdown to an md file",
+      Effect.fn(function* () {
+        const vscode = yield* TestVsCode.Service;
+        yield* activate;
+        yield* tick;
 
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
-        "export-ipynb",
-        "export-html",
-        "export-ipynb",
-      ]);
-    }),
-  );
+        Vitest.expect(yield* exportKinds).toEqual(["export-markdown"]);
+        Vitest.expect(
+          Object.fromEntries((yield* vscode.snapshot).files),
+        ).toEqual({ "file:///test/__marimo__/report.md": "# Report" });
+      }),
+    );
+  });
 
-  blockedHtmlIt.effect(
-    "does not credit an in-flight export to a reopened notebook",
-    Effect.fn(function* () {
-      const autoExport = yield* TestAutoExport.Service;
-      yield* autoExport.activate;
-      const firstTick = yield* Effect.forkChild(autoExport.tick);
-      yield* autoExport.htmlExportStarted;
+  Vitest.describe("without a runtime session", () => {
+    const it = EffectTest.make(layerWith({ hasRuntimeSession: false }));
 
-      yield* autoExport.reopen;
-      yield* autoExport.releaseHtmlExport;
-      yield* Fiber.join(firstTick);
-      yield* autoExport.tick;
+    it.effect(
+      "waits for a live runtime session before creating exports",
+      Effect.fn(function* () {
+        const vscode = yield* TestVsCode.Service;
+        yield* activate;
+        yield* tick;
 
-      Vitest.expect(requestKinds(yield* autoExport.snapshot)).toEqual([
-        "export-html",
-        "export-ipynb",
-        "export-html",
-        "export-ipynb",
-      ]);
-    }),
-  );
+        const snapshot = yield* vscode.snapshot;
+        Vitest.expect(yield* exportKinds).toEqual([]);
+        Vitest.expect(snapshot.directories).toEqual([]);
+        Vitest.expect(snapshot.files.size).toBe(0);
+      }),
+    );
+  });
+
+  Vitest.describe("without cell outputs", () => {
+    const it = EffectTest.make(layerWith({ hasOutputs: false }));
+
+    it.effect(
+      "waits for cell output before exporting HTML",
+      Effect.fn(function* () {
+        const { cellOutputs } = yield* Notebook;
+        yield* activate;
+        yield* tick;
+        Vitest.expect(yield* exportKinds).toEqual(["export-ipynb"]);
+
+        cellOutputs.push(output());
+        yield* completeRun;
+        yield* tick;
+
+        Vitest.expect(yield* exportKinds).toEqual([
+          "export-ipynb",
+          "export-html",
+          "export-ipynb",
+        ]);
+      }),
+    );
+  });
+
+  Vitest.describe("while an HTML export is in flight", () => {
+    const it = EffectTest.make(layerWith({ blockHtmlExport: true }));
+
+    it.effect(
+      "does not credit an in-flight export to a reopened notebook",
+      Effect.fn(function* () {
+        const { htmlExportStarted, releaseHtmlExport } = yield* Notebook;
+        yield* activate;
+        const firstTick = yield* Effect.forkChild(tick);
+        yield* htmlExportStarted.await;
+
+        yield* reopen;
+        yield* releaseHtmlExport.open;
+        yield* Fiber.join(firstTick);
+        yield* tick;
+
+        Vitest.expect(yield* exportKinds).toEqual([
+          "export-html",
+          "export-ipynb",
+          "export-html",
+          "export-ipynb",
+        ]);
+      }),
+    );
+  });
 });
