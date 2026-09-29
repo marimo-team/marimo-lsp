@@ -1,24 +1,124 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Latch, Option, Scope } from "effect";
+import {
+  Context,
+  Effect,
+  Latch,
+  Layer,
+  Option,
+  Scope,
+  Stream,
+  SubscriptionRef,
+} from "effect";
+import type * as vscode from "vscode";
 
+import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSessions.ts";
+import type { NotebookDocumentSessionId } from "../../src/schemas/SessionIds.ts";
+import * as VsCodeTest from "../fake/VsCode.ts";
+import { notebookId } from "../lib/branded.ts";
 import * as EffectTest from "../lib/EffectTest.ts";
-import * as TestNotebookDocumentSessions from "./TestNotebookDocumentSessions.ts";
+import * as DocumentLifecycle from "./documentLifecycle.ts";
 
-const it = EffectTest.make(TestNotebookDocumentSessions.layer);
-const initiallyClosedIt = EffectTest.make(
-  TestNotebookDocumentSessions.layerWith({ initiallyOpen: false }),
+const uri = VsCodeTest.Uri.parse("file:///test/notebook.py");
+const id = notebookId(uri.toString());
+
+/** Two documents at the same URI and the history of active session IDs. */
+class Documents extends Context.Service<
+  Documents,
+  {
+    readonly first: vscode.NotebookDocument;
+    readonly replacement: vscode.NotebookDocument;
+    readonly active: SubscriptionRef.SubscriptionRef<
+      ReadonlyArray<NotebookDocumentSessionId | null>
+    >;
+  }
+>()("@marimo/test/NotebookDocumentSessions/Documents") {}
+
+const layerWith = (options: { readonly initiallyOpen: boolean }) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const first = VsCodeTest.createTestNotebookDocument(uri);
+      const replacement = VsCodeTest.createTestNotebookDocument(uri);
+      const active = yield* SubscriptionRef.make<
+        ReadonlyArray<NotebookDocumentSessionId | null>
+      >([]);
+      const sessionsLayer = NotebookDocumentSessions.layer.pipe(
+        Layer.provideMerge(
+          VsCodeTest.layerWith({
+            initialDocuments: options.initiallyOpen ? [first] : [],
+          }),
+        ),
+      );
+      // Record every active-session transition from the moment the layer builds.
+      const tracking = Layer.effectDiscard(
+        Effect.gen(function* () {
+          const sessions = yield* NotebookDocumentSessions.Service;
+          yield* sessions.active.pipe(
+            Stream.runForEach((session) =>
+              SubscriptionRef.update(active, (observed) => [
+                ...observed,
+                Option.match(session, {
+                  onNone: () => null,
+                  onSome: (value) => value.id,
+                }),
+              ]),
+            ),
+            Effect.forkScoped({ startImmediately: true }),
+          );
+        }),
+      ).pipe(Layer.provide(sessionsLayer));
+      return Layer.mergeAll(
+        sessionsLayer,
+        tracking,
+        Layer.succeed(Documents, { first, replacement, active }),
+      );
+    }),
+  );
+
+const current = Effect.map(NotebookDocumentSessions.Service, (sessions) =>
+  sessions.current(id),
 );
+
+const open = (document: vscode.NotebookDocument) =>
+  DocumentLifecycle.transition(document, "opened");
+
+const close = (document: vscode.NotebookDocument) =>
+  DocumentLifecycle.transition(document, "closed");
+
+const activate = (document: vscode.NotebookDocument) =>
+  Effect.flatMap(VsCodeTest.Service, (vscode) =>
+    vscode.setActiveNotebookEditor(
+      Option.some(VsCodeTest.createTestNotebookEditor(document)),
+    ),
+  );
+
+/** Waits until the latest observed active session is `sessionId`. */
+const awaitActive = (sessionId: NotebookDocumentSessionId | null) =>
+  Effect.flatMap(Documents, ({ active }) =>
+    SubscriptionRef.changes(active).pipe(
+      Stream.filter((observed) => observed.at(-1) === sessionId),
+      Stream.runHead,
+      Effect.asVoid,
+    ),
+  );
+
+const awaitActiveDocument = (document: vscode.NotebookDocument) =>
+  Effect.flatMap(NotebookDocumentSessions.Service, (sessions) =>
+    sessions.active.pipe(
+      Stream.filter(Option.exists((session) => session.document === document)),
+      Stream.runHead,
+      Effect.map((observed) => Option.getOrThrow(Option.flatten(observed))),
+    ),
+  );
+
+const it = EffectTest.make(layerWith({ initiallyOpen: true }));
 
 it.effect(
   "ends the old session when a document is replaced at the same URI",
   Effect.fn(function* () {
-    const sessions = yield* TestNotebookDocumentSessions.Service;
-    const firstSession = yield* sessions.current;
+    const { first, replacement } = yield* Documents;
+    const firstSession = yield* current;
     Vitest.expect(
-      Option.exists(
-        firstSession,
-        (session) => session.document === sessions.first,
-      ),
+      Option.exists(firstSession, (session) => session.document === first),
     ).toBe(true);
     if (Option.isNone(firstSession)) return;
 
@@ -26,23 +126,23 @@ it.effect(
     yield* Effect.addFinalizer(() => firstEnded.open).pipe(
       Scope.provide(firstSession.value.scope),
     );
-    yield* sessions.openReplacement;
+    yield* open(replacement);
     yield* firstEnded.await;
 
-    const replacementSession = yield* sessions.current;
+    const replacementSession = yield* current;
     Vitest.expect(
       Option.exists(
         replacementSession,
-        (session) => session.document === sessions.replacement,
+        (session) => session.document === replacement,
       ),
     ).toBe(true);
     if (Option.isNone(replacementSession)) return;
     Vitest.expect(replacementSession.value).not.toBe(firstSession.value);
 
-    yield* sessions.closeFirst;
+    yield* close(first);
     Vitest.expect(
       Option.exists(
-        yield* sessions.current,
+        yield* current,
         (session) => session === replacementSession.value,
       ),
     ).toBe(true);
@@ -51,36 +151,17 @@ it.effect(
     yield* Effect.addFinalizer(() => replacementEnded.open).pipe(
       Scope.provide(replacementSession.value.scope),
     );
-    yield* sessions.closeReplacement;
+    yield* close(replacement);
     yield* replacementEnded.await;
-    Vitest.expect(Option.isNone(yield* sessions.current)).toBe(true);
-  }),
-);
-
-initiallyClosedIt.effect(
-  "ignores a replayed open for a document that already closed",
-  Effect.fn(function* () {
-    const sessions = yield* TestNotebookDocumentSessions.Service;
-    yield* sessions.replayClosedFirst;
-    Vitest.expect(Option.isNone(yield* sessions.current)).toBe(true);
-
-    yield* sessions.openReplacement;
-    yield* sessions.activateReplacement;
-    yield* sessions.awaitActiveDocument(sessions.replacement);
-    Vitest.expect(
-      Option.exists(
-        yield* sessions.current,
-        (session) => session.document === sessions.replacement,
-      ),
-    ).toBe(true);
+    Vitest.expect(Option.isNone(yield* current)).toBe(true);
   }),
 );
 
 it.effect(
   "a document session owns scoped work and finalizers",
   Effect.fn(function* () {
-    const sessions = yield* TestNotebookDocumentSessions.Service;
-    const session = yield* sessions.current;
+    const { first } = yield* Documents;
+    const session = yield* current;
     Vitest.expect(Option.isSome(session)).toBe(true);
     if (Option.isNone(session)) return;
 
@@ -102,7 +183,7 @@ it.effect(
     );
     yield* backgroundStarted.await;
 
-    yield* sessions.closeFirst;
+    yield* close(first);
     yield* backgroundStopped.await;
     yield* finalized.await;
 
@@ -118,22 +199,44 @@ it.effect(
 it.effect(
   "projects the active session across document replacement and close",
   Effect.fn(function* () {
-    const sessions = yield* TestNotebookDocumentSessions.Service;
-    const firstSession = yield* sessions.current;
+    const { first, replacement } = yield* Documents;
+    const firstSession = yield* current;
     Vitest.expect(Option.isSome(firstSession)).toBe(true);
     if (Option.isNone(firstSession)) return;
 
-    yield* sessions.activateFirst;
-    yield* sessions.awaitActive(firstSession.value.id);
+    yield* activate(first);
+    yield* awaitActive(firstSession.value.id);
 
-    yield* sessions.openReplacement;
-    yield* sessions.activateReplacement;
-    const replacementSession = yield* sessions.awaitActiveDocument(
-      sessions.replacement,
-    );
-    yield* sessions.awaitActive(replacementSession.id);
+    yield* open(replacement);
+    yield* activate(replacement);
+    const replacementSession = yield* awaitActiveDocument(replacement);
+    yield* awaitActive(replacementSession.id);
 
-    yield* sessions.closeReplacement;
-    yield* sessions.awaitActive(null);
+    yield* close(replacement);
+    yield* awaitActive(null);
   }),
 );
+
+Vitest.describe("when the document starts closed", () => {
+  const it = EffectTest.make(layerWith({ initiallyOpen: false }));
+
+  it.effect(
+    "ignores a replayed open for a document that already closed",
+    Effect.fn(function* () {
+      const { first, replacement } = yield* Documents;
+      yield* close(first);
+      yield* open(first);
+      Vitest.expect(Option.isNone(yield* current)).toBe(true);
+
+      yield* open(replacement);
+      yield* activate(replacement);
+      yield* awaitActiveDocument(replacement);
+      Vitest.expect(
+        Option.exists(
+          yield* current,
+          (session) => session.document === replacement,
+        ),
+      ).toBe(true);
+    }),
+  );
+});

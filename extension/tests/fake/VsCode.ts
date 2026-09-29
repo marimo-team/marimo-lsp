@@ -83,6 +83,8 @@ export interface Options {
   readonly version?: string;
   readonly fileSystem?: Map<string, Uint8Array | Error>;
   readonly installedExtensions?: ReadonlyArray<string>;
+  /** VS Code commands that are recorded and then fail with a defect. */
+  readonly rejectedCommands?: ReadonlyArray<string>;
   readonly initialColorTheme?: "light" | "dark";
 }
 
@@ -205,6 +207,7 @@ export interface Interface {
   ) => Effect.Effect<void>;
   readonly selectInformationMessage: (item: string) => Effect.Effect<void>;
   readonly selectErrorMessage: (item: string) => Effect.Effect<void>;
+  readonly selectWarningMessage: (item: string) => Effect.Effect<void>;
   readonly setColorTheme: (theme: "light" | "dark") => Effect.Effect<void>;
   readonly configurationChange: (
     event: vscode.ConfigurationChangeEvent,
@@ -325,6 +328,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
   const informationMessageResponses = yield* Queue.unbounded<string>();
   const errorMessageResponses = yield* Queue.unbounded<string>();
+  const warningMessageResponses = yield* Queue.unbounded<string>();
   const colorTheme = yield* SubscriptionRef.make(
     options.initialColorTheme ?? ("light" as const),
   );
@@ -461,11 +465,26 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
           )),
       showWarningMessage:
         behavior.window?.showWarningMessage ??
-        ((message) =>
+        ((message, options = {}) =>
           Ref.update(warningMessages, (messages) => [
             ...messages,
             message,
-          ]).pipe(Effect.as(Option.none()))),
+          ]).pipe(
+            Effect.andThen(Queue.poll(warningMessageResponses)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.succeed(Option.none()),
+                onSome: (selected) => {
+                  const item = options.items?.find(
+                    (candidate) => candidate === selected,
+                  );
+                  return item === undefined
+                    ? Effect.die(`Warning-message item not found: ${selected}`)
+                    : Effect.succeed(Option.some(item));
+                },
+              }),
+            ),
+          )),
       showErrorMessage:
         behavior.window?.showErrorMessage ??
         ((message, options = {}) =>
@@ -716,6 +735,11 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
               executionRevision,
               (revision) => revision + 1,
             ),
+          ),
+          Effect.andThen(
+            options.rejectedCommands?.includes(command)
+              ? Effect.die(new Error(`VS Code rejected command: ${command}`))
+              : Effect.void,
           ),
         );
       },
@@ -1383,6 +1407,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
     selectInformationMessage: (item) =>
       Queue.offer(informationMessageResponses, item),
     selectErrorMessage: (item) => Queue.offer(errorMessageResponses, item),
+    selectWarningMessage: (item) => Queue.offer(warningMessageResponses, item),
     setColorTheme: (theme) => SubscriptionRef.set(colorTheme, theme),
     configurationChange: (event) =>
       PubSub.publish(configurationChanges, event).pipe(Effect.asVoid),
