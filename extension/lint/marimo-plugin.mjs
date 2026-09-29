@@ -206,6 +206,20 @@ const effectArchitecture = defineRule({
     }
     const imports = new Map();
     /**
+     * Whether `node` names the Effect module `module`, either through a
+     * named import or as a member of a namespace import.
+     * @param {import("@oxlint/plugins").ESTree.Expression} node
+     * @param {string} module
+     */
+    const isModule = (node, module) =>
+      (node.type === "Identifier" && imports.get(node.name) === module) ||
+      (node.type === "MemberExpression" &&
+        !node.computed &&
+        node.object.type === "Identifier" &&
+        imports.get(node.object.name) === "*" &&
+        node.property.type === "Identifier" &&
+        node.property.name === module);
+    /**
      * @param {import("@oxlint/plugins").ESTree.Expression} node
      * @param {string} module
      * @param {string} method
@@ -213,15 +227,16 @@ const effectArchitecture = defineRule({
     const isMember = (node, module, method) =>
       node.type === "MemberExpression" &&
       !node.computed &&
-      node.object.type === "Identifier" &&
-      imports.get(node.object.name) === module &&
+      isModule(node.object, module) &&
       node.property.type === "Identifier" &&
       node.property.name === method;
     return {
       ImportDeclaration(node) {
         if (node.source.value !== "effect") return;
         for (const specifier of node.specifiers) {
-          if (
+          if (specifier.type === "ImportNamespaceSpecifier") {
+            imports.set(specifier.local.name, "*");
+          } else if (
             specifier.type === "ImportSpecifier" &&
             specifier.imported.type === "Identifier"
           ) {
