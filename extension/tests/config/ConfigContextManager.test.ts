@@ -5,16 +5,17 @@ import {
   Latch,
   Layer,
   Option,
+  Scope,
   Stream,
   SubscriptionRef,
 } from "effect";
 import type * as vscode from "vscode";
 
 import * as ConfigContextManager from "../../src/config/ConfigContextManager.ts";
+import * as NotebookConfiguration from "../../src/config/NotebookConfiguration.ts";
 import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSessions.ts";
 import * as NotebookSessionResources from "../../src/notebook/NotebookSessionResources.ts";
 import { MarimoNotebookDocument } from "../../src/schemas/MarimoNotebookDocument.ts";
-import * as MarimoClientTest from "../fake/MarimoClient.ts";
 import * as NotebookRuntimeTest from "../fake/NotebookRuntime.ts";
 import * as VsCodeTest from "../fake/VsCode.ts";
 import { marimoConfigFixture, notebookId } from "../lib/branded.ts";
@@ -110,7 +111,7 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
         Layer.provideMerge(
           NotebookSessionResources.layer.pipe(Layer.provideMerge(runtimeLayer)),
         ),
-        Layer.provide(
+        Layer.provideMerge(
           NotebookDocumentSessions.layer.pipe(Layer.provide(vscodeLayer)),
         ),
         Layer.provideMerge(vscodeLayer),
@@ -139,23 +140,34 @@ const layerWith = (options: { readonly blockFirstWrite: boolean }) =>
     }),
   );
 
-/** Activates the document and waits until the manager fetches its config. */
+/**
+ * Activates the document and waits until its session has loaded its
+ * configuration, so the manager has seen it before the test moves on.
+ */
 const activate = Effect.fn("activate")(function* (
   document: vscode.NotebookDocument,
 ) {
   const vscode = yield* VsCodeTest.Service;
-  const marimo = yield* MarimoClientTest.Service;
+  const sessions = yield* NotebookDocumentSessions.Service;
+  const resources = yield* NotebookSessionResources.Service;
   const notebookUri = MarimoNotebookDocument.from(document).id;
   yield* vscode.setActiveNotebookEditor(
     Option.some(VsCodeTest.createTestNotebookEditor(document)),
   );
-  yield* marimo.awaitCommands((commands) =>
-    commands.some(
-      (command) =>
-        command.kind === "get-configuration" &&
-        command.notebookUri === notebookUri,
-    ),
-  );
+  const session = Option.getOrThrow(sessions.current(notebookUri));
+  yield* resources
+    .runScoped(
+      session,
+      NotebookConfiguration.Service.pipe(
+        Effect.flatMap((configuration) =>
+          configuration.changes.pipe(
+            Stream.filter(Option.isSome),
+            Stream.runHead,
+          ),
+        ),
+      ),
+    )
+    .pipe(Scope.provide(session.scope));
 });
 
 const AUTO_RELOAD = "marimo.config.runtime.auto_reload";
@@ -204,6 +216,9 @@ Vitest.describe("ConfigContextManager", () => {
 
         yield* activate(secondDocument);
         yield* context.releaseFirstWrite.open;
+        // Wait for the released write to land before the second session's
+        // writes, so an implementation that let them overtake it is caught.
+        yield* context.await({ key: ON_CELL_CHANGE, value: "lazy" });
         yield* context.await({ key: AUTO_RELOAD, value: "lazy" });
 
         const latest = new Map(

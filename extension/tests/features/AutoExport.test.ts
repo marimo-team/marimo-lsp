@@ -165,13 +165,15 @@ const completeRun = Effect.gen(function* () {
 });
 
 /**
- * Opens a fresh document at the same path without a close event, so the
- * in-flight export meets a new incarnation rather than a removed entry.
+ * Closes the notebook and opens a fresh document at the same path while the
+ * previous document's export is still in flight. The reopened notebook must
+ * be exported again rather than credited with that export.
  */
 const reopen = Effect.gen(function* () {
-  const { formats, cellOutputs } = yield* Notebook;
+  const { editor, formats, cellOutputs } = yield* Notebook;
   const vscode = yield* VsCodeTest.Service;
   yield* vscode.setActiveNotebookEditor(Option.none());
+  yield* vscode.closeNotebook(editor.notebook);
   const reopened = makeEditor(formats, cellOutputs, "2 + 2");
   yield* vscode.openNotebook(reopened.notebook);
   yield* vscode.setActiveNotebookEditor(Option.some(reopened));

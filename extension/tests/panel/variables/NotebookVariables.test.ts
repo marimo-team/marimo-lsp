@@ -1,5 +1,14 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Fiber, Latch, Layer, Option, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Latch,
+  Layer,
+  Option,
+  Scope,
+  Stream,
+} from "effect";
 
 import { NOTEBOOK_TYPE } from "../../../src/constants.ts";
 import * as NotebookDocumentSessions from "../../../src/notebook/NotebookDocumentSessions.ts";
@@ -63,9 +72,6 @@ const open = Effect.fn("open")(function* (id: NotebookId = NOTEBOOK_URI) {
   yield* DocumentLifecycle.transition(document, "opened");
   return Option.getOrThrow(sessions.current(id));
 });
-
-const close = (session: NotebookDocumentSessions.Session) =>
-  DocumentLifecycle.transition(session.document, "closed");
 
 const declare = Effect.fn("declare")(function* (
   session: NotebookDocumentSessions.Session,
@@ -180,7 +186,10 @@ Vitest.describe("NotebookVariables", () => {
       yield* assign(session, values);
 
       const beforeClose = yield* current();
-      yield* close(session);
+      // End the session through its scope rather than a document close: a
+      // closed document no longer resolves for the URI, so only this path
+      // keeps the released state observable through `getAllVariableData`.
+      yield* Scope.close(session.scope, Exit.void);
       const afterClose = yield* current();
       yield* declare(session, declarations);
       yield* assign(session, values);

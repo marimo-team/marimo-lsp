@@ -2,15 +2,16 @@ import * as Vitest from "@effect/vitest";
 import {
   Context,
   Effect,
+  Exit,
   Fiber,
   Latch,
   Layer,
   Option,
   Queue,
   Ref,
+  Scope,
 } from "effect";
 import { TestClock } from "effect/testing";
-import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../../../src/constants.ts";
 import * as NotebookDocumentSessions from "../../../src/notebook/NotebookDocumentSessions.ts";
@@ -150,11 +151,6 @@ const closeCurrent = Effect.gen(function* () {
   yield* DocumentLifecycle.transition(session.document, "closed");
 });
 
-const closeDocument = (document: vscode.NotebookDocument) =>
-  Effect.flatMap(VsCodeTest.Service, (vscode) =>
-    vscode.closeNotebook(document),
-  );
-
 const requests = Effect.flatMap(Requests, (r) => Ref.get(r.completed));
 const nextRequest = Effect.flatMap(Requests, (r) => Queue.take(r.queue));
 const sendStarted = Effect.flatMap(Requests, (r) => r.sendStarted.await);
@@ -242,17 +238,42 @@ Vitest.describe("NotebookDatasources", () => {
         KERNEL_SESSION_ID,
         connections([schema("new")]),
       );
-      yield* closeDocument(displaced.document);
+      const database = yield* getDatabase();
+      Vitest.expect(database.schemas.has("new")).toBe(true);
+      Vitest.expect(database.schemas.has("old")).toBe(false);
+    }),
+  );
+
+  it.effect("releases state when its document session ends", () =>
+    Effect.gen(function* () {
+      const datasources = yield* NotebookDatasources.Service;
+      const session = yield* currentSession;
       yield* datasources.updateConnections(
-        displaced,
+        session,
+        KERNEL_SESSION_ID,
+        connections([schema("old")]),
+      );
+      Vitest.expect(
+        Option.isSome(yield* datasources.getConnections(NOTEBOOK_URI)),
+      ).toBe(true);
+
+      // End the session through its scope rather than a document close: a
+      // closed document no longer resolves for the URI, so only this path
+      // keeps the released state observable through `getConnections`.
+      yield* Scope.close(session.scope, Exit.void);
+      Vitest.expect(
+        Option.isNone(yield* datasources.getConnections(NOTEBOOK_URI)),
+      ).toBe(true);
+
+      // A write for an ended session is released immediately.
+      yield* datasources.updateConnections(
+        session,
         KERNEL_SESSION_ID,
         connections([schema("late")]),
       );
-
-      const database = yield* getDatabase();
-      Vitest.expect(database.schemas.has("new")).toBe(true);
-      Vitest.expect(database.schemas.has("late")).toBe(false);
-      Vitest.expect(database.schemas.has("old")).toBe(false);
+      Vitest.expect(
+        Option.isNone(yield* datasources.getConnections(NOTEBOOK_URI)),
+      ).toBe(true);
     }),
   );
 
