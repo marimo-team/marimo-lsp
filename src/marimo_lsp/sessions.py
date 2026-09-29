@@ -19,6 +19,7 @@ from marimo._messaging.serde import (
     deserialize_kernel_message,
     deserialize_kernel_notification_name,
 )
+from marimo._messaging.types import KernelMessage
 from marimo._runtime.commands import (
     CodeCompletionCommand,
     CommandMessage,
@@ -30,7 +31,7 @@ from marimo._runtime.commands import (
     UpdateUserConfigCommand,
 )
 from marimo._session.state.session_view import SessionView
-from marimo._types.ids import SessionId
+from marimo._types.ids import CellId_t, SessionId
 
 from marimo_lsp.app_file_manager import LspAppFileManager, sync_app_with_workspace
 from marimo_lsp.kernels import KernelOpenError
@@ -61,7 +62,6 @@ if TYPE_CHECKING:
     )
     from marimo._config.manager import MarimoConfigManager
     from marimo._messaging.notification import NotificationMessage
-    from marimo._messaging.types import KernelMessage
     from marimo._session.requests import InstantiateNotebookRequest
     from marimo._types.ids import ConsumerId
     from pygls.lsp.server import LanguageServer
@@ -87,6 +87,39 @@ def _notification_name(message: KernelMessage) -> str:
         return deserialize_kernel_notification_name(message)
     except Exception:  # noqa: BLE001
         return "<undecodable>"
+
+
+def _normalize_kernel_message(
+    message: KernelMessage, app: InternalApp
+) -> KernelMessage:
+    """Preserve notebook settings omitted by older kernel notifications."""
+    if deserialize_kernel_notification_name(message) != "notebook-document-transaction":
+        return message
+    operation = msgspec.json.decode(message)
+    match operation:
+        case {"transaction": {"changes": list() as changes}}:
+            changed = False
+            for change in changes:
+                if (
+                    isinstance(change, dict)
+                    and change.get("type") == "set-config"
+                    and "expandOutput" not in change
+                ):
+                    # Older kernels cannot report this setting. Preserve the
+                    # editor's value when they change another config field.
+                    cell_id = change.get("cellId")
+                    cell = (
+                        app.cell_manager.get_cell_data(CellId_t(cell_id))
+                        if isinstance(cell_id, str)
+                        else None
+                    )
+                    change["expandOutput"] = (
+                        cell.config.expand_output if cell else False
+                    )
+                    changed = True
+            if changed:
+                return KernelMessage(msgspec.json.encode(operation))
+    return message
 
 
 class _OperationSink:
@@ -345,6 +378,7 @@ class Session:
         """Record and forward an operation received from the kernel."""
         if self._closed:
             return
+        message = _normalize_kernel_message(message, self.app)
         self.session_view.add_raw_notification(message)
         kernel_error = self._update_status(message)
         self._operation_sink.notify(message)
