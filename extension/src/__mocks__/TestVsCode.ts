@@ -197,6 +197,7 @@ export interface Interface {
     labels: ReadonlyArray<string>,
   ) => Effect.Effect<void>;
   readonly selectInformationMessage: (item: string) => Effect.Effect<void>;
+  readonly selectErrorMessage: (item: string) => Effect.Effect<void>;
   readonly configurationChange: (
     event: vscode.ConfigurationChangeEvent,
   ) => Effect.Effect<void>;
@@ -315,6 +316,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
   const warningMessages = yield* Ref.make<ReadonlyArray<string>>([]);
   const errorMessages = yield* Ref.make<ReadonlyArray<string>>([]);
   const informationMessageResponses = yield* Queue.unbounded<string>();
+  const errorMessageResponses = yield* Queue.unbounded<string>();
   const configurationChanges =
     yield* PubSub.unbounded<vscode.ConfigurationChangeEvent>();
 
@@ -453,9 +455,22 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
           ]).pipe(Effect.as(Option.none()))),
       showErrorMessage:
         behavior.window?.showErrorMessage ??
-        ((message) =>
+        ((message, options = {}) =>
           Ref.update(errorMessages, (messages) => [...messages, message]).pipe(
-            Effect.as(Option.none()),
+            Effect.andThen(Queue.poll(errorMessageResponses)),
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.succeed(Option.none()),
+                onSome: (selected) => {
+                  const item = options.items?.find(
+                    (candidate) => candidate === selected,
+                  );
+                  return item === undefined
+                    ? Effect.die(`Error-message item not found: ${selected}`)
+                    : Effect.succeed(Option.some(item));
+                },
+              }),
+            ),
           )),
       showQuickPick:
         behavior.window?.showQuickPick ??
@@ -1341,6 +1356,7 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
       ),
     selectInformationMessage: (item) =>
       Queue.offer(informationMessageResponses, item),
+    selectErrorMessage: (item) => Queue.offer(errorMessageResponses, item),
     configurationChange: (event) =>
       PubSub.publish(configurationChanges, event).pipe(Effect.asVoid),
     awaitExecutions: (predicate) =>

@@ -3,42 +3,56 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
-import { Effect, Exit, Fiber, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Exit, Fiber, Layer, Option, Queue, Ref, Stream } from "effect";
 
+import * as TestVsCode from "../../__mocks__/TestVsCode.ts";
 import * as EffectTest from "../../__tests__/__utils__/EffectTest.ts";
 import type { TestCommand } from "../../__tests__/__utils__/TestMarimoClient.ts";
 import { MarimoLspServer } from "../../config/Config.ts";
 import { kernelSessionId, notebookId } from "../../lib/__tests__/branded.ts";
 import type { DocumentAnalysis, KernelNotification } from "../../types.ts";
 import * as MarimoClient from "../MarimoClient.ts";
-import * as TestCustomLspFailure from "./TestCustomLspFailure.ts";
-import * as TestMarimoNotifications from "./TestMarimoNotifications.ts";
 
 const notebook = notebookId("notebook-a");
 const it = EffectTest.make(Layer.empty);
 
 Vitest.describe("custom language-server failures", () => {
-  const it = EffectTest.make(
-    TestCustomLspFailure.layerWith(
-      TestCustomLspFailure.Scenario.OpenSettings(),
-    ),
-  );
+  const it = EffectTest.make(TestVsCode.layer);
+
+  type Mode = Parameters<
+    typeof MarimoClient.makeCustomLspFailureNotifier
+  >[0]["mode"];
+
+  /** Builds one notifier per server mode, counting how often logs are shown. */
+  const makeNotify = (modes: ReadonlyArray<Mode>, logs: { opened: number }) =>
+    Effect.forEach(modes, (mode) =>
+      MarimoClient.makeCustomLspFailureNotifier({
+        mode,
+        channel: {
+          name: "marimo-lsp",
+          show: () => {
+            logs.opened += 1;
+          },
+        },
+      }),
+    ).pipe(Effect.map((notifiers) => Effect.all(notifiers, { discard: true })));
 
   it.effect(
     "prompts once and opens the selected recovery surface",
     Effect.fn(function* () {
-      const recovery = yield* TestCustomLspFailure.Service;
+      const vscode = yield* TestVsCode.Service;
+      const logs = { opened: 0 };
+      const notify = yield* makeNotify(["configured"], logs);
+      yield* vscode.selectErrorMessage("Open Settings");
 
-      yield* Effect.all([recovery.notify, recovery.notify], {
-        concurrency: "unbounded",
-      });
+      yield* Effect.all([notify, notify], { concurrency: "unbounded" });
 
-      const snapshot = yield* recovery.snapshot;
-      Vitest.expect(snapshot.prompts).toHaveLength(1);
-      Vitest.expect(snapshot.prompts[0]).toContain(
+      const snapshot = yield* vscode.snapshot;
+      Vitest.expect(snapshot.errorMessages).toHaveLength(1);
+      Vitest.expect(snapshot.errorMessages[0]).toContain(
         "Custom language servers are for extension development",
       );
-      Vitest.expect(snapshot.logsOpened).toBe(0);
+      Vitest.expect(logs.opened).toBe(0);
       Vitest.expect(snapshot.executions).toContainEqual({
         command: "workbench.action.openSettings",
         args: ["marimo.lsp"],
@@ -46,38 +60,32 @@ Vitest.describe("custom language-server failures", () => {
     }),
   );
 
-  Vitest.describe("when logs are selected", () => {
-    const it = EffectTest.make(
-      TestCustomLspFailure.layerWith(TestCustomLspFailure.Scenario.OpenLogs()),
-    );
+  it.effect(
+    "opens logs when selected",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
+      const logs = { opened: 0 };
+      const notify = yield* makeNotify(["configured"], logs);
+      yield* vscode.selectErrorMessage("Open Logs");
 
-    it.effect(
-      "opens logs when selected",
-      Effect.fn(function* () {
-        const recovery = yield* TestCustomLspFailure.Service;
-        yield* recovery.notify;
+      yield* notify;
 
-        const snapshot = yield* recovery.snapshot;
-        Vitest.expect(snapshot.logsOpened).toBe(1);
-        Vitest.expect(snapshot.executions).toEqual([]);
-      }),
-    );
-  });
+      Vitest.expect(logs.opened).toBe(1);
+      Vitest.expect((yield* vscode.snapshot).executions).toEqual([]);
+    }),
+  );
 
-  Vitest.describe("for bundled language servers", () => {
-    const it = EffectTest.make(
-      TestCustomLspFailure.layerWith(TestCustomLspFailure.Scenario.Bundled()),
-    );
+  it.effect(
+    "does not prompt for bundled language servers",
+    Effect.fn(function* () {
+      const vscode = yield* TestVsCode.Service;
+      const notify = yield* makeNotify(["wasm", "uv"], { opened: 0 });
 
-    it.effect(
-      "does not prompt for bundled language servers",
-      Effect.fn(function* () {
-        const recovery = yield* TestCustomLspFailure.Service;
-        yield* recovery.notify;
-        Vitest.expect((yield* recovery.snapshot).prompts).toEqual([]);
-      }),
-    );
-  });
+      yield* notify;
+
+      Vitest.expect((yield* vscode.snapshot).errorMessages).toEqual([]);
+    }),
+  );
 });
 
 it.effect(
@@ -345,12 +353,93 @@ Vitest.describe("selectMarimoLspExecutable", () => {
 });
 
 Vitest.describe("notification streams", () => {
-  const it = EffectTest.make(TestMarimoNotifications.layer);
+  /**
+   * Wires the client's notification streams to hand-driven transport
+   * handlers so tests can publish raw messages and count registrations.
+   */
+  const makeNotifications = Effect.gen(function* () {
+    let commandNotificationsRequested = false;
+    let kernelRegistrations = 0;
+    let documentRegistrations = 0;
+    let kernelHandler: ((message: unknown) => void) | undefined;
+    let documentHandler: ((message: unknown) => void) | undefined;
+    const kernelSubscriptions = yield* Queue.unbounded<void>();
+    const documentSubscriptions = yield* Queue.unbounded<void>();
+
+    const kernelNotifications =
+      yield* MarimoClient.makeKernelNotificationStream((handler) => {
+        kernelRegistrations += 1;
+        kernelHandler = handler;
+        return { dispose() {} };
+      });
+    const documentAnalyses = yield* MarimoClient.makeDocumentAnalysisStream(
+      (handler) => {
+        documentRegistrations += 1;
+        documentHandler = handler;
+        return { dispose() {} };
+      },
+    );
+    const commands = MarimoClient.makeCommands({
+      send: () => Effect.void,
+      kernelNotifications: Stream.suspend(() => {
+        commandNotificationsRequested = true;
+        return Stream.empty;
+      }),
+    });
+
+    const awaitSubscriptions = (
+      subscriptions: Queue.Queue<void>,
+      count: number,
+    ) =>
+      Effect.forEach(
+        Array.from({ length: count }),
+        () => Queue.take(subscriptions),
+        { discard: true },
+      );
+    const take = <A>(
+      stream: Stream.Stream<A>,
+      subscriptions: Queue.Queue<void>,
+    ) =>
+      Queue.offer(subscriptions, undefined).pipe(
+        Effect.andThen(stream.pipe(Stream.take(1), Stream.runHead)),
+      );
+    const publish =
+      (handler: () => ((message: unknown) => void) | undefined, name: string) =>
+      (message: unknown) =>
+        Effect.suspend(() => {
+          const current = handler();
+          return current === undefined
+            ? Effect.die(`${name} handler is not registered`)
+            : Effect.sync(() => current(message));
+        });
+
+    return {
+      drainCommandNotifications: commands.kernelNotifications.pipe(
+        Stream.runDrain,
+      ),
+      takeKernel: take(kernelNotifications, kernelSubscriptions),
+      takeDocumentAnalysis: take(documentAnalyses, documentSubscriptions),
+      awaitKernelSubscriptions: (count: number) =>
+        awaitSubscriptions(kernelSubscriptions, count),
+      awaitDocumentSubscriptions: (count: number) =>
+        awaitSubscriptions(documentSubscriptions, count),
+      publishKernel: publish(() => kernelHandler, "Kernel notification"),
+      publishDocumentAnalysis: publish(
+        () => documentHandler,
+        "Document analysis",
+      ),
+      snapshot: Effect.sync(() => ({
+        commandNotificationsRequested,
+        kernelRegistrations,
+        documentRegistrations,
+      })),
+    };
+  });
 
   it.effect(
     "subscribes to kernel notifications",
     Effect.fn(function* () {
-      const notifications = yield* TestMarimoNotifications.Service;
+      const notifications = yield* makeNotifications;
       yield* notifications.drainCommandNotifications;
 
       Vitest.expect(
@@ -362,7 +451,7 @@ Vitest.describe("notification streams", () => {
   it.effect(
     "broadcasts kernel notifications without replacing the transport handler",
     Effect.fn(function* () {
-      const notifications = yield* TestMarimoNotifications.Service;
+      const notifications = yield* makeNotifications;
       const first = yield* notifications.takeKernel.pipe(Effect.forkChild);
       const second = yield* notifications.takeKernel.pipe(Effect.forkChild);
       yield* notifications.awaitKernelSubscriptions(2);
@@ -385,7 +474,7 @@ Vitest.describe("notification streams", () => {
   it.effect(
     "decodes document analysis on its own channel",
     Effect.fn(function* () {
-      const notifications = yield* TestMarimoNotifications.Service;
+      const notifications = yield* makeNotifications;
       const received = yield* notifications.takeDocumentAnalysis.pipe(
         Effect.forkChild,
       );
@@ -408,7 +497,7 @@ Vitest.describe("notification streams", () => {
   it.effect(
     "requires a kernel session ID even for kernel variable snapshots",
     Effect.fn(function* () {
-      const notifications = yield* TestMarimoNotifications.Service;
+      const notifications = yield* makeNotifications;
       const received = yield* notifications.takeKernel.pipe(Effect.forkChild);
       yield* notifications.awaitKernelSubscriptions(1);
       const kernelSnapshot: KernelNotification = {
