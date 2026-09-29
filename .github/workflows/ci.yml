@@ -155,6 +155,12 @@ jobs:
           pnpm build
           pnpm embed-sdist
 
+      # Process-backed tests start marimo-lsp with `uv run`. Resolve the
+      # project here so a cold runner does not pay for it inside a test hook.
+      - name: Sync the marimo-lsp environment
+        run: uv sync --frozen
+        working-directory: marimo-lsp
+
       - name: vitest
         run: pnpm test --coverage
         working-directory: marimo-lsp/extension
