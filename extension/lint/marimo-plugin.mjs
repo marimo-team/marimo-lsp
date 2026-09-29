@@ -1,13 +1,13 @@
 // @ts-check
 import * as NodePath from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeUrl from "node:url";
 
 import { definePlugin, defineRule } from "@oxlint/plugins";
 
 import pkg from "../package.json" with { type: "json" };
 
 const extensionRoot = NodePath.resolve(
-  NodePath.dirname(fileURLToPath(import.meta.url)),
+  NodePath.dirname(NodeUrl.fileURLToPath(import.meta.url)),
   "..",
 );
 
