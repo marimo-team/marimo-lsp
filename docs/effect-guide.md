@@ -39,8 +39,8 @@ Consumers import the module as a standard ESM namespace:
 ```ts
 import * as ItemStore from "./ItemStore.ts";
 
-const items = yield * ItemStore.Service;
-yield * items.get(id);
+const items = yield* ItemStore.Service;
+yield* items.get(id);
 ```
 
 Rules:
