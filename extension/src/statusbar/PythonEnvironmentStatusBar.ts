@@ -101,18 +101,19 @@ export const layer = Layer.effectDiscard(
       yield* updateVisibility(item);
     });
 
-    // Listen for environment changes and update the status bar
+    // Acquire the listener, initialize from the current environment, then
+    // consume buffered changes so a change during initialization wins.
     const environmentChanges =
       yield* pythonExtension.subscribeActiveEnvironmentPathChanges;
+
+    const initialEnv = yield* pythonExtension.getActiveEnvironmentPath();
+    yield* updateDisplay(item, Option.some(initialEnv.path));
+    yield* updateVisibility(item);
+
     yield* environmentChanges.pipe(
       Stream.runForEach(handleEnvironmentChange),
       Effect.forkScoped({ startImmediately: true }),
     );
-
-    // Initialize with the current active environment
-    const initialEnv = yield* pythonExtension.getActiveEnvironmentPath();
-    yield* updateDisplay(item, Option.some(initialEnv.path));
-    yield* updateVisibility(item);
 
     yield* Effect.logDebug("Python environment status bar initialized");
   }).pipe(Effect.withSpan("PythonEnvironmentStatusBar.layer")),
