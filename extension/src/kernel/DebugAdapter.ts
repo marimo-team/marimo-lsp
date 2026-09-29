@@ -202,6 +202,7 @@ export const layer = Layer.effect(
     const debugCell = Effect.fn("DebugAdapter.debugCell")(
       function* (cell: MarimoNotebookCell) {
         if (!debugpyLibsPath) {
+          yield* Effect.logWarning("ms-python.debugpy extension not found");
           yield* showErrorAndPromptLogs(
             "Cannot debug: ms-python.debugpy extension is not installed.",
           );
