@@ -146,52 +146,23 @@ narrow adapters.
 
 ## Testing
 
-Tests live in `extension/tests` and mirror `extension/src` one level deep:
-`src/kernel/NotebookRuntime.ts` is tested by `tests/kernel/NotebookRuntime.test.ts`.
+Tests live in `extension/tests` and mirror `extension/src` one level deep.
 Beside the mirror, `tests/fake` holds fakes of external boundaries,
-`tests/lib` holds the runner and shared helpers, `tests/fixtures` holds data,
-and `tests/vscode` holds the extension-host suite.
+`tests/lib` holds the runner and shared helpers, `tests/fixtures` holds
+data, and `tests/vscode` holds the extension-host suite. Read a neighbouring
+test for the conventions; the rules below are the ones a test file cannot show.
 
-Layout rules:
-
-- A test file owns its setup. Build the layer graph, scenario options, and
-  helper functions in the test file. Do not create a `TestFoo.ts` module or a
-  test-only `Context.Service` that wraps one production module.
 - Fake only external boundaries: VS Code, the marimo language server, the
-  Python extension, telemetry. Everything else runs the production layer.
-  A fake earns a module under `tests/fake` when it has a second consumer; it
-  takes the production module's name and is imported as `ModuleTest`, for
-  example `import * as VsCodeTest from "../fake/VsCode.ts"`.
-- Observe through the fakes. `VsCodeTest.Service` exposes a snapshot and
-  waiters for commands, messages, and files; `MarimoClientTest.Service`
-  records every command and publishes server messages. Do not add
-  observation ports to production services for tests.
-- Use `Layer.mock` for a partial stub of a production service. Missing
-  methods fail loudly.
-- A shared helper module beside the tests, such as
-  `tests/notebook/documentLifecycle.ts`, exports plain Effect functions over
-  the fakes. It needs at least two consumers.
-
-Runner rules:
-
-- Yield production services and fakes directly in the test body:
-  `const vscode = yield* VsCodeTest.Service`.
-- Use `EffectTest.make(layer)` for a fresh layer build and scope per test.
-  Use `it.effect` with Effect's test services and `it.live` when the behavior
-  depends on the live clock, filesystem, processes, watchers, or servers.
-- Per-test state that a fake must see, such as a latch that holds a scripted
-  response open, is created inside the layer with
-  `Layer.unwrap(Effect.gen(...))` and exposed through a small test-local
-  `Context.Service` defined in the same file. The layer is rebuilt for every
-  test, so this is the only place that state can live.
-- When one suite needs several configured layers, put each configuration in a
-  nested `Vitest.describe` and name its locally scoped runner `it`.
-- Import `@effect/vitest` as the `Vitest` namespace and qualify its exports,
-  such as `Vitest.describe`, `Vitest.expect`, and `Vitest.it`. When a file uses
-  `EffectTest.make`, name the bound runner `it` and use `Vitest.it` for tests
-  outside the bound layer.
-- Wait on signals, not time: a fake's waiter, a `Latch`, a `Deferred`, or a
-  stream filter. Never `Effect.sleep` to let a fiber catch up.
+  Python extension, telemetry. Everything else runs the production layer. A
+  fake earns a module under `tests/fake` when it has a second consumer.
+- Observe through the fakes. Do not add observation ports to production
+  services for tests; if a fake cannot see a behavior, extend the fake.
+- Per-test state that a fake must see is created inside
+  `Layer.unwrap(Effect.gen(...))` and exposed through a test-local
+  `Context.Service` in the same file. `EffectTest.make` rebuilds the layer
+  for every test, so that is the only place such state can live.
+- Use `it.live` only when the behavior depends on the live clock, filesystem,
+  processes, watchers, or servers.
 
 ## Verification
 
