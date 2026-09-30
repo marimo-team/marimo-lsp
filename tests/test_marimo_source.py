@@ -144,6 +144,11 @@ def test_prepare_fetches_a_tag_into_an_existing_checkout(
 
     monkeypatch.setattr(marimo_source, "MARIMO_REPOSITORY", str(remote))
     monkeypatch.setattr(marimo_source.marimo_version, "check", _policy)
+    monkeypatch.setattr(
+        marimo_source,
+        "_require_command",
+        lambda command: git if command == "git" else command,
+    )
     monkeypatch.setattr(marimo_source, "_run", run_without_build)
 
     marimo_source.prepare(checkout)
