@@ -8,6 +8,7 @@ import json
 from typing import TYPE_CHECKING, cast
 
 import msgspec
+from marimo._environments import script_metadata
 from marimo._messaging.notebook.document import NotebookDocument
 from marimo._messaging.notification import CellNotification
 from marimo._session.state.serialize import (
@@ -18,7 +19,6 @@ from marimo._session.state.serialize import (
 )
 from marimo._session.state.session_view import SessionView
 from marimo._utils.code import hash_code
-from marimo._utils.inline_script_metadata import read_pyproject_from_script
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 def _script_metadata_hash(header: str | None) -> str | None:
     try:
-        project = read_pyproject_from_script(header or "")
+        project = script_metadata.loads(header or "")
     except Exception:  # noqa: BLE001 - match marimo's filename helper
         return None
     if project is None:

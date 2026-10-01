@@ -184,7 +184,7 @@ class Manager(KernelManagerImpl):
         self.marimo_version: str | None = None
         self.session_cache_path: str | None = None
 
-    def start_kernel(self) -> None:
+    async def start_kernel(self) -> None:
         """Start an instance of the marimo kernel using ZeroMQ IPC."""
         working_directory = Path(self.working_directory)
         _validate_working_directory(working_directory)

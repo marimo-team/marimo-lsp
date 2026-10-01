@@ -155,11 +155,24 @@ def test_latest_eligible_intersects_distributions_and_tags(
     assert str(marimo_version.latest_eligible()) == "0.23.16"
 
 
+@pytest.mark.parametrize("source_last", [False, True])
 def test_update_changes_dependency_and_refreshes_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    source_last: bool,
 ) -> None:
     root = _repository(tmp_path)
+    path = root / "pyproject.toml"
+    if source_last:
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                'marimo-source = { tag = "0.23.16" }\nminimum-kernel-version = "0.23.3"',
+                'minimum-kernel-version = "0.23.3"\nmarimo-source = { tag = "0.23.16" }',
+            )
+            + "\n[tool.example]\nenabled = true\n",
+            encoding="utf-8",
+        )
     target = marimo_version.Version.parse("0.23.17")
     monkeypatch.setattr(marimo_version, "_require_eligible", lambda _version: None)
 
@@ -176,6 +189,8 @@ def test_update_changes_dependency_and_refreshes_lock(
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["dependencies"] == ["marimo-base==0.23.17"]
     assert pyproject["tool"]["marimo-lsp"]["marimo-source"] == {"tag": "0.23.17"}
+    if source_last:
+        assert pyproject["tool"]["example"] == {"enabled": True}
 
 
 def test_update_only_changes_the_marimo_lsp_source(

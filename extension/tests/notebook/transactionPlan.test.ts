@@ -32,7 +32,12 @@ function pc(
     languageId: "python",
     kind: 2,
     name: "",
-    config: { column: null, disabled: false, hide_code: false },
+    config: {
+      column: null,
+      disabled: false,
+      hide_code: false,
+      expand_output: false,
+    },
     ...extra,
   };
 }
@@ -65,6 +70,7 @@ const setConfig = (cellId: string, hideCode: boolean): DocumentChange => ({
   column: null,
   disabled: false,
   hideCode,
+  expandOutput: false,
 });
 
 const deleteCell = (cellId: string): DocumentChange => ({
@@ -123,7 +129,12 @@ Vitest.describe("computeDesiredCells", () => {
     ({ previous, next }) => {
       const current = [
         pc("a", "x = 1", {
-          config: { column: null, disabled: false, hide_code: previous },
+          config: {
+            column: null,
+            disabled: false,
+            hide_code: previous,
+            expand_output: false,
+          },
         }),
       ];
 
@@ -131,11 +142,34 @@ Vitest.describe("computeDesiredCells", () => {
 
       Vitest.expect(desired).toEqual([
         pc("a", "x = 1", {
-          config: { column: null, disabled: false, hide_code: next },
+          config: {
+            column: null,
+            disabled: false,
+            hide_code: next,
+            expand_output: false,
+          },
         }),
       ]);
     },
   );
+
+  Vitest.it("preserves expanded output and detects config-only changes", () => {
+    const current = [pc("a", "x = 1")];
+    const desired = compute(current, [
+      {
+        type: "set-config",
+        cellId: cid("a"),
+        column: null,
+        disabled: false,
+        hideCode: false,
+        expandOutput: true,
+      },
+    ]);
+    Vitest.expect(desired[0].config.expand_output).toBe(true);
+    Vitest.expect(diffToReplaceRange(current, desired)).not.toBeNull();
+    const afterEdit = compute(desired, [setCode("a", "x = 2")]);
+    Vitest.expect(afterEdit[0].config.expand_output).toBe(true);
+  });
 
   Vitest.it("deletes a cell", () => {
     const current = [pc("a", "x = 1"), pc("b", "y = 2")];

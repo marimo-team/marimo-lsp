@@ -1319,6 +1319,9 @@ function processOperation(
     const variables = yield* NotebookVariables.Service;
     const datasources = yield* NotebookDatasources.Service;
 
+    // Older supported kernels emit this notification, removed in marimo 0.25.
+    if (["installing-package-alert"].includes(operation.op)) return;
+
     switch (operation.op) {
       case "variables":
         yield* variables.updateVariables(options.session, operation);
@@ -1383,8 +1386,9 @@ function processOperation(
       case "consumer-capabilities":
       case "data-column-preview":
       case "data-source-discovery-result":
+      case "environment-operation":
+      case "environment-state":
       case "focus-cell":
-      case "installing-package-alert":
       case "kernel-ready":
       case "kernel-startup-error":
       case "query-params-append":
@@ -1396,6 +1400,7 @@ function processOperation(
       case "secret-keys-result":
       case "sql-table-preview":
       case "startup-logs":
+      case "startup-progress":
       case "storage-download-ready":
       case "storage-entries":
       case "storage-namespaces":

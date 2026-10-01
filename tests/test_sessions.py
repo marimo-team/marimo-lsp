@@ -10,7 +10,10 @@ import threading
 from typing import TYPE_CHECKING, cast
 from unittest.mock import ANY, AsyncMock, Mock
 
+import msgspec
 import pytest
+from marimo._ast.app import App, InternalApp
+from marimo._ast.cell import CellConfig
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig, RuntimeConfig
 from marimo._messaging.cell_output import CellChannel, CellOutput
 from marimo._messaging.notification import CellNotification
@@ -46,6 +49,7 @@ def _make_session() -> tuple[Session, Mock]:
         Mock(executable="python", working_directory="/workspace"),
     )
     session.session_view = SessionView()
+    session._app_file_manager = Mock(app=InternalApp(App()))
     session._on_change = Mock()
     session._status = "idle"
     session._idle = asyncio.Event()
@@ -363,6 +367,94 @@ def test_operation_sink_buffers_until_session_is_activated() -> None:
             "notification": {"op": "completed-run", "run_id": None},
         },
     )
+
+
+def _config_transaction(extra: dict[str, object]) -> KernelMessage:
+    return KernelMessage(
+        msgspec.json.encode(
+            {
+                "op": "notebook-document-transaction",
+                "transaction": {
+                    "source": "code-mode",
+                    "changes": [
+                        {
+                            "type": "set-config",
+                            "cellId": "cell1",
+                            "column": None,
+                            "disabled": False,
+                            "hideCode": True,
+                            **extra,
+                        },
+                        {"type": "set-code", "cellId": "cell1", "code": "x = 2"},
+                    ],
+                },
+            }
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("current", "extra", "expanded"),
+    [
+        (None, {}, False),
+        (False, {}, False),
+        (True, {}, True),
+        (True, {"expandOutput": False}, False),
+        (False, {"expandOutput": True}, True),
+        (True, {"futureField": {"value": 1}}, True),
+        (False, {"expandOutput": True, "futureField": {"value": 1}}, True),
+    ],
+)
+def test_session_forwards_old_and_new_code_mode_configs(
+    extra: dict[str, object], *, current: bool | None, expanded: bool
+) -> None:
+    session, _ = _make_session()
+    if current is not None:
+        session.app.cell_manager.register_cell(
+            cell_id=CellId_t("cell1"),
+            code="x = 1",
+            config=CellConfig(expand_output=current),
+        )
+    server = Mock()
+    session._operation_sink = _OperationSink(
+        server, "file:///test.py", SESSION_ID, activated=False
+    )
+
+    session.accept_kernel_message(_config_transaction(extra))
+    server.protocol.notify.assert_not_called()
+    session._operation_sink.activate()
+
+    server.protocol.notify.assert_called_once()
+    _, payload = server.protocol.notify.call_args.args
+    assert payload["notification"]["transaction"] == {
+        "source": "code-mode",
+        "version": None,
+        "changes": (
+            {
+                "type": "set-config",
+                "cellId": "cell1",
+                "column": None,
+                "disabled": False,
+                "hideCode": True,
+                "expandOutput": expanded,
+            },
+            {"type": "set-code", "cellId": "cell1", "code": "x = 2"},
+        ),
+    }
+
+
+@pytest.mark.parametrize("extra", [{"expandOutput": None}, {"hideCode": "yes"}])
+def test_session_still_rejects_invalid_code_mode_configs(
+    extra: dict[str, object],
+) -> None:
+    session, _ = _make_session()
+    server = Mock()
+    session._operation_sink = _OperationSink(server, "file:///test.py", SESSION_ID)
+
+    with pytest.raises(msgspec.ValidationError):
+        session.accept_kernel_message(_config_transaction(extra))
+
+    server.protocol.notify.assert_not_called()
 
 
 def test_session_status_tracks_running_and_completed_operations() -> None:

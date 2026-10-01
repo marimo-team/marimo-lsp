@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 
 from marimo import __version__
+from marimo._environments import script_metadata
 from marimo._messaging.cell_output import CellChannel, CellOutput
 from marimo._messaging.notification import CellNotification
 from marimo._runtime.commands import ExecuteCellsCommand
@@ -14,7 +15,6 @@ from marimo._session.state.serialize import serialize_session_view
 from marimo._session.state.session_view import SessionView
 from marimo._types.ids import CellId_t
 from marimo._utils.code import hash_code
-from marimo._utils.inline_script_metadata import read_pyproject_from_script
 
 from marimo_lsp.saved_sessions import decode_saved_session_outputs
 
@@ -28,7 +28,7 @@ HEADER = """# /// script
 
 
 def _script_metadata_hash(header: str) -> str:
-    project = read_pyproject_from_script(header)
+    project = script_metadata.loads(header)
     assert project is not None
     return hash_code(
         json.dumps(

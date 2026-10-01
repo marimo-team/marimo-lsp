@@ -48,7 +48,8 @@ class NativeKernel:
 
     def start(self, receive: Callable[[KernelMessage], None]) -> None:
         """Start the kernel process and operation listener."""
-        self._manager.start_kernel()
+        # Startup runs in a worker thread because the IPC handshake blocks.
+        asyncio.run(self._manager.start_kernel())
         self.marimo_version = self._manager.marimo_version
         self.session_cache_path = self._manager.session_cache_path
 
