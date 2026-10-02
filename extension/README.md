@@ -20,7 +20,7 @@ scripts or apps.
    - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
    - Run **"Create: New marimo notebook"** and choose where to save it
 3. Select a Python environment with marimo installed, or choose **marimo sandbox**
-   to manage the notebook's dependencies with `uv`, then run a cell
+   to manage the notebook's dependencies with `uv` 0.12.0 or newer, then run a cell
 
 Open an existing marimo `.py` file with **"marimo: Open as marimo notebook"**.
 The default marimo language server is bundled. Platform-specific builds also

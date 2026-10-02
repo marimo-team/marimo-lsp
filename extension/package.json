@@ -115,7 +115,7 @@
         "marimo.uv.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to a custom `uv` binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use the bundled binary, then common installation locations or the system PATH if no binary is bundled.",
+          "markdownDescription": "Path to a custom `uv` 0.12.0 or newer binary, e.g., `/Users/me/.local/bin/uv`. Leave empty to use the bundled binary, then common installation locations or the system PATH if no binary is bundled.",
           "scope": "resource"
         },
         "marimo.disableUvIntegration": {

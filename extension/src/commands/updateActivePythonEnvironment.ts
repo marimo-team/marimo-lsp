@@ -4,7 +4,6 @@ import { defineCommand } from "../commands.ts";
 import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as VsCode from "../platform/VsCode.ts";
-import { getVenvPythonPath } from "../python/getVenvPythonPath.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
 import type { NotebookTarget } from "./Invocation.ts";
@@ -52,7 +51,7 @@ const handler = Effect.fn("command.updateActivePythonEnvironment")(function* (
       return;
     }
 
-    executable = getVenvPythonPath(venvResult.success);
+    executable = venvResult.success.executable;
   }
 
   // update the active python environment
