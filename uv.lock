@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 
 [options]
@@ -417,7 +417,7 @@ wheels = [
 
 [[package]]
 name = "marimo-base"
-version = "0.25.0"
+version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click", marker = "sys_platform != 'emscripten'" },
@@ -440,9 +440,9 @@ dependencies = [
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
     { name = "websockets", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0c/bd/59a367e198c2337e260c234975b94d00d76b12246118b60a96dd34a08977/marimo_base-0.25.0.tar.gz", hash = "sha256:7306767fc99e92dd595697111ca349966fc600cdc13b2e46c650bf53800cd12b", size = 1745535, upload-time = "2026-09-23T21:46:12.918Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/44/0964af7ce7244c580915b24f2ace46f8dc0d9a5c08f25d2f873b4ac5118a/marimo_base-0.25.1.tar.gz", hash = "sha256:67f900029c2f91ed58e6407cc9bd79c002b0907fd008e7c9939a157a00cee4e2", size = 1766639, upload-time = "2026-10-01T20:58:49.081Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/2e/3ebf59bd2b4f9a885d8e98be7a0ff892faf0ff2196a0d1935a4752f26c98/marimo_base-0.25.0-py3-none-any.whl", hash = "sha256:a2207884c0109d91773151fcdd386cd8c0d814bd0ec2825cf69f013e5d8827dc", size = 2006487, upload-time = "2026-09-23T21:46:11.439Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/35/80368ee84d687037895907a4b112a43c31d3b35daa480eb7ecbf68a305d0/marimo_base-0.25.1-py3-none-any.whl", hash = "sha256:85c24f1c33d298353ded777b1e3e1c668e9a4470ab6a2a5fb171c68caadcbd74", size = 2027433, upload-time = "2026-10-01T20:58:47.601Z" },
 ]
 
 [[package]]
@@ -472,7 +472,7 @@ dev = [
 requires-dist = [
     { name = "jupytext", specifier = "==1.19.5" },
     { name = "lsprotocol", specifier = "==2025.0.0" },
-    { name = "marimo-base", specifier = "==0.25.0" },
+    { name = "marimo-base", specifier = "==0.25.1" },
     { name = "pygls", specifier = "==2.1.1" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
