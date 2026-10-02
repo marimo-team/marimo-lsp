@@ -2,6 +2,7 @@ import { Layer, type LogLevel, ManagedRuntime, References } from "effect";
 
 import * as Config from "../config/Config.ts";
 import * as ConfigContextManager from "../config/ConfigContextManager.ts";
+import * as LocalDiscoveryPublisher from "../discovery/LocalDiscoveryPublisher.ts";
 import * as CellExecutions from "../kernel/CellExecutions.ts";
 import * as DebugAdapter from "../kernel/DebugAdapter.ts";
 import * as NotebookControllers from "../kernel/NotebookControllers.ts";
@@ -52,6 +53,7 @@ import * as ReloadOnConfigChange from "./ReloadOnConfigChange.ts";
 import * as ThemeSync from "./ThemeSync.ts";
 
 const activations = Layer.mergeAll(
+  LocalDiscoveryPublisher.layer,
   RegisterCommands.layer,
   RegisterLanguageModelTools.layer,
   MarimoStatusBar.layer,

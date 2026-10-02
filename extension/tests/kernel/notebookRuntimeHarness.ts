@@ -45,6 +45,7 @@ import { kernelSessionId, notebookId } from "../lib/branded.ts";
 import * as DocumentLifecycle from "../lib/documentLifecycle.ts";
 
 export interface Options {
+  readonly blockScratchpadDispatch?: boolean;
   readonly activeSessionId?: KernelSessionId;
   /** Hold every workspace edit open; observe it with `workspaceEditStarted`. */
   readonly suspendWorkspaceEdits?: boolean;
@@ -58,6 +59,7 @@ export class Notebook extends Context.Service<
     readonly notebook: MarimoNotebookDocument;
     readonly notebookUri: NotebookId;
     readonly workspaceEditStarted: Latch.Latch;
+    readonly releaseScratchpadDispatch: Latch.Latch;
     /** Messages the runtime logged at error level, in order. */
     readonly errorLogs: ReadonlyArray<string>;
     readonly attachController: (notebook: NotebookId) => Effect.Effect<void>;
@@ -76,6 +78,7 @@ export const layerWith = (options: Options) =>
     Effect.gen(function* () {
       const activeSessionId = options.activeSessionId ?? ACTIVE_SESSION_ID;
       const workspaceEditStarted = yield* Latch.make();
+      const releaseScratchpadDispatch = yield* Latch.make();
       const errorLogs: string[] = [];
       const captureErrors = Logger.make(({ logLevel, message }) => {
         if (logLevel === "Error" || logLevel === "Fatal") {
@@ -115,6 +118,7 @@ export const layerWith = (options: Options) =>
             executable: "/usr/bin/python3",
             workingDirectory: process.cwd(),
             startedAt: 1,
+            marimoVersion: "0.24.0",
             status: "idle",
             attached: true,
           },
@@ -151,22 +155,48 @@ export const layerWith = (options: Options) =>
         Layer.provideMerge(
           MarimoClientTest.layerWith({
             send(request) {
-              return Effect.suspend(() => {
+              return Effect.gen(function* () {
                 if (
                   request.kind === "execute-scratchpad" ||
                   request.kind === "execute"
                 ) {
                   const id = notebookId(request.notebookUri);
                   serverSessions.set(id, {
-                    sessionId: activeSessionId,
+                    sessionId:
+                      id === notebookUri
+                        ? activeSessionId
+                        : REPLACEMENT_SESSION_ID,
                     notebookUri: id,
                     filename: NodePath.basename(request.notebookUri),
                     executable: request.executable,
                     workingDirectory: request.workingDirectory,
                     startedAt: 1,
+                    marimoVersion: "0.24.0",
                     status: "idle",
                     attached: true,
                   });
+                }
+                if (
+                  options.blockScratchpadDispatch &&
+                  (request.kind === "execute-scratchpad" ||
+                    request.kind === "execute-session-scratchpad")
+                ) {
+                  yield* releaseScratchpadDispatch.await;
+                }
+                if (request.kind === "move-session") {
+                  const id = notebookId(request.notebookUri);
+                  const current = serverSessions.get(id);
+                  if (current !== undefined) {
+                    serverSessions.delete(id);
+                    const moved = notebookId(request.newNotebookUri);
+                    serverSessions.set(moved, {
+                      ...current,
+                      notebookUri: moved,
+                    });
+                  }
+                }
+                if (request.kind === "close-session") {
+                  serverSessions.delete(notebookId(request.notebookUri));
                 }
                 if (request.kind === "restart-session") {
                   const id = notebookId(request.notebookUri);
@@ -178,9 +208,13 @@ export const layerWith = (options: Options) =>
                     });
                   }
                 }
-                return ["list-sessions", "execute", "restart-session"].includes(
-                  request.kind,
-                )
+                return yield* [
+                  "list-sessions",
+                  "execute",
+                  "restart-session",
+                  "move-session",
+                  "close-session",
+                ].includes(request.kind)
                   ? Effect.succeed({
                       generation: 1,
                       revision: ++revision,
@@ -232,6 +266,7 @@ export const layerWith = (options: Options) =>
             notebook,
             notebookUri,
             workspaceEditStarted,
+            releaseScratchpadDispatch,
             errorLogs,
             attachController: (id) =>
               runtime.attachController(id, testController),

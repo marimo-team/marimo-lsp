@@ -12,6 +12,7 @@ from unittest.mock import ANY, AsyncMock, Mock
 
 import msgspec
 import pytest
+from inline_snapshot import snapshot
 from marimo._ast.app import App, InternalApp
 from marimo._ast.cell import CellConfig
 from marimo._config.config import DEFAULT_CONFIG, MarimoConfig, RuntimeConfig
@@ -56,6 +57,7 @@ def _make_session() -> tuple[Session, Mock]:
     session._idle.set()
     session._scratchpad_running = False
     session._scratchpad_run_id = None
+    session._scratchpad_forward_operations = False
     session._closed = False
     session._state_lock = threading.RLock()
     return session, ipc_queue_manager
@@ -497,6 +499,69 @@ def test_scratchpad_ignores_unrelated_completed_runs() -> None:
     assert not session.is_scratchpad_running("scratch-1")
 
 
+def test_retained_scratchpad_forwards_through_matching_completion() -> None:
+    session, _ = _make_session()
+    server = Mock()
+    session._operation_sink = _OperationSink(server, "file:///test.py", SESSION_ID)
+    session._operation_sink.detach()
+
+    started = session.try_start_scratchpad("scratch-1", forward_operations=True)
+    completed = KernelMessage(b'{"op": "completed-run", "run_id": "scratch-1"}')
+    unrelated = KernelMessage(b'{"op": "completed-run", "run_id": "other"}')
+    session.accept_kernel_message(unrelated)
+    session.accept_kernel_message(completed)
+    session.accept_kernel_message(unrelated)
+
+    assert {
+        "started": started,
+        "forwarded": [call.args for call in server.protocol.notify.call_args_list],
+    } == snapshot(
+        {
+            "started": True,
+            "forwarded": [
+                (
+                    "marimo/kernelNotification",
+                    {
+                        "notebookUri": "file:///test.py",
+                        "sessionId": "00000000-0000-4000-8000-000000000001",
+                        "scratchpadRunId": "scratch-1",
+                        "notification": {"op": "completed-run", "run_id": "other"},
+                    },
+                ),
+                (
+                    "marimo/kernelNotification",
+                    {
+                        "notebookUri": "file:///test.py",
+                        "sessionId": "00000000-0000-4000-8000-000000000001",
+                        "scratchpadRunId": "scratch-1",
+                        "notification": {"op": "completed-run", "run_id": "scratch-1"},
+                    },
+                ),
+            ],
+        }
+    )
+
+
+def test_failed_retained_scratchpad_dispatch_does_not_leave_forwarding_open() -> None:
+    session, _ = _make_session()
+    server = Mock()
+    session._operation_sink = _OperationSink(server, "file:///test.py", SESSION_ID)
+    session._operation_sink.detach()
+
+    started = session.try_start_scratchpad("scratch-1", forward_operations=True)
+    session.release_scratchpad("scratch-1")
+    session.accept_kernel_message(
+        KernelMessage(b'{"op": "completed-run", "run_id": "scratch-1"}')
+    )
+    reclaimed = session.try_start_scratchpad("scratch-2", forward_operations=True)
+
+    assert {
+        "started": started,
+        "reclaimed": reclaimed,
+        "forwarded": server.protocol.notify.call_count,
+    } == snapshot({"started": True, "reclaimed": True, "forwarded": 0})
+
+
 def test_terminal_kernel_error_removes_live_session() -> None:
     server = Mock()
     sessions = Sessions(server, kernels=Mock())
@@ -521,7 +586,9 @@ def test_terminal_kernel_operation_invokes_failure_callback() -> None:
     session.accept_kernel_message(message)
 
     session._on_kernel_failure.assert_called_once_with(session, "bridge exited")
-    session._operation_sink.notify.assert_called_once_with(message)
+    session._operation_sink.notify.assert_called_once_with(
+        message, force=False, scratchpad_run_id=None
+    )
 
 
 def test_pending_scratchpad_cancellation_does_not_interrupt_other_work() -> None:
@@ -561,6 +628,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
         executable="/usr/bin/python",
         working_directory="/workspace",
         started_at=42,
+        marimo_version="0.24.0",
         status="idle",
         attached=False,
     )
@@ -581,6 +649,7 @@ def test_sessions_changed_notification_contains_public_snapshot() -> None:
                     "executable": "/usr/bin/python",
                     "workingDirectory": "/workspace",
                     "startedAt": 42,
+                    "marimoVersion": "0.24.0",
                     "status": "idle",
                     "attached": False,
                 }
@@ -958,3 +1027,40 @@ def test_snapshots_order_queries_and_notifications() -> None:
 
     assert before.generation == notification["generation"] == after.generation == 7
     assert before.revision < notification["revision"] < after.revision
+
+
+@pytest.mark.parametrize("attached", [False, True])
+def test_scratchpad_claim_correlates_output_and_completion(*, attached: bool) -> None:
+    session, _ = _make_session()
+    server = Mock()
+    session._operation_sink = _OperationSink(server, "file:///test.py", SESSION_ID)
+    if not attached:
+        session._operation_sink.detach()
+    output = KernelMessage(
+        b'{"op":"cell-op","cell_id":"child","run_id":"cell-run",'
+        b'"console":[{"channel":"stdout","mimetype":"text/plain","data":"hello"}]}'
+    )
+
+    session.accept_kernel_message(output)
+    assert session.try_start_scratchpad("scratch-1", forward_operations=True)
+    session.accept_kernel_message(output)
+    session.accept_kernel_message(
+        KernelMessage(b'{"op":"completed-run","run_id":"scratch-1"}')
+    )
+    session.accept_kernel_message(output)
+    assert session.try_start_scratchpad("scratch-2", forward_operations=True)
+    session.accept_kernel_message(output)
+    session.release_scratchpad("scratch-2")
+    session.accept_kernel_message(output)
+
+    messages = [call.args[1] for call in server.protocol.notify.call_args_list]
+    assert [message.get("scratchpadRunId") for message in messages] == (
+        [None, "scratch-1", "scratch-1", None, "scratch-2", None]
+        if attached
+        else ["scratch-1", "scratch-1", "scratch-2"]
+    )
+    assert all(
+        message["notification"]["run_id"] == "cell-run"
+        for message in messages
+        if message["notification"]["op"] == "cell-op"
+    )

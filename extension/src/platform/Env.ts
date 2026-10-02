@@ -9,6 +9,9 @@ export interface Interface {
   readonly appRoot: string;
   readonly appHost: string;
   readonly machineId: string;
+  readonly remoteName: string | undefined;
+  readonly uriScheme: string;
+  readonly asExternalUri: (target: vscode.Uri) => Effect.Effect<vscode.Uri>;
   readonly createTelemetryLogger: (
     sender: vscode.TelemetrySender,
     options?: vscode.TelemetryLoggerOptions,
@@ -36,6 +39,12 @@ export const layer = Layer.effect(
       },
     );
 
+    const asExternalUri = Effect.fn("Env.asExternalUri")(function* (
+      target: vscode.Uri,
+    ) {
+      return yield* Effect.promise(() => api.asExternalUri(target));
+    });
+
     const openExternal = Effect.fn("Env.openExternal")(function* (
       target: vscode.Uri,
     ) {
@@ -47,6 +56,9 @@ export const layer = Layer.effect(
       appRoot: api.appRoot,
       appHost: api.appHost,
       machineId: api.machineId,
+      remoteName: api.remoteName,
+      uriScheme: api.uriScheme,
+      asExternalUri,
       createTelemetryLogger,
       openExternal,
     });

@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import * as Vitest from "@effect/vitest";
 import {
   Cause,
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -42,6 +43,22 @@ const ACTIVE_SESSION_ID = kernelSessionId(
   "00000000-0000-4000-8000-000000000001",
 );
 const it = EffectTest.make(NotebookRuntimeHarness.layer);
+const REPLACEMENT_SESSION_ID = kernelSessionId(
+  "00000000-0000-4000-8000-000000000002",
+);
+const blockedDispatchIt = EffectTest.make(
+  NotebookRuntimeHarness.layerWith({ blockScratchpadDispatch: true }),
+);
+const awaitCommands = (
+  marimo: MarimoClientTest.Interface,
+  predicate: (commands: ReadonlyArray<MarimoClientTest.Command>) => boolean,
+  _description: string,
+) =>
+  marimo.commandChanges.pipe(
+    Stream.filter(predicate),
+    Stream.runHead,
+    Effect.map(Option.getOrThrow),
+  );
 const cancellationIt = EffectTest.make(
   NotebookRuntimeHarness.layerWith({ suspendWorkspaceEdits: true }),
 );
@@ -50,10 +67,12 @@ function makeIdleCellOperation(
   notebookUri: NotebookId,
   cid: string,
   overrides: Partial<CellOperationNotification> = {},
+  scratchpadRunId: string | null = null,
 ): KernelNotification {
   return {
     notebookUri,
     sessionId: ACTIVE_SESSION_ID,
+    scratchpadRunId,
     notification: {
       op: "cell-op" as const,
       cell_id: cellId(cid),
@@ -199,6 +218,7 @@ Vitest.describe("NotebookRuntime operation processing", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: null,
           notification: {
             op: "notebook-document-transaction",
             transaction: {
@@ -511,8 +531,96 @@ Vitest.describe("NotebookRuntime stdin", () => {
 });
 
 Vitest.describe("NotebookRuntime scratch stream", () => {
+  blockedDispatchIt.effect(
+    "releases the notebook queue when dispatch is cancelled",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const execution = yield* Effect.forkChild(
+          notebook.executeScratchpad("42").pipe(Stream.runDrain),
+        );
+        yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "execute-scratchpad"),
+          "dispatch",
+        );
+        yield* Fiber.interrupt(execution);
+        yield* notebook.interrupt;
+      });
+    }),
+  );
+
+  it.effect.each(["close", "restart"] as const)(
+    "fails an active execution on kernel %s",
+    Effect.fn(function* (action) {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const failure = yield* Deferred.make<unknown>();
+        yield* Effect.forkChild(
+          runtime.executeSessionScratchpad(ACTIVE_SESSION_ID, "42").pipe(
+            Stream.runDrain,
+            Effect.flip,
+            Effect.flatMap((error) => Deferred.succeed(failure, error)),
+          ),
+        );
+        yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "dispatch",
+        );
+        yield* notebook[action];
+        Vitest.expect(yield* Deferred.await(failure)).toEqual(
+          new NotebookRuntime.KernelSessionNotFoundError({
+            sessionId: ACTIVE_SESSION_ID,
+          }),
+        );
+      });
+    }),
+  );
+
   it.effect(
-    "runs one scratchpad at a time within a notebook",
+    "rejects a replaced session without dispatching scratchpad code",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        const stream = runtime.executeSessionScratchpad(
+          ACTIVE_SESSION_ID,
+          "42",
+        );
+
+        yield* notebook.restart;
+
+        const error = yield* stream.pipe(Stream.runDrain, Effect.flip);
+        Vitest.expect({
+          error: { ...error },
+          dispatched: (yield* marimo.commands).filter(
+            (call) => call.kind === "execute-session-scratchpad",
+          ),
+        }).toMatchInlineSnapshot(`
+          {
+            "dispatched": [],
+            "error": {
+              "_tag": "NotebookRuntime.KernelSessionNotFoundError",
+              "sessionId": "00000000-0000-4000-8000-000000000001",
+            },
+          }
+        `);
+      });
+    }),
+  );
+
+  it.effect(
+    "serializes notebook and retained-session scratchpad callers",
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
@@ -527,14 +635,21 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
 
         const scratchpadCalls = (
           calls: ReadonlyArray<MarimoClientTest.Command>,
-        ) => calls.filter((call) => call.kind === "execute-scratchpad");
+        ) =>
+          calls.filter(
+            (call) =>
+              call.kind === "execute-scratchpad" ||
+              call.kind === "execute-session-scratchpad",
+          );
 
         yield* marimo.commandChanges.pipe(
           Stream.filter((calls) => scratchpadCalls(calls).length >= 1),
           Stream.runHead,
         );
         const second = yield* Effect.forkChild(
-          notebook.executeScratchpad("print('second')").pipe(Stream.runDrain),
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "print('second')")
+            .pipe(Stream.runDrain),
         );
         yield* progress.pipe(
           Stream.filter(
@@ -546,6 +661,24 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
           Stream.runHead,
         );
 
+        const cancelled = yield* Effect.forkChild(
+          notebook
+            .executeScratchpad("print('cancelled')")
+            .pipe(Stream.runDrain),
+        );
+        yield* progress.pipe(
+          Stream.filter(
+            (event) =>
+              event._tag === "ScratchpadQueued" &&
+              event.code === "print('cancelled')",
+          ),
+          Stream.runHead,
+        );
+        yield* Fiber.interrupt(cancelled);
+        Vitest.expect(
+          (yield* marimo.commands).some((call) => call.kind === "interrupt"),
+        ).toBe(false);
+
         const first_ = scratchpadCalls(yield* marimo.commands);
         Vitest.expect(first_).toHaveLength(1);
         const firstCommand = first_[0];
@@ -556,6 +689,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: firstCommand.runId,
           notification: {
             op: "completed-run",
             run_id: firstCommand.runId,
@@ -579,6 +713,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: secondCommand.runId,
           notification: {
             op: "completed-run",
             run_id: secondCommand.runId,
@@ -596,6 +731,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
       const otherEditor = VsCodeValues.makeNotebookEditor(
         NodePath.join(process.cwd(), "other_notebook_mo.py"),
       );
@@ -603,7 +739,12 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
-        yield* NotebookRuntimeHarness.open(otherEditor);
+
+        // No drain needed before the open: the document-session service acquires its
+        // lifecycle subscription before its layer finishes building, so an
+        // open published this early is delivered rather than dropped.
+        yield* vscode.openNotebook(otherEditor.notebook);
+        yield* Effect.yieldNow;
         yield* ctx.attachController(otherNotebook.id);
         const firstNotebook = yield* runtime.forNotebook(ctx.notebookUri);
         const secondNotebook = yield* runtime.forNotebook(otherNotebook.id);
@@ -655,7 +796,11 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         for (const command of commands) {
           yield* marimo.publishNotification({
             notebookUri: command.notebookUri,
-            sessionId: ACTIVE_SESSION_ID,
+            sessionId:
+              command.notebookUri === ctx.notebookUri
+                ? ACTIVE_SESSION_ID
+                : REPLACEMENT_SESSION_ID,
+            scratchpadRunId: command.runId,
             notification: {
               op: "completed-run",
               run_id: command.runId,
@@ -674,12 +819,14 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
         // Route cell-op notifications through processSessionOperation.
-        yield* NotebookRuntimeHarness.activate(ctx.editor);
+        yield* vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* Effect.yieldNow;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -707,48 +854,63 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         const realCellId = Option.getOrThrow(cell.id);
 
         // The scratch cell's op carries the run's output. marimo leaves its
-        // run_id null (only the completed-run echoes ours), so we key on the
-        // SCRATCH_CELL_ID, not the run_id.
+        // run_id null. The envelope carries the server claim independently.
         yield* marimo.publishNotification(
-          makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
-            status: "running",
-            console: [
-              {
-                channel: "stdout",
-                data: "hi",
-                mimetype: "text/plain",
-                timestamp: 0,
-              },
-            ],
-          }),
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            SCRATCH_CELL_ID,
+            {
+              status: "running",
+              console: [
+                {
+                  channel: "stdout",
+                  data: "hi",
+                  mimetype: "text/plain",
+                  timestamp: 0,
+                },
+              ],
+            },
+            runId,
+          ),
         );
 
         // Console from a cascade cell (one code mode ran) also streams.
         yield* marimo.publishNotification(
-          makeIdleCellOperation(ctx.notebookUri, realCellId, {
-            status: "running",
-            console: [
-              {
-                channel: "stdout",
-                data: "from cascade",
-                mimetype: "text/plain",
-                timestamp: 0,
-              },
-            ],
-          }),
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            realCellId,
+            {
+              status: "running",
+              console: [
+                {
+                  channel: "stdout",
+                  data: "from cascade",
+                  mimetype: "text/plain",
+                  timestamp: 0,
+                },
+              ],
+            },
+            runId,
+          ),
         );
 
         // A status-only cascade op (no console) is not streamed.
         yield* marimo.publishNotification(
-          makeIdleCellOperation(ctx.notebookUri, realCellId, {
-            status: "idle",
-          }),
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            realCellId,
+            {
+              status: "idle",
+            },
+            runId,
+          ),
         );
 
         // Our completed-run ends the stream (inclusive; filtered back out).
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: runId ?? null,
           notification: {
             op: "completed-run",
             run_id: runId,
@@ -756,10 +918,15 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         });
 
         const ops = yield* Fiber.join(streamFiber);
-        const cellIds = ops.map((op) => op.cell_id);
-        Vitest.expect(ops).toHaveLength(2);
-        Vitest.expect(cellIds).toContain(SCRATCH_CELL_ID);
-        Vitest.expect(cellIds).toContain(realCellId);
+        Vitest.expect({
+          cellIds: ops.map((op) => op.cell_id),
+          interrupted: (yield* marimo.commands).some(
+            (call) => call.kind === "interrupt",
+          ),
+        }).toEqual({
+          cellIds: [SCRATCH_CELL_ID, realCellId],
+          interrupted: false,
+        });
       });
     }),
   );
@@ -769,11 +936,13 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
 
       yield* Effect.gen(function* () {
         const runtime = yield* NotebookRuntime.Service;
 
-        yield* NotebookRuntimeHarness.activate(ctx.editor);
+        yield* vscode.setActiveNotebookEditor(Option.some(ctx.editor));
+        yield* Effect.yieldNow;
         const notebook = yield* runtime.forNotebook(ctx.notebookUri);
 
         const streamFiber = yield* Effect.forkChild(
@@ -816,6 +985,513 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
   );
 
   it.effect(
+    "keeps stdin and interrupts available after renaming a retained notebook",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const streamFiber = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
+            .pipe(Stream.runDrain),
+          { startImmediately: true },
+        );
+        const calls = yield* marimo.commandChanges.pipe(
+          Stream.filter((current) =>
+            current.some((call) => call.kind === "execute-session-scratchpad"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        const executeCmd = calls.find(
+          (call) => call.kind === "execute-session-scratchpad",
+        );
+        Vitest.assert(executeCmd !== undefined);
+
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            SCRATCH_CELL_ID,
+            {
+              status: "running",
+              console: [
+                {
+                  channel: "stdin",
+                  data: "Enter name: ",
+                  mimetype: "text/plain",
+                  timestamp: 0,
+                },
+              ],
+            },
+            executeCmd.runId,
+          ),
+        );
+        yield* vscode.inputChanges.pipe(
+          Stream.filter((inputs) =>
+            inputs.some((input) => input.status === "pending"),
+          ),
+          Stream.runHead,
+        );
+        const renamed = notebookId("file:///workspace/renamed.py");
+        yield* runtime.moveSession(ctx.notebookUri, renamed);
+        const notebook = yield* runtime.forNotebook(renamed);
+        yield* vscode.respondToInput(Option.some("foo"));
+        const responses = yield* marimo.commandChanges.pipe(
+          Stream.filter((calls) =>
+            calls.some((call) => call.kind === "send-stdin"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        Vitest.expect(
+          responses.find((call) => call.kind === "send-stdin"),
+        ).toMatchObject({
+          notebookUri: renamed,
+          kernelSessionId: ACTIVE_SESSION_ID,
+          text: "foo",
+        });
+
+        const interruptFiber = yield* Effect.forkChild(notebook.interrupt, {
+          startImmediately: true,
+        });
+        yield* Fiber.join(interruptFiber);
+        Vitest.expect((yield* marimo.commands).at(-1)).toMatchObject({
+          kind: "interrupt",
+          notebookUri: renamed,
+          kernelSessionId: ACTIVE_SESSION_ID,
+        });
+
+        yield* marimo.publishNotification({
+          notebookUri: renamed,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: executeCmd.runId ?? null,
+          notification: {
+            op: "completed-run",
+            run_id: executeCmd.runId,
+          },
+        });
+        yield* Fiber.join(streamFiber);
+      });
+    }),
+  );
+
+  it.effect(
+    "interrupts the exact retained run after rename when its stream disconnects",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const streamFiber = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "print('disconnect')")
+            .pipe(Stream.runCollect),
+        );
+        const calls = yield* marimo.commandChanges.pipe(
+          Stream.filter((current) =>
+            current.some((call) => call.kind === "execute-session-scratchpad"),
+          ),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+        );
+        const executeCmd = calls.find(
+          (call) => call.kind === "execute-session-scratchpad",
+        );
+        Vitest.assert(executeCmd !== undefined);
+
+        const renamed = notebookId("file:///workspace/renamed.py");
+        yield* runtime.moveSession(ctx.notebookUri, renamed);
+        yield* Fiber.interrupt(streamFiber);
+
+        Vitest.expect(
+          (yield* marimo.commands).find((call) => call.kind === "interrupt"),
+        ).toMatchObject({
+          kind: "interrupt",
+          notebookUri: renamed,
+          kernelSessionId: ACTIVE_SESSION_ID,
+          runId: executeCmd.runId,
+        });
+      });
+    }),
+  );
+  it.effect.each([
+    { reopen: false, caller: "discovery", rename: true },
+    { reopen: true, caller: "discovery" },
+    { reopen: false, caller: "notebook", rename: true },
+    { reopen: true, caller: "notebook" },
+  ])(
+    "preserves $caller scratchpad serialization across lifecycle changes (reopen=$reopen)",
+    Effect.fn(function* ({ reopen, caller, rename }) {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const first = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            if (caller === "notebook") {
+              const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+              yield* notebook.executeScratchpad("first").pipe(Stream.runDrain);
+            } else {
+              yield* runtime
+                .executeSessionScratchpad(ACTIVE_SESSION_ID, "first")
+                .pipe(Stream.runDrain);
+            }
+          }),
+        );
+        const calls = yield* awaitCommands(
+          marimo,
+          (calls) =>
+            calls.some(
+              (c) =>
+                c.kind === "execute-session-scratchpad" ||
+                c.kind === "execute-scratchpad",
+            ),
+          "first dispatch",
+        );
+        const firstCommand = calls.find(
+          (c) =>
+            c.kind === "execute-session-scratchpad" ||
+            c.kind === "execute-scratchpad",
+        );
+        Vitest.assert(firstCommand !== undefined);
+        yield* vscode.closeNotebook(ctx.editor.notebook);
+        if (reopen) yield* vscode.openNotebook(ctx.editor.notebook);
+        const target = rename
+          ? notebookId("file:///workspace/renamed.py")
+          : ctx.notebookUri;
+        if (rename) yield* runtime.moveSession(ctx.notebookUri, target);
+        const second = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "second")
+            .pipe(Stream.runDrain),
+          { startImmediately: true },
+        );
+        for (let i = 0; i < 30; i++) yield* Effect.yieldNow;
+        Vitest.expect(
+          (yield* marimo.commands).filter(
+            (c) =>
+              c.kind === "execute-session-scratchpad" ||
+              c.kind === "execute-scratchpad",
+          ),
+        ).toHaveLength(1);
+        yield* marimo.publishNotification({
+          notebookUri: target,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: firstCommand.runId ?? null,
+          notification: { op: "completed-run", run_id: firstCommand.runId },
+        });
+        yield* Fiber.join(first);
+        yield* awaitCommands(
+          marimo,
+          (calls) =>
+            calls.filter(
+              (c) =>
+                c.kind === "execute-session-scratchpad" ||
+                c.kind === "execute-scratchpad",
+            ).length === 2,
+          "second dispatch after completion",
+        );
+        yield* Fiber.interrupt(second);
+      });
+    }),
+  );
+
+  blockedDispatchIt.effect(
+    "streams only the retained run through completion after its editor closes",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      const dispatch = ctx.releaseScratchpadDispatch;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        yield* vscode.closeNotebook(ctx.editor.notebook);
+        const execution = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "42")
+            .pipe(Stream.runCollect),
+        );
+        const calls = yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "dispatch waiting for idle",
+        );
+        const command = calls.find(
+          (c) => c.kind === "execute-session-scratchpad",
+        );
+        Vitest.assert(command !== undefined);
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(ctx.notebookUri, "cell-1", {
+            console: [
+              {
+                channel: "stdout",
+                data: "previous execution",
+                mimetype: "text/plain",
+              },
+            ],
+            output: {
+              channel: "marimo-error",
+              mimetype: "application/vnd.marimo+error",
+              data: [
+                {
+                  type: "exception",
+                  exception_type: "ValueError",
+                  msg: "previous failure",
+                },
+              ],
+            },
+          }),
+        );
+        // A request waiting for admission must leave notebook controls free.
+        const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+        yield* notebook.interrupt;
+        Vitest.expect((yield* marimo.commands).at(-1)?.kind).toBe("interrupt");
+        yield* dispatch.open;
+        const ownOutput = makeIdleCellOperation(
+          ctx.notebookUri,
+          SCRATCH_CELL_ID,
+          { output: { channel: "output", mimetype: "text/plain", data: "42" } },
+          command.runId,
+        );
+        yield* marimo.publishNotification(ownOutput);
+        yield* marimo.publishNotification({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: command.runId ?? null,
+          notification: { op: "completed-run", run_id: command.runId },
+        });
+        // Even a notification with the same claim is excluded after completion.
+        yield* marimo.publishNotification(ownOutput);
+        Vitest.expect(yield* Fiber.join(execution)).toEqual([
+          ownOutput.notification,
+        ]);
+      });
+    }),
+  );
+
+  it.effect(
+    "excludes the cancelled run's trailing output from the next request",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const first = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "first")
+            .pipe(Stream.runCollect),
+        );
+        const firstCalls = yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "first dispatch",
+        );
+        const firstCommand = firstCalls.find(
+          (c) => c.kind === "execute-session-scratchpad",
+        );
+        Vitest.assert(firstCommand !== undefined);
+        yield* Fiber.interrupt(first);
+        const second = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "second")
+            .pipe(Stream.runCollect),
+        );
+        const calls = yield* awaitCommands(
+          marimo,
+          (calls) =>
+            calls.filter((c) => c.kind === "execute-session-scratchpad")
+              .length === 2,
+          "second dispatch",
+        );
+        const secondCommand = calls.filter(
+          (c) => c.kind === "execute-session-scratchpad",
+        )[1];
+        Vitest.assert(secondCommand !== undefined);
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            SCRATCH_CELL_ID,
+            {
+              console: [
+                {
+                  channel: "stderr",
+                  data: "interrupted previous run",
+                  mimetype: "text/plain",
+                },
+              ],
+            },
+            firstCommand.runId,
+          ),
+        );
+        for (const command of [firstCommand, secondCommand]) {
+          yield* marimo.publishNotification({
+            notebookUri: ctx.notebookUri,
+            sessionId: ACTIVE_SESSION_ID,
+            scratchpadRunId: command.runId ?? null,
+            notification: { op: "completed-run", run_id: command.runId },
+          });
+        }
+        Vitest.expect(yield* Fiber.join(second)).toEqual([]);
+      });
+    }),
+  );
+  it.effect.each([
+    { caller: "detached", cell: "cell-1" },
+    { caller: "attached", cell: "cell-1" },
+    { caller: "notebook", cell: "cell-1" },
+    { caller: "notebook", cell: SCRATCH_CELL_ID },
+  ])(
+    "answers exactly one stdin prompt for $caller execution in $cell",
+    Effect.fn(function* ({ caller, cell }) {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        if (caller === "detached")
+          yield* vscode.closeNotebook(ctx.editor.notebook);
+        const execution = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            if (caller === "notebook") {
+              const notebook = yield* runtime.forNotebook(ctx.notebookUri);
+              yield* notebook
+                .executeScratchpad("input()")
+                .pipe(Stream.runDrain);
+            } else {
+              yield* runtime
+                .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
+                .pipe(Stream.runDrain);
+            }
+          }),
+        );
+        const calls = yield* awaitCommands(
+          marimo,
+          (calls) =>
+            calls.some(
+              (c) =>
+                c.kind === "execute-session-scratchpad" ||
+                c.kind === "execute-scratchpad",
+            ),
+          "scratchpad dispatch",
+        );
+        const command = calls.find(
+          (c) =>
+            c.kind === "execute-session-scratchpad" ||
+            c.kind === "execute-scratchpad",
+        );
+        Vitest.assert(command !== undefined);
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            cell,
+            {
+              console: [
+                { channel: "stdin", data: "Name?", mimetype: "text/plain" },
+              ],
+            },
+            command.runId,
+          ),
+        );
+        yield* vscode.inputChanges.pipe(
+          Stream.filter((inputs) =>
+            inputs.some((input) => input.status === "pending"),
+          ),
+          Stream.runHead,
+        );
+        yield* vscode.respondToInput(Option.some("answer"));
+        yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "send-stdin"),
+          "stdin response",
+        );
+        yield* marimo.publishNotification({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: command.runId ?? null,
+          notification: { op: "completed-run", run_id: command.runId },
+        });
+        yield* Fiber.join(execution);
+        Vitest.expect(
+          yield* Effect.map(
+            vscode.snapshot,
+            (snapshot) => snapshot.inputs.length,
+          ),
+        ).toBe(1);
+        Vitest.expect(
+          (yield* marimo.commands).filter((c) => c.kind === "send-stdin"),
+        ).toEqual([
+          {
+            kind: "send-stdin",
+            notebookUri: ctx.notebookUri,
+            kernelSessionId: ACTIVE_SESSION_ID,
+            text: "answer",
+          },
+        ]);
+      });
+    }),
+  );
+
+  it.effect(
+    "finishes a scratchpad stream while its stdin prompt is still pending",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      yield* Effect.gen(function* () {
+        const runtime = yield* NotebookRuntime.Service;
+        const execution = yield* Effect.forkChild(
+          runtime
+            .executeSessionScratchpad(ACTIVE_SESSION_ID, "input()")
+            .pipe(Stream.runDrain),
+        );
+        const calls = yield* awaitCommands(
+          marimo,
+          (calls) => calls.some((c) => c.kind === "execute-session-scratchpad"),
+          "scratchpad dispatch",
+        );
+        const command = calls.find(
+          (c) => c.kind === "execute-session-scratchpad",
+        );
+        Vitest.assert(command !== undefined);
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(
+            ctx.notebookUri,
+            SCRATCH_CELL_ID,
+            {
+              console: [
+                { channel: "stdin", data: "Name?", mimetype: "text/plain" },
+              ],
+            },
+            command.runId,
+          ),
+        );
+        yield* vscode.inputChanges.pipe(
+          Stream.filter((inputs) =>
+            inputs.some((input) => input.status === "pending"),
+          ),
+          Stream.runHead,
+        );
+        // An interrupt from another caller can finish the run before the user answers.
+        yield* marimo.publishNotification({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: command.runId ?? null,
+          notification: { op: "completed-run", run_id: command.runId },
+        });
+        yield* Fiber.join(execution);
+        yield* vscode.respondToInput(Option.some("late answer"));
+        Vitest.expect(
+          (yield* marimo.commands).filter((c) => c.kind === "send-stdin"),
+        ).toEqual([]);
+      });
+    }),
+  );
+  it.effect(
     "does not interrupt the kernel after a normal completed-run",
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
@@ -849,6 +1525,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: runId ?? null,
           notification: { op: "completed-run", run_id: runId },
         });
 
@@ -889,6 +1566,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: staleSessionId,
+          scratchpadRunId: null,
           notification: { op: "variables", variables: [] },
         });
         yield* Fiber.join(refreshed);
@@ -899,6 +1577,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: activeSessionId,
+          scratchpadRunId: null,
           notification: { op: "variables", variables: [] },
         });
         yield* variables.streamVariablesChanges.pipe(
@@ -936,6 +1615,7 @@ Vitest.describe("NotebookRuntime state eviction", () => {
         yield* marimo.publishNotification({
           notebookUri: ctx.notebookUri,
           sessionId: ACTIVE_SESSION_ID,
+          scratchpadRunId: null,
           notification: { op: "datasets", tables: [] },
         });
         yield* Effect.all([

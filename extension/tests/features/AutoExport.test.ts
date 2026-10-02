@@ -160,6 +160,7 @@ const completeRun = Effect.gen(function* () {
   yield* marimo.publishNotification({
     notebookUri: MarimoNotebookDocument.from(editor.notebook).id,
     sessionId,
+    scratchpadRunId: null,
     notification: { op: "completed-run", run_id: null },
   });
 });
