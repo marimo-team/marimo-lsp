@@ -13,7 +13,12 @@ import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
  * prefix/suffix + content strategy so inserts, edits-in-place, and
  * reorderings preserve cell identity.
  *
- * @param incoming - Freshly deserialized notebook data (fresh stableIds, no outputs)
+ * Deserialized stableIds are deterministic (marimo derives them from a
+ * seeded generator), so a cell without a live counterpart may carry an ID
+ * that a matched cell inherits from the live notebook. Such cells get a
+ * fresh ID so the result never contains duplicates.
+ *
+ * @param incoming - Freshly deserialized notebook data (parsed IDs, no outputs)
  * @param live - Snapshot of the matched live NotebookDocument's cells
  * @returns Enriched notebook data with preserved outputs and stable IDs
  */
@@ -22,13 +27,16 @@ export function enrichNotebookFromLive(
   live: vscode.NotebookData,
 ): vscode.NotebookData {
   const matchResult = matchCells(live.cells, incoming.cells);
-
-  const enrichedCells = incoming.cells.map((incomingCell, incomingIdx) => {
-    const liveIdx = findLiveIndexForIncoming(matchResult, {
+  const liveIndices = incoming.cells.map((_, incomingIdx) =>
+    findLiveIndexForIncoming(matchResult, {
       incomingIdx,
       incomingLength: incoming.cells.length,
       liveLength: live.cells.length,
-    });
+    }),
+  );
+
+  const enrichedCells = incoming.cells.map((incomingCell, incomingIdx) => {
+    const liveIdx = liveIndices[incomingIdx];
 
     if (Option.isSome(liveIdx)) {
       const liveCell = live.cells[liveIdx.value];
@@ -59,6 +67,27 @@ export function enrichNotebookFromLive(
 
     return incomingCell;
   });
+
+  // Matched cells claim their IDs first so they keep their live identity.
+  const matchedFirst = [
+    ...enrichedCells.filter((_, idx) => Option.isSome(liveIndices[idx])),
+    ...enrichedCells.filter((_, idx) => Option.isNone(liveIndices[idx])),
+  ];
+  const claimedIds = new Set<string>();
+  for (const cell of matchedFirst) {
+    const stableId = Option.getOrUndefined(
+      MarimoNotebookCell.decodeMetadata(cell.metadata),
+    )?.marimoRuntime.stableId;
+    if (stableId == null) continue;
+    if (claimedIds.has(stableId)) {
+      cell.metadata = MarimoNotebookCell.materializeRuntimeMetadata(
+        cell.metadata,
+        { stableId: crypto.randomUUID() },
+      );
+    } else {
+      claimedIds.add(stableId);
+    }
+  }
 
   incoming.cells = enrichedCells;
   return incoming;

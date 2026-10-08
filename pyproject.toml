@@ -91,6 +91,9 @@ ignore = [
 [tool.typos.default.extend-words]
 somes = "somes"
 
+[tool.typos.default.extend-identifiers]
+MJUe = "MJUe" # marimo's deterministic cell ID, used in tests
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

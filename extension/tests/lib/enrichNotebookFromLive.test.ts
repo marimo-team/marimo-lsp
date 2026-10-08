@@ -468,6 +468,67 @@ Vitest.describe("enrichNotebookFromLive", () => {
     });
   });
 
+  Vitest.describe("deterministic deserialized ids", () => {
+    // marimo derives deserialized ids from a seeded generator, so a reload
+    // assigns the same sequence (Hbol, MJUe, vblA, ...) that the live cells
+    // received when the notebook was first opened.
+    Vitest.it("gives an inserted cell a fresh id instead of a live one", () => {
+      const cached = notebook([
+        cell("x = 1", { stableId: "Hbol" }),
+        cell("y = 2", { stableId: "MJUe" }),
+        cell("z = 3", { stableId: "vblA" }),
+      ]);
+      const incoming = notebook([
+        cell("x = 1", { stableId: "Hbol" }),
+        cell("w = 0", { stableId: "MJUe" }),
+        cell("y = 2", { stableId: "vblA" }),
+        cell("z = 3", { stableId: "bkHC" }),
+      ]);
+
+      const result = enrichNotebookFromLive(incoming, cached);
+
+      const ids = getStableIds(result);
+      Vitest.expect([ids[0], ids[2], ids[3]]).toEqual(["Hbol", "MJUe", "vblA"]);
+      Vitest.expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    Vitest.it("keeps an inserted cell's id when it does not collide", () => {
+      const cached = notebook([
+        cell("x = 1", { stableId: "Hbol" }),
+        cell("y = 2", { stableId: "MJUe" }),
+      ]);
+      const incoming = notebook([
+        cell("x = 1", { stableId: "Hbol" }),
+        cell("y = 2", { stableId: "MJUe" }),
+        cell("z = 3", { stableId: "vblA" }),
+      ]);
+
+      const result = enrichNotebookFromLive(incoming, cached);
+
+      Vitest.expect(getStableIds(result)).toEqual(["Hbol", "MJUe", "vblA"]);
+    });
+
+    Vitest.it(
+      "repairs duplicate ids already present in the live notebook",
+      () => {
+        const cached = notebook([
+          cell("x = 1", { stableId: "Hbol" }),
+          cell("y = 2", { stableId: "Hbol" }),
+        ]);
+        const incoming = notebook([
+          cell("x = 1", { stableId: "Hbol" }),
+          cell("y = 2", { stableId: "MJUe" }),
+        ]);
+
+        const result = enrichNotebookFromLive(incoming, cached);
+
+        const ids = getStableIds(result);
+        Vitest.expect(ids[0]).toBe("Hbol");
+        Vitest.expect(new Set(ids).size).toBe(ids.length);
+      },
+    );
+  });
+
   Vitest.describe("snapshots", () => {
     // Base notebook used in snapshot tests
     const baseCached = notebook([
