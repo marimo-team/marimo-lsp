@@ -2,8 +2,11 @@ import * as Vitest from "@effect/vitest";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 
-import { enrichNotebookFromLive } from "../../src/lib/enrichNotebookFromLive.ts";
+import { reconcileNotebook } from "../../src/notebook/reconcileNotebook.ts";
 import { MarimoNotebookCell } from "../../src/schemas/MarimoNotebookDocument.ts";
+
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // Helper to create a cell with minimal required fields
 function cell(
@@ -12,6 +15,7 @@ function cell(
     kind?: vscode.NotebookCellKind;
     languageId?: string;
     stableId?: string;
+    name?: string;
     hideCode?: boolean;
     outputs?: vscode.NotebookCellOutput[];
   },
@@ -20,14 +24,16 @@ function cell(
     kind: options?.kind ?? 2, // Code cell
     languageId: options?.languageId ?? "python",
     value,
-    metadata: options?.stableId
-      ? MarimoNotebookCell.createMetadata({
-          ...(options.hideCode === undefined
-            ? {}
-            : { marimo: { options: { hide_code: options.hideCode } } }),
-          marimoRuntime: { stableId: options.stableId },
-        })
-      : undefined,
+    metadata:
+      options?.stableId || options?.name
+        ? MarimoNotebookCell.createMetadata({
+            marimo: {
+              name: options.name,
+              options: { hide_code: options.hideCode },
+            },
+            marimoRuntime: { stableId: options.stableId },
+          })
+        : undefined,
     outputs: options?.outputs,
   };
 }
@@ -61,12 +67,13 @@ function snapshotView(nb: vscode.NotebookData): string {
       const metadata = Option.getOrUndefined(
         MarimoNotebookCell.decodeMetadata(c.metadata),
       );
-      return `[${metadata?.marimoRuntime.stableId ?? "?"}]: ${c.value}`;
+      const id = metadata?.marimoRuntime.stableId;
+      return `[${id?.match(UUID) ? "<new>" : (id ?? "?")}]: ${c.value}`;
     })
     .join("\n");
 }
 
-Vitest.describe("enrichNotebookFromLive", () => {
+Vitest.describe("reconcileNotebook", () => {
   Vitest.describe("identical notebooks", () => {
     Vitest.it("preserves all stableIds when cells are identical", () => {
       const cached = notebook([
@@ -80,7 +87,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
@@ -98,7 +105,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
           cell("x = 1", { stableId: "fresh-1", hideCode: incoming }),
         ]);
 
-        const result = enrichNotebookFromLive(reloaded, cached);
+        const result = reconcileNotebook(reloaded, cached);
 
         Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
         Vitest.expect(getHideCode(result)).toEqual([incoming]);
@@ -119,14 +126,14 @@ Vitest.describe("enrichNotebookFromLive", () => {
       ]);
       const incoming = notebook([cell("x = 1", { stableId: "fresh-1" })]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(result.cells[0].outputs).toEqual([mockOutput]);
     });
   });
 
   Vitest.describe("cell added at end", () => {
-    Vitest.it("preserves existing cell ids, new cell keeps fresh id", () => {
+    Vitest.it("preserves existing cell ids, new cell gets a UUID", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -137,14 +144,18 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "fresh-3"]);
+      Vitest.expect(getStableIds(result)).toEqual([
+        "id-1",
+        "id-2",
+        Vitest.expect.stringMatching(UUID),
+      ]);
     });
   });
 
   Vitest.describe("cell added at beginning", () => {
-    Vitest.it("preserves suffix cells, new cell keeps fresh id", () => {
+    Vitest.it("preserves suffix cells, new cell gets a UUID", () => {
       const cached = notebook([
         cell("y = 2", { stableId: "id-2" }),
         cell("z = 3", { stableId: "id-3" }),
@@ -155,15 +166,19 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       // First cell is new, last two match suffix
-      Vitest.expect(getStableIds(result)).toEqual(["fresh-1", "id-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual([
+        Vitest.expect.stringMatching(UUID),
+        "id-2",
+        "id-3",
+      ]);
     });
   });
 
   Vitest.describe("cell added in middle", () => {
-    Vitest.it("preserves prefix and suffix, new cell keeps fresh id", () => {
+    Vitest.it("preserves prefix and suffix, new cell gets a UUID", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("z = 3", { stableId: "id-3" }),
@@ -174,10 +189,14 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       // First cell matches prefix, last matches suffix, middle is new
-      Vitest.expect(getStableIds(result)).toEqual(["id-1", "fresh-2", "id-3"]);
+      Vitest.expect(getStableIds(result)).toEqual([
+        "id-1",
+        Vitest.expect.stringMatching(UUID),
+        "id-3",
+      ]);
     });
   });
 
@@ -193,14 +212,14 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-3"]);
     });
   });
 
   Vitest.describe("cell content edited", () => {
-    Vitest.it("edited cell preserves id via positional fallback", () => {
+    Vitest.it("edited cell preserves id via similarity", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1" }),
         cell("y = 2", { stableId: "id-2" }),
@@ -212,10 +231,10 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      // First and last match via prefix/suffix, edited middle cell
-      // preserves identity via positional fallback
+      // First and last match exactly; the edited middle cell is the only
+      // leftover on each side, so similarity pairs them
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
   });
@@ -225,16 +244,16 @@ Vitest.describe("enrichNotebookFromLive", () => {
       const cached = notebook([cell("  x = 1  ", { stableId: "id-1" })]);
       const incoming = notebook([cell("x = 1", { stableId: "fresh-1" })]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
 
     Vitest.it(
-      "matches cells with different internal content via positional fallback",
+      "matches cells with different internal content via similarity",
       () => {
-        // Normalization only trims; internal whitespace changes are caught
-        // by positional fallback (Pass 3) instead
+        // Internal whitespace changes are not exact matches; they pair by
+        // prefix/suffix similarity instead
         const cached = notebook([
           cell("x = 1", { stableId: "id-1" }),
           cell("y=2", { stableId: "id-2" }),
@@ -246,9 +265,9 @@ Vitest.describe("enrichNotebookFromLive", () => {
           cell("z = 3", { stableId: "fresh-3" }),
         ]);
 
-        const result = enrichNotebookFromLive(incoming, cached);
+        const result = reconcileNotebook(incoming, cached);
 
-        // Positional fallback preserves identity for content-changed cells
+        // Similarity preserves identity for content-changed cells
         Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
       },
     );
@@ -267,7 +286,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("b = 2", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(getStableIds(result)).toEqual(["id-c", "id-a", "id-b"]);
     });
@@ -289,9 +308,9 @@ Vitest.describe("enrichNotebookFromLive", () => {
         // b was deleted
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      // b was deleted and "new" is genuinely new, but positional fallback
+      // b was deleted and "new" is genuinely new, but similarity matching
       // pairs the one remaining unmatched cached cell (b) with the one
       // remaining unmatched incoming cell (new), preserving b's identity.
       Vitest.expect(getStableIds(result)).toEqual([
@@ -306,42 +325,47 @@ Vitest.describe("enrichNotebookFromLive", () => {
       const cached = notebook([cell("x = 1", { stableId: "id-1" })]);
       const incoming = notebook([]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       Vitest.expect(result.cells).toEqual([]);
     });
 
-    Vitest.it("empty cached notebook keeps all fresh ids", () => {
+    Vitest.it("empty live notebook assigns new identities to all cells", () => {
       const cached = notebook([]);
       const incoming = notebook([
         cell("x = 1", { stableId: "fresh-1" }),
         cell("y = 2", { stableId: "fresh-2" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      Vitest.expect(getStableIds(result)).toEqual(["fresh-1", "fresh-2"]);
+      const ids = getStableIds(result);
+      Vitest.expect(ids).toEqual([
+        Vitest.expect.stringMatching(UUID),
+        Vitest.expect.stringMatching(UUID),
+      ]);
+      Vitest.expect(new Set(ids).size).toBe(2);
     });
   });
 
   Vitest.describe("language and kind matching", () => {
-    Vitest.it("exact match requires same language (prefix/suffix)", () => {
-      // Cells in same position with different language won't match in prefix/suffix
+    Vitest.it("language differences do not break matching", () => {
+      // Matching compares displayed source only, never kind or language
       const cached = notebook([
         cell("a = 1", { stableId: "id-1", languageId: "python" }),
         cell("x = 1", { stableId: "id-2", languageId: "python" }),
         cell("b = 2", { stableId: "id-3", languageId: "python" }),
       ]);
       const incoming = notebook([
-        cell("a = 1", { stableId: "fresh-1", languageId: "sql" }), // different language breaks prefix
+        cell("a = 1", { stableId: "fresh-1", languageId: "sql" }), // different language
         cell("x = 1", { stableId: "fresh-2", languageId: "python" }),
         cell("b = 2", { stableId: "fresh-3", languageId: "python" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      // First cell has different language, breaks exact prefix match
-      // But content matching in middle still finds it
+      // The first cell changed language but kept its source, so it still
+      // matches exactly
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
@@ -354,7 +378,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("x = 1", { stableId: "fresh-1", languageId: "sql" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       // Same content matches despite different language
       Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
@@ -368,14 +392,14 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# Hello", { stableId: "fresh-1", kind: 2 }), // Code
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       // Same content matches despite different kind
       Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
   });
 
-  Vitest.describe("positional fallback (external edits)", () => {
+  Vitest.describe("similarity matching (external edits)", () => {
     Vitest.it(
       "preserves identity when AI edits multiple cells in place",
       () => {
@@ -394,10 +418,10 @@ Vitest.describe("enrichNotebookFromLive", () => {
           cell("df.describe()", { stableId: "fresh-4" }),
         ]);
 
-        const result = enrichNotebookFromLive(incoming, cached);
+        const result = reconcileNotebook(incoming, cached);
 
-        // All cells preserve identity — unchanged via prefix/suffix,
-        // edited via positional fallback
+        // All cells preserve identity: unchanged cells exactly,
+        // edited cells by similarity
         Vitest.expect(getStableIds(result)).toEqual([
           "id-1",
           "id-2",
@@ -419,9 +443,9 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 30", { stableId: "fresh-3" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      // No prefix or suffix matches, but positional fallback pairs all
+      // No exact matches, but similarity pairs all
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
@@ -438,13 +462,13 @@ Vitest.describe("enrichNotebookFromLive", () => {
           cell("z = 30", { stableId: "fresh-3" }), // new
         ]);
 
-        const result = enrichNotebookFromLive(incoming, cached);
+        const result = reconcileNotebook(incoming, cached);
 
-        // Positional fallback pairs first two, third is genuinely new
+        // Similarity pairs the first two, the third is genuinely new
         Vitest.expect(getStableIds(result)).toEqual([
           "id-1",
           "id-2",
-          "fresh-3",
+          Vitest.expect.stringMatching(UUID),
         ]);
       },
     );
@@ -461,9 +485,9 @@ Vitest.describe("enrichNotebookFromLive", () => {
         // z was deleted
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
-      // Positional fallback pairs first two, third was deleted
+      // Similarity pairs the first two, the third was deleted
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2"]);
     });
   });
@@ -485,28 +509,39 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "bkHC" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+      const result = reconcileNotebook(incoming, cached);
 
       const ids = getStableIds(result);
       Vitest.expect([ids[0], ids[2], ids[3]]).toEqual(["Hbol", "MJUe", "vblA"]);
+      Vitest.expect(ids[1]).toMatch(UUID);
       Vitest.expect(new Set(ids).size).toBe(ids.length);
     });
 
-    Vitest.it("keeps an inserted cell's id when it does not collide", () => {
-      const cached = notebook([
-        cell("x = 1", { stableId: "Hbol" }),
-        cell("y = 2", { stableId: "MJUe" }),
-      ]);
-      const incoming = notebook([
-        cell("x = 1", { stableId: "Hbol" }),
-        cell("y = 2", { stableId: "MJUe" }),
-        cell("z = 3", { stableId: "vblA" }),
-      ]);
+    Vitest.it(
+      "allocates a new identity even when the parsed id does not collide",
+      () => {
+        const cached = notebook([
+          cell("x = 1", { stableId: "Hbol" }),
+          cell("y = 2", { stableId: "MJUe" }),
+        ]);
+        const incoming = notebook([
+          cell("x = 1", { stableId: "Hbol" }),
+          cell("y = 2", { stableId: "MJUe" }),
+          cell("z = 3", { stableId: "vblA" }),
+        ]);
 
-      const result = enrichNotebookFromLive(incoming, cached);
+        const result = reconcileNotebook(incoming, cached);
 
-      Vitest.expect(getStableIds(result)).toEqual(["Hbol", "MJUe", "vblA"]);
-    });
+        Vitest.expect(getStableIds(result)).toEqual([
+          "Hbol",
+          "MJUe",
+          Vitest.expect.stringMatching(UUID),
+        ]);
+
+        const reloaded = reconcileNotebook(incoming, result);
+        Vitest.expect(getStableIds(reloaded)).toEqual(getStableIds(result));
+      },
+    );
 
     Vitest.it(
       "repairs duplicate ids already present in the live notebook",
@@ -520,7 +555,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
           cell("y = 2", { stableId: "MJUe" }),
         ]);
 
-        const result = enrichNotebookFromLive(incoming, cached);
+        const result = reconcileNotebook(incoming, cached);
 
         const ids = getStableIds(result);
         Vitest.expect(ids[0]).toBe("Hbol");
@@ -528,6 +563,94 @@ Vitest.describe("enrichNotebookFromLive", () => {
       },
     );
   });
+
+  Vitest.describe("setup identity", () => {
+    Vitest.it(
+      "matches an edited setup cell separately from ordinary cells",
+      () => {
+        const live = notebook([
+          cell("import old", { name: "setup", stableId: "setup" }),
+          cell("x = 1", { stableId: "Hbol" }),
+        ]);
+        const incoming = notebook([
+          cell("import new", { name: "setup", stableId: "setup" }),
+          cell("w = 0", { stableId: "Hbol" }),
+          cell("x = 1", { stableId: "MJUe" }),
+        ]);
+
+        Vitest.expect(getStableIds(reconcileNotebook(incoming, live))).toEqual([
+          "setup",
+          Vitest.expect.stringMatching(UUID),
+          "Hbol",
+        ]);
+      },
+    );
+
+    Vitest.it(
+      "reserves setup when inserting it alongside an ordinary edit",
+      () => {
+        const live = notebook([cell("x = 1", { stableId: "Hbol" })]);
+        const incoming = notebook([
+          cell("import math", { name: "setup", stableId: "setup" }),
+          cell("x = 2", { stableId: "Hbol" }),
+        ]);
+
+        Vitest.expect(getStableIds(reconcileNotebook(incoming, live))).toEqual([
+          "setup",
+          "Hbol",
+        ]);
+      },
+    );
+
+    Vitest.it(
+      "does not transfer a removed setup's identity or outputs to a new ordinary cell",
+      () => {
+        const live = notebook([
+          cell("import math", {
+            name: "setup",
+            stableId: "setup",
+            outputs: [{ items: [] }],
+          }),
+          cell("x = 1", { stableId: "Hbol" }),
+        ]);
+        const incoming = notebook([
+          cell("w = 0", { stableId: "Hbol" }),
+          cell("x = 1", { stableId: "MJUe" }),
+        ]);
+
+        const result = reconcileNotebook(incoming, live);
+
+        Vitest.expect(getStableIds(result)).toEqual([
+          Vitest.expect.stringMatching(UUID),
+          "Hbol",
+        ]);
+        Vitest.expect(result.cells[0].outputs).toBeUndefined();
+      },
+    );
+  });
+
+  Vitest.it(
+    "reserves later live IDs before allocating an inserted cell's UUID",
+    () => {
+      const liveId = "00000000-0000-4000-8000-000000000001";
+      const newId = "00000000-0000-4000-8000-000000000002";
+      using randomUUID = Vitest.vi
+        .spyOn(crypto, "randomUUID")
+        .mockReturnValueOnce(liveId)
+        .mockReturnValueOnce(newId);
+      const live = notebook([cell("x = 1", { stableId: liveId })]);
+      const incoming = notebook([
+        cell("w = 0", { stableId: "Hbol" }),
+        cell("x = 1", { stableId: "MJUe" }),
+      ]);
+
+      Vitest.expect(getStableIds(reconcileNotebook(incoming, live))).toEqual([
+        newId,
+        liveId,
+      ]);
+      Vitest.expect(randomUUID).toHaveBeenCalledTimes(2);
+    },
+  );
 
   Vitest.describe("snapshots", () => {
     // Base notebook used in snapshot tests
@@ -549,9 +672,9 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
-        "[fresh-0]: # New first
+        "[<new>]: # New first
         [cached-1]: # Setup
         [cached-2]: x = 1
         [cached-3]: y = 2
@@ -568,7 +691,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# End", { stableId: "fresh-4" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-2]: x = 1
         [cached-3]: y = 2
@@ -587,11 +710,11 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
-        [fresh-new]: # New middle
+        [<new>]: # New middle
         [cached-3]: y = 2
         [cached-4]: z = 3
         [cached-5]: # End"
@@ -606,7 +729,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# End", { stableId: "fresh-5" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
@@ -625,14 +748,14 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("# New last", { stableId: "fresh-6" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1
         [cached-3]: y = 2
         [cached-4]: z = 3
         [cached-5]: # End
-        [fresh-6]: # New last"
+        [<new>]: # New last"
       `);
     });
 
@@ -644,7 +767,7 @@ Vitest.describe("enrichNotebookFromLive", () => {
         cell("z = 3", { stableId: "fresh-4" }),
       ]);
 
-      const result = enrichNotebookFromLive(incoming, baseCached);
+      const result = reconcileNotebook(incoming, baseCached);
       Vitest.expect(snapshotView(result)).toMatchInlineSnapshot(`
         "[cached-1]: # Setup
         [cached-2]: x = 1

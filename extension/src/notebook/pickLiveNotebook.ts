@@ -20,6 +20,9 @@ import { MarimoNotebookDocument } from "../schemas/MarimoNotebookDocument.ts";
  * deserialize with no outputs to preserve" — which is correct on cold opens
  * (no doc is open yet) and racy double-writes (disk has already advanced
  * past the bytes we were given).
+ *
+ * Byte equality is not proof of ownership. Two open notebooks with identical
+ * content can make this pick the wrong one.
  */
 export const pickLiveNotebook = Effect.fn("pickLiveNotebook")(function* (
   bytes: Uint8Array,

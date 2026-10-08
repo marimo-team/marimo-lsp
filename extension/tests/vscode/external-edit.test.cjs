@@ -5,13 +5,15 @@
 // edits. Each case writes a different edit pattern to disk and asserts that
 // cells we *didn't* edit retain their outputs after VS Code re-deserializes.
 //
-// Unit tests in `tests/lib/enrichNotebookFromLive.test.ts` exercise
+// Unit tests in `tests/notebook/reconcileNotebook.test.ts` exercise
 // the cell-level matcher exhaustively; the tests here are end-to-end —
 // they verify the full path from `fs.writeFile` through the serializer's
 // `pickLiveNotebook` match and into the live `NotebookDocument`'s outputs.
 
 const NodeAssert = require("node:assert");
 const NodeFs = require("node:fs/promises");
+const vscode = require("vscode");
+const tinyspy = require("tinyspy");
 
 const {
   cellOutputText,
@@ -131,29 +133,71 @@ suite("external edit output preservation (issue #497)", function () {
     );
   });
 
-  test("insert-in-middle: prefix and suffix outputs both preserved", async function () {
-    await using ctx = createTestContext();
-    const nb = await ctx.writeAndOpenNotebook(
-      makeSource(["print(11)", "print(22)"]),
-    );
-    await selectKernel(nb);
-    await runAllCells(nb);
+  for (const running of [false, true]) {
+    test(`insert-in-middle: cells execute after reload with ${running ? "a running kernel" : "no kernel started"}`, async function () {
+      await using ctx = createTestContext();
+      const nb = await ctx.writeAndOpenNotebook(
+        makeSource(["print(11)", "print(22)"]),
+      );
+      // Selecting the controller prepares the editor but does not start a
+      // kernel; the first execution below creates the cold notebook's session.
+      await selectKernel(nb);
+      if (running) {
+        await runAllCells(nb);
+      }
+      const originalIds = nb
+        .getCells()
+        .map((cell) => cell.metadata.marimoRuntime.stableId);
 
-    await NodeFs.writeFile(
-      nb.uri.fsPath,
-      makeSource(["print(11)", "print(99)", "print(22)"]),
-      "utf8",
-    );
-    await ctx.waitUntil(() => NodeAssert.strictEqual(nb.cellCount, 3));
+      await NodeFs.writeFile(
+        nb.uri.fsPath,
+        makeSource(["print(11)", "print(99)", "print(22)"]),
+        "utf8",
+      );
+      await ctx.waitUntil(() => NodeAssert.strictEqual(nb.cellCount, 3));
 
-    NodeAssert.match(cellOutputText(nb.cellAt(0)), /11/, "prefix preserved");
-    NodeAssert.strictEqual(
-      cellOutputText(nb.cellAt(1)),
-      "",
-      "inserted cell has no output",
-    );
-    NodeAssert.match(cellOutputText(nb.cellAt(2)), /22/, "suffix preserved");
-  });
+      const reloadedIds = nb
+        .getCells()
+        .map((cell) => cell.metadata.marimoRuntime.stableId);
+      NodeAssert.deepStrictEqual([reloadedIds[0], reloadedIds[2]], originalIds);
+      NodeAssert.strictEqual(new Set(reloadedIds).size, 3);
+      if (running) {
+        NodeAssert.match(
+          cellOutputText(nb.cellAt(0)),
+          /11/,
+          "prefix preserved",
+        );
+        NodeAssert.match(
+          cellOutputText(nb.cellAt(2)),
+          /22/,
+          "suffix preserved",
+        );
+      }
+      NodeAssert.strictEqual(
+        cellOutputText(nb.cellAt(1)),
+        "",
+        "inserted cell has no output",
+      );
+      // Start with the inserted cell: on a cold notebook this creates the session
+      // from the reloaded IDs, exercising the failure reported in #850.
+      for (const [index, expected] of [
+        [1, 99],
+        [0, 11],
+        [2, 22],
+      ]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        await runCell(nb.cellAt(index));
+        NodeAssert.strictEqual(
+          nb.cellAt(index).executionSummary?.success,
+          true,
+        );
+        NodeAssert.match(
+          cellOutputText(nb.cellAt(index)),
+          new RegExp(String(expected)),
+        );
+      }
+    });
+  }
 
   test("delete: remaining cells keep their outputs", async function () {
     await using ctx = createTestContext();
@@ -178,12 +222,7 @@ suite("external edit output preservation (issue #497)", function () {
     );
   });
 
-  test("edit-in-place: positional fallback carries prior output onto edited cell", async function () {
-    // Documents the current matcher behavior: when a cell's content changes
-    // but the cell count is unchanged, the positional-fallback pass in
-    // `matchCells` transfers the prior output onto the edited cell. The cell
-    // should be marked stale by marimo's runtime so the stale output is
-    // visually flagged — this test just pins the preservation behavior.
+  test("edit-in-place: preserved output is stale until rerun", async function () {
     await using ctx = createTestContext();
     const nb = await ctx.writeAndOpenNotebook(
       makeSource(["print(11)", "print(22)", "print(33)"]),
@@ -207,6 +246,31 @@ suite("external edit output preservation (issue #497)", function () {
       "edited cell inherits prior output via positional fallback",
     );
     NodeAssert.match(cellOutputText(nb.cellAt(2)), /33/);
+
+    // Exercise the same action as the cell's Stale indicator. Only cells the
+    // extension considers stale are executed by this command.
+    // oxlint-disable-next-line marimo/no-marimo-command-id-literals -- exercises the external VS Code seam
+    await vscode.commands.executeCommand("marimo.runStale", nb.cellAt(1));
+    await ctx.waitUntil(() => {
+      NodeAssert.match(cellOutputText(nb.cellAt(1)), /99/);
+      NodeAssert.strictEqual(nb.cellAt(1).executionSummary?.success, true);
+    });
+
+    const information = tinyspy.spyOn(
+      vscode.window,
+      "showInformationMessage",
+      async () => undefined,
+    );
+    try {
+      // oxlint-disable-next-line marimo/no-marimo-command-id-literals -- exercises the external VS Code seam
+      await vscode.commands.executeCommand("marimo.runStale", nb.cellAt(1));
+      NodeAssert.strictEqual(
+        information.calls[0]?.[0],
+        "No stale cells to run",
+      );
+    } finally {
+      information.restore();
+    }
   });
 
   test("whitespace-only change: output preserved via normalized match", async function () {

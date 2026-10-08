@@ -13,7 +13,6 @@ import {
 import type * as vscode from "vscode";
 
 import { NOTEBOOK_TYPE } from "../constants.ts";
-import { enrichNotebookFromLive } from "../lib/enrichNotebookFromLive.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
 import * as Constants from "../platform/Constants.ts";
 import * as VsCode from "../platform/VsCode.ts";
@@ -29,6 +28,7 @@ import {
   notebookSourceFailureMessage,
 } from "./NotebookSourceError.ts";
 import { pickLiveNotebook } from "./pickLiveNotebook.ts";
+import { reconcileNotebook } from "./reconcileNotebook.ts";
 
 type BooleanMap<T> = {
   [key in keyof T]: boolean;
@@ -159,7 +159,7 @@ export const layer = Layer.effect(
         const liveDoc = yield* pickLiveNotebook(bytes, code.value);
         if (Option.isNone(liveDoc)) return notebook;
 
-        return enrichNotebookFromLive(
+        return reconcileNotebook(
           notebook,
           snapshotLiveNotebook(liveDoc.value, code.value),
         );
@@ -233,7 +233,7 @@ export const layer = Layer.effect(
         {
           // Outputs are not persisted to the .py file — they're ephemeral
           // and restored at deserialize time from the matched live
-          // NotebookDocument (see pickLiveNotebook + enrichNotebookFromLive).
+          // NotebookDocument (see pickLiveNotebook + reconcileNotebook).
           // Marking as transient prevents cell execution from dirtying the
           // notebook, which would block auto-reload of external file changes.
           transientOutputs: true,
@@ -414,7 +414,7 @@ ${code}
 
 /**
  * Snapshot a live `NotebookDocument`'s cells into the `NotebookData` shape
- * that `enrichNotebookFromLive` expects.
+ * that `reconcileNotebook` expects.
  *
  * Outputs are reconstructed as *fresh* `NotebookCellOutput` /
  * `NotebookCellOutputItem` instances, not spread references to the live
