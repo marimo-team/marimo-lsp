@@ -1,9 +1,14 @@
+import { MarkdownParser, SQLParser } from "@marimo-team/smart-cells";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 
-import { SETUP_CELL_NAME } from "../constants.ts";
+import { LanguageId, SETUP_CELL_NAME } from "../constants.ts";
 import { MarimoNotebookCell } from "../schemas/MarimoNotebookDocument.ts";
 import { matchCells } from "./matchCells.ts";
+
+const MARKUP_CELL_KIND: vscode.NotebookCellKind = 1;
+const markdownParser = new MarkdownParser();
+const sqlParser = new SQLParser();
 
 /**
  * Reconcile parsed notebook source with the open notebook it reloads. Matched
@@ -73,8 +78,8 @@ export function reconcileNotebook(
 }
 
 /**
- * Setup pairs by role. Ordinary cells pair by displayed source, ignoring kind
- * and language since both sides are classified the same way.
+ * Setup pairs by its reserved ID. Ordinary cells pair by reconstructed Python
+ * source so identical display text in different projections stays distinct.
  */
 function matchLiveCells(
   live: ReadonlyArray<vscode.NotebookCellData>,
@@ -93,8 +98,8 @@ function matchLiveCells(
     .filter(({ cell }) => !isSetupCell(cell));
 
   const matched = matchCells(
-    liveCells.map((cell) => cell.value),
-    incomingCells.map(({ cell }) => cell.value),
+    liveCells.map(sourceOf),
+    incomingCells.map(({ cell }) => sourceOf(cell)),
   );
   matched.forEach((liveIndex, i) => {
     if (liveIndex !== undefined) {
@@ -104,6 +109,25 @@ function matchLiveCells(
   return matches;
 }
 
+function sourceOf(cell: vscode.NotebookCellData): string {
+  const projections = metadataOf(cell)?.marimo.sourceProjections;
+  if (cell.kind === MARKUP_CELL_KIND) {
+    return markdownParser.transformOut(
+      cell.value,
+      (cell.languageId === LanguageId.Markdown
+        ? projections?.markdown
+        : null) ?? markdownParser.defaultMetadata,
+    ).code;
+  }
+  if (cell.languageId === LanguageId.Sql) {
+    return sqlParser.transformOut(
+      cell.value,
+      projections?.sql ?? sqlParser.defaultMetadata,
+    ).code;
+  }
+  return cell.value;
+}
+
 function metadataOf(cell: vscode.NotebookCellData) {
   return Option.getOrUndefined(
     MarimoNotebookCell.decodeMetadata(cell.metadata),
@@ -111,5 +135,7 @@ function metadataOf(cell: vscode.NotebookCellData) {
 }
 
 function isSetupCell(cell: vscode.NotebookCellData): boolean {
-  return metadataOf(cell)?.marimo.name === SETUP_CELL_NAME;
+  // Ordinary @app.cell functions can also be named setup. The parser assigns
+  // the reserved ID only to the actual setup cell.
+  return metadataOf(cell)?.marimoRuntime.stableId === SETUP_CELL_NAME;
 }

@@ -2,6 +2,7 @@ import * as Vitest from "@effect/vitest";
 import { Option } from "effect";
 import type * as vscode from "vscode";
 
+import { classifyCellCode } from "../../src/notebook/classifyCellCode.ts";
 import { reconcileNotebook } from "../../src/notebook/reconcileNotebook.ts";
 import { MarimoNotebookCell } from "../../src/schemas/MarimoNotebookDocument.ts";
 
@@ -43,6 +44,26 @@ function notebook(cells: vscode.NotebookCellData[]): vscode.NotebookData {
   return { cells };
 }
 
+function cellFromSource(
+  source: string,
+  stableId: string,
+): vscode.NotebookCellData {
+  const classified = classifyCellCode(source, {
+    Python: "mo-python",
+    Markdown: "markdown",
+    Sql: "sql",
+  });
+  return {
+    kind: classified.kind,
+    languageId: classified.languageId,
+    value: classified.code,
+    metadata: MarimoNotebookCell.createMetadata({
+      marimo: { sourceProjections: classified.sourceProjections },
+      marimoRuntime: { stableId },
+    }),
+  };
+}
+
 // Helper to extract stableIds from notebook
 function getStableIds(nb: vscode.NotebookData): (string | undefined)[] {
   return nb.cells.map(
@@ -74,6 +95,39 @@ function snapshotView(nb: vscode.NotebookData): string {
 }
 
 Vitest.describe("reconcileNotebook", () => {
+  Vitest.it.each([
+    ["Python and markdown", "x = 1", 'mo.md("x = 1")'],
+    ["markdown and SQL", 'mo.md("SELECT 1")', 'result = mo.sql("SELECT 1")'],
+    [
+      "SQL with different bindings",
+      'first = mo.sql("SELECT 1")',
+      'second = mo.sql("SELECT 1")',
+    ],
+  ])(
+    "preserves IDs and outputs when %s cells with identical displayed text swap",
+    (_, first, second) => {
+      const live = notebook([
+        cellFromSource(first, "first-id"),
+        cellFromSource(second, "second-id"),
+      ]);
+      live.cells[0].outputs = [{ items: [], metadata: { label: "first" } }];
+      live.cells[1].outputs = [{ items: [], metadata: { label: "second" } }];
+      Vitest.expect(live.cells[0].value).toBe(live.cells[1].value);
+      const incoming = notebook([
+        cellFromSource(second, "Hbol"),
+        cellFromSource(first, "MJUe"),
+      ]);
+
+      const result = reconcileNotebook(incoming, live);
+
+      Vitest.expect(getStableIds(result)).toEqual(["second-id", "first-id"]);
+      Vitest.expect(result.cells.map((cell) => cell.outputs)).toEqual([
+        live.cells[1].outputs,
+        live.cells[0].outputs,
+      ]);
+    },
+  );
+
   Vitest.describe("identical notebooks", () => {
     Vitest.it("preserves all stableIds when cells are identical", () => {
       const cached = notebook([
@@ -349,8 +403,7 @@ Vitest.describe("reconcileNotebook", () => {
   });
 
   Vitest.describe("language and kind matching", () => {
-    Vitest.it("language differences do not break matching", () => {
-      // Matching compares displayed source only, never kind or language
+    Vitest.it("pairs a language change after preserving exact sources", () => {
       const cached = notebook([
         cell("a = 1", { stableId: "id-1", languageId: "python" }),
         cell("x = 1", { stableId: "id-2", languageId: "python" }),
@@ -364,13 +417,12 @@ Vitest.describe("reconcileNotebook", () => {
 
       const result = reconcileNotebook(incoming, cached);
 
-      // The first cell changed language but kept its source, so it still
-      // matches exactly
+      // The other cells match exactly; the language change is the only
+      // leftover pair and retains its identity through similarity matching.
       Vitest.expect(getStableIds(result)).toEqual(["id-1", "id-2", "id-3"]);
     });
 
-    Vitest.it("content matching ignores language differences", () => {
-      // When exact match fails, content-based matching only compares value
+    Vitest.it("pairs a lone cell across a language change", () => {
       const cached = notebook([
         cell("x = 1", { stableId: "id-1", languageId: "python" }),
       ]);
@@ -380,11 +432,11 @@ Vitest.describe("reconcileNotebook", () => {
 
       const result = reconcileNotebook(incoming, cached);
 
-      // Same content matches despite different language
+      // The reconstructed sources differ, but leftovers are still paired.
       Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
 
-    Vitest.it("content matching ignores kind differences", () => {
+    Vitest.it("pairs a lone cell across a kind change", () => {
       const cached = notebook([
         cell("# Hello", { stableId: "id-1", kind: 1 }), // Markup
       ]);
@@ -394,7 +446,7 @@ Vitest.describe("reconcileNotebook", () => {
 
       const result = reconcileNotebook(incoming, cached);
 
-      // Same content matches despite different kind
+      // The reconstructed sources differ, but leftovers are still paired.
       Vitest.expect(getStableIds(result)).toEqual(["id-1"]);
     });
   });
@@ -565,6 +617,33 @@ Vitest.describe("reconcileNotebook", () => {
   });
 
   Vitest.describe("setup identity", () => {
+    Vitest.it.each([false, true])(
+      "preserves an ordinary cell named setup (setup block present: %s)",
+      (hasSetup) => {
+        const first = hasSetup
+          ? cell("import math", { name: "setup", stableId: "setup" })
+          : cell("x = 1", { stableId: "Hbol" });
+        const ordinaryId = hasSetup ? "Hbol" : "MJUe";
+        const live = notebook([
+          first,
+          cell("y = 2", {
+            name: "setup",
+            stableId: ordinaryId,
+            outputs: [{ items: [], metadata: { label: "ordinary" } }],
+          }),
+        ]);
+        const incoming = notebook([
+          { ...first },
+          cell("y = 2", { name: "setup", stableId: ordinaryId }),
+        ]);
+
+        const result = reconcileNotebook(incoming, live);
+
+        Vitest.expect(getStableIds(result)).toEqual(getStableIds(live));
+        Vitest.expect(result.cells[1].outputs).toEqual(live.cells[1].outputs);
+      },
+    );
+
     Vitest.it(
       "matches an edited setup cell separately from ordinary cells",
       () => {
