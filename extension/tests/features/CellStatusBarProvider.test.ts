@@ -1,5 +1,5 @@
 import * as Vitest from "@effect/vitest";
-import { Effect, Layer, Option } from "effect";
+import { Effect, HashSet, Layer, Option, Stream } from "effect";
 import type * as vscode from "vscode";
 
 import { commandId } from "../../src/commands.ts";
@@ -8,6 +8,7 @@ import runStale from "../../src/commands/runStale.ts";
 import * as CellStatusBarProvider from "../../src/features/CellStatusBarProvider.ts";
 import * as CellExecutions from "../../src/kernel/CellExecutions.ts";
 import * as NotebookDocumentSessions from "../../src/notebook/NotebookDocumentSessions.ts";
+import { reconcileNotebook } from "../../src/notebook/reconcileNotebook.ts";
 import { MarimoNotebookCell } from "../../src/schemas/MarimoNotebookDocument.ts";
 import type * as Api from "../../src/schemas/Models.gen.ts";
 import * as NotebookRuntimeTest from "../fake/NotebookRuntime.ts";
@@ -161,6 +162,78 @@ Vitest.describe("CellStatusBarProvider", () => {
         title: "Run stale cells",
         arguments: [cell],
       });
+    }),
+  );
+
+  it.effect(
+    "shows Stale after an external cell replacement and clears it after rerunning",
+    Effect.fn(function* () {
+      const cell = makeCell({ marimoRuntime: { stableId: "cell-1" } });
+      yield* markExecuted(cell);
+      const id = Option.getOrThrow(MarimoNotebookCell.from(cell).id);
+      const executions = yield* CellExecutions.Service;
+      const notebook = Option.getOrThrow(executions.find(cell.notebook));
+      const code = yield* VsCodeTest.Service;
+      const reloaded = reconcileNotebook(
+        {
+          cells: [
+            { kind: cell.kind, value: "print(99)", languageId: "python" },
+          ],
+        },
+        {
+          cells: [
+            {
+              kind: cell.kind,
+              value: cell.document.getText(),
+              languageId: "python",
+              metadata: cell.metadata,
+            },
+          ],
+        },
+      );
+      const replacement = VsCodeTest.createNotebookCell(
+        cell.notebook,
+        reloaded.cells[0],
+        0,
+      );
+
+      yield* code.notebookChange({
+        notebook: cell.notebook,
+        metadata: undefined,
+        cellChanges: [],
+        contentChanges: [
+          {
+            range: new VsCodeTest.NotebookRange(0, 1),
+            removedCells: [cell],
+            addedCells: [replacement],
+          },
+        ],
+      });
+      // This stream starts with the current value, so it observes the change
+      // whether the document event has already been consumed or is still queued.
+      yield* notebook.staleCells.changes.pipe(
+        Stream.filter((stale) => HashSet.has(stale, id)),
+        Stream.runHead,
+      );
+      Vitest.expect(contains(yield* items(replacement), "Stale")).toBe(true);
+
+      yield* notebook.submit(
+        [{ cellId: id, source: replacement.document.getText() }],
+        Effect.void,
+      );
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "queued",
+        run_id: "run-2",
+      });
+      yield* notebook.apply({
+        op: "cell-op",
+        cell_id: id,
+        status: "idle",
+        run_id: "run-2",
+      });
+      Vitest.expect(contains(yield* items(replacement), "Stale")).toBe(false);
     }),
   );
 
