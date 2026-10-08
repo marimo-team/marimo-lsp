@@ -1554,10 +1554,10 @@ export const SnippetsConfig = Schema.Struct({
 export type SnippetsConfig = typeof SnippetsConfig.Type;
 
 /**
- * Configuration for external Python environment in home sandbox mode.
+ * Configuration for an external Python environment in edit mode.
  *
- * Allows specifying an existing virtualenv to use instead of creating
- * ephemeral sandboxes per notebook. Only applies in home sandbox mode.
+ * Launches the notebook kernel in an existing virtualenv. Applies to
+ * single notebooks and directories when editing without `--sandbox`.
  *
  * **Keys.**
  *
