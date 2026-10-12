@@ -12,6 +12,7 @@ import {
 } from "effect";
 
 import * as Config from "../config/Config.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -67,6 +68,7 @@ export class BinaryNotFoundError extends Data.TaggedError(
 export const Status = Data.taggedEnum<Status>();
 
 export type Status = Data.TaggedEnum<{
+  Idle: {};
   Starting: {};
   Disabled: { readonly reason: string };
   NotFound: { readonly message: string };
@@ -108,7 +110,7 @@ export const layer = Layer.effect(
     const code = yield* VsCode.Service;
     const notifyMissingTy = yield* makeMissingNotifier();
 
-    const statusRef = yield* Ref.make<Status>(Status.Starting());
+    const statusRef = yield* Ref.make<Status>(Status.Idle());
 
     const disabledReasonOption = yield* getTyDisabledReason();
     if (Option.isSome(disabledReasonOption)) {
@@ -124,6 +126,8 @@ export const layer = Layer.effect(
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         if (Option.isSome(disabledReasonOption)) return;
+
+        yield* waitForNotebook();
 
         const outputChannel = yield* code.window.createOutputChannel(
           `marimo (${TY_SERVER.name})`,
@@ -300,6 +304,27 @@ export const defaultLayer = layer.pipe(
     PythonEnvInvalidation.layer,
     Storage.layer,
   ]),
+);
+
+/** Wait for a restored or newly opened marimo notebook before starting ty. */
+export const waitForNotebook = Effect.fn("TyLanguageServer.waitForNotebook")(
+  function* () {
+    const code = yield* VsCode.Service;
+    // The lifecycle subscription includes a snapshot and cannot miss opens
+    // between registering the listener and reading restored documents.
+    const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+    yield* lifecycle.pipe(
+      Stream.filter(
+        (event) =>
+          event.type === "opened" &&
+          event.document.notebookType === NOTEBOOK_TYPE &&
+          !event.document.isClosed,
+      ),
+      Stream.take(1),
+      Stream.runDrain,
+    );
+  },
+  Effect.scoped,
 );
 
 /**

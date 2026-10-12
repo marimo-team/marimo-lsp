@@ -1,5 +1,5 @@
 import * as Vitest from "@effect/vitest";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Fiber, Layer, Ref } from "effect";
 
 import * as TyLanguageServer from "../../src/lsp/TyLanguageServer.ts";
 import * as ExtensionContext from "../../src/platform/ExtensionContext.ts";
@@ -99,6 +99,64 @@ const telemetry = Effect.flatMap(
 const storage = Effect.map(GlobalState, (state) => state.toJSON());
 
 Vitest.describe("TyLanguageServer", () => {
+  Vitest.describe("startup", () => {
+    const it = EffectTest.make(VsCodeTest.layer);
+
+    it.effect(
+      "accepts an already open marimo notebook",
+      Effect.fn(function* () {
+        const vscode = yield* VsCodeTest.Service;
+        yield* vscode.openNotebook(
+          VsCodeTest.createTestNotebookDocument("/test/restored.py"),
+        );
+        yield* TyLanguageServer.waitForNotebook();
+      }),
+    );
+
+    it.effect(
+      "waits through unrelated notebook opens",
+      Effect.fn(function* () {
+        const vscode = yield* VsCodeTest.Service;
+        const ready = yield* Ref.make(false);
+        const waiter = yield* TyLanguageServer.waitForNotebook().pipe(
+          Effect.andThen(Ref.set(ready, true)),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        Vitest.expect(yield* Ref.get(ready)).toBe(false);
+        yield* vscode.openNotebook(
+          VsCodeTest.createTestNotebookDocument("/test/other.ipynb", {
+            notebookType: "jupyter-notebook",
+          }),
+        );
+        yield* Effect.yieldNow;
+        Vitest.expect(yield* Ref.get(ready)).toBe(false);
+        yield* vscode.openNotebook(
+          VsCodeTest.createTestNotebookDocument("/test/opened.py"),
+        );
+        yield* Fiber.join(waiter);
+        Vitest.expect(yield* Ref.get(ready)).toBe(true);
+      }),
+    );
+
+    it.effect(
+      "can shut down while waiting without starting ty",
+      Effect.fn(function* () {
+        const vscode = yield* VsCodeTest.Service;
+        const ready = yield* Ref.make(false);
+        const waiter = yield* TyLanguageServer.waitForNotebook().pipe(
+          Effect.andThen(Ref.set(ready, true)),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Fiber.interrupt(waiter);
+        yield* vscode.openNotebook(
+          VsCodeTest.createTestNotebookDocument("/test/too-late.py"),
+        );
+        yield* Effect.yieldNow;
+        Vitest.expect(yield* Ref.get(ready)).toBe(false);
+      }),
+    );
+  });
+
   Vitest.it(
     "points at the ty extension and the path setting when no binary is found",
     () => {
