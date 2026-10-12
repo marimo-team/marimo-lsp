@@ -1,5 +1,6 @@
 import * as Vitest from "@effect/vitest";
 import { Context, Effect, Fiber, Layer, Ref } from "effect";
+import { TestClock } from "effect/testing";
 import type * as vscode from "vscode";
 
 import * as Config from "../../src/config/Config.ts";
@@ -312,6 +313,64 @@ Vitest.describe("TyLanguageServer", () => {
           Vitest.expect((yield* vscode.snapshot).warningMessages).toHaveLength(
             1,
           );
+        }),
+      );
+
+      it.effect(
+        "stops ty once the last marimo notebook has stayed closed",
+        Effect.fn(function* () {
+          const ty = yield* TyLanguageServer.Service;
+          const vscode = yield* VsCodeTest.Service;
+          const telemetry = yield* TelemetryTest.Service;
+          const first = VsCodeTest.createTestNotebookDocument("/test/first.py");
+          yield* vscode.openNotebook(first);
+          Vitest.expect((yield* settledStatus())._tag).toBe("NotFound");
+
+          yield* vscode.closeNotebook(first);
+          yield* settle;
+          yield* TestClock.adjust("5 seconds");
+          yield* settle;
+          Vitest.expect((yield* ty.getHealthStatus)._tag).toBe("Idle");
+
+          // The next notebook starts a fresh lookup on the same channel.
+          yield* vscode.openNotebook(
+            VsCodeTest.createTestNotebookDocument("/test/second.py"),
+          );
+          Vitest.expect((yield* settledStatus())._tag).toBe("NotFound");
+          Vitest.expect(yield* telemetry.unresolvedBinaries).toEqual([
+            "ty",
+            "ty",
+          ]);
+          Vitest.expect(yield* Ref.get(yield* OutputChannels)).toEqual([
+            "marimo (ty)",
+          ]);
+          Vitest.expect((yield* vscode.snapshot).warningMessages).toHaveLength(
+            1,
+          );
+        }),
+      );
+
+      it.effect(
+        "keeps ty running when a notebook reopens within the grace period",
+        Effect.fn(function* () {
+          const ty = yield* TyLanguageServer.Service;
+          const vscode = yield* VsCodeTest.Service;
+          const telemetry = yield* TelemetryTest.Service;
+          const first = VsCodeTest.createTestNotebookDocument("/test/first.py");
+          yield* vscode.openNotebook(first);
+          Vitest.expect((yield* settledStatus())._tag).toBe("NotFound");
+
+          yield* vscode.closeNotebook(first);
+          yield* settle;
+          yield* TestClock.adjust("2 seconds");
+          yield* vscode.openNotebook(
+            VsCodeTest.createTestNotebookDocument("/test/second.py"),
+          );
+          yield* settle;
+          yield* TestClock.adjust("10 seconds");
+          yield* settle;
+          Vitest.expect((yield* ty.getHealthStatus)._tag).toBe("NotFound");
+          Vitest.expect(yield* telemetry.unresolvedBinaries).toEqual(["ty"]);
         }),
       );
     });
