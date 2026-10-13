@@ -1,9 +1,12 @@
 import * as process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import * as vite from "vite-plus";
 
 import stylesheet from "./scripts/vite-plugin-virtual-stylesheet.mts";
+
+let pluginErrorReportingConnected = false;
 
 export default vite.defineConfig({
   build: {
@@ -19,7 +22,41 @@ export default vite.defineConfig({
       formats: ["es"],
     },
   },
-  plugins: [tailwindcss(), stylesheet()],
+  plugins: [
+    tailwindcss(),
+    stylesheet(),
+    {
+      name: "marimo-plugin-error-reporting",
+      apply: "build",
+      enforce: "pre",
+      buildStart() {
+        pluginErrorReportingConnected = false;
+      },
+      resolveId(source, importer) {
+        // Limit the adapter to marimo's plugin factory, preserving the real
+        // React client for the adapter itself and all third-party code.
+        if (
+          source === "react-dom/client" &&
+          importer
+            ?.replaceAll("\\", "/")
+            .endsWith("/plugins/core/registerReactComponent.tsx")
+        ) {
+          pluginErrorReportingConnected = true;
+          return fileURLToPath(
+            new URL("./src/renderer/pluginReactRoot.ts", import.meta.url),
+          );
+        }
+        return undefined;
+      },
+      buildEnd(error) {
+        if (!error && !pluginErrorReportingConnected) {
+          this.error(
+            "Marimo plugin root integration changed; output error reporting must be updated.",
+          );
+        }
+      },
+    },
+  ],
   resolve: {
     dedupe: ["react", "react-dom", "jotai"],
     tsconfigPaths: true,

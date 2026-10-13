@@ -22,6 +22,7 @@ import {
   initialize,
 } from "./marimo-frontend.ts";
 import { OutputRoots } from "./outputRoots.ts";
+import { initializeOutputErrorReporting } from "./reportOutputError.ts";
 import { createRequestClient, isTypedRequestContext } from "./utils.ts";
 
 const TABLE_EXPORT_LIMIT_MB = 50;
@@ -33,6 +34,7 @@ export const activate: vscode.ActivationFunction = (context) => {
     `Expected {"requiresMessaging": "always"} for marimo outputs.`,
   );
 
+  initializeOutputErrorReporting((message) => context.postMessage(message));
   initialize(createRequestClient(context), {
     limitBytes: TABLE_EXPORT_LIMIT_BYTES,
     unavailableMessage: `This table is too large to download from a VS Code notebook output (limit: ${TABLE_EXPORT_LIMIT_MB}MB). Open the notebook in a browser to export it, or filter the data first.`,
