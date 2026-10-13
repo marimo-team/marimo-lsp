@@ -91,8 +91,8 @@ importers:
         specifier: ^4.12.0
         version: 4.12.0(@types/vscode@1.108.1)
       jotai:
-        specifier: 2.17.0
-        version: 2.17.0(@types/react@19.2.18)(react@19.2.8)
+        specifier: 2.20.3
+        version: 2.20.3(@types/react@19.2.18)(react@19.2.8)
       mocha:
         specifier: ^11.8.0
         version: 11.8.0
@@ -2050,8 +2050,8 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
-  jotai@2.17.0:
-    resolution: {integrity: sha512-DBPT7Vx7E7R/ZJL7Uq7yUA9+LLR0IRiRM+Bw5ugVwv8L8++RjlXVXZ2//ccucypc5lcyuHOW09rYcW77RurduQ==}
+  jotai@2.20.3:
+    resolution: {integrity: sha512-N8L9FUbeGDP+0qNJw1FebOxt+5hk+jTOwUA2LlRE4C081jUcY6F1T/FSETp4DT2/INMtiSRZyNm2D+yZdzrSgA==}
     engines: {node: '>=12.20.0'}
     peerDependencies:
       '@babel/core': '>=7.0.0'
@@ -4396,7 +4396,7 @@ snapshots:
 
   jiti@2.7.0: {}
 
-  jotai@2.17.0(@types/react@19.2.18)(react@19.2.8):
+  jotai@2.20.3(@types/react@19.2.18)(react@19.2.8):
     optionalDependencies:
       '@types/react': 19.2.18
       react: 19.2.8
