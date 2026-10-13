@@ -54,6 +54,12 @@ just test-py tests/test_foo.py     # specific test file
 just test-ts --watch               # vitest in watch mode
 ```
 
+The VS Code suite also checks rendered notebook outputs. Playwright attaches to
+the test instance of VS Code over its Chromium debugging connection, so these
+tests use the real Electron webview and Python kernel. No separate browser
+install is needed. Run just this test with
+`just test-vscode --run tests/vscode/renderer.test.cjs`.
+
 ## Architecture
 
 This repository contains a Python language server under `src/marimo_lsp/` and
