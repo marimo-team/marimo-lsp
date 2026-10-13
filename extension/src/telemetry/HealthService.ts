@@ -104,6 +104,9 @@ export const layer = Layer.effect(
         lines.push("Python Language Server (ty):");
 
         TyLanguageServer.Status.$match(yield* tyLsp.getHealthStatus, {
+          Idle: () => {
+            lines.push("\tStatus: waiting for a marimo notebook");
+          },
           Disabled: ({ reason }) => {
             lines.push("\tStatus: disabled");
             lines.push(`\tReason: ${reason}`);

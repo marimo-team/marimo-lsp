@@ -7,17 +7,22 @@ export interface Interface {
   readonly tySetupActions: Effect.Effect<
     ReadonlyArray<Telemetry.TySetupAction>
   >;
+  /** Servers whose binary lookup came up empty, in order. */
+  readonly unresolvedBinaries: Effect.Effect<ReadonlyArray<"ruff" | "ty">>;
 }
 
 export class Service extends Context.Service<Service, Interface>()(
   "@marimo/test/Telemetry",
 ) {}
 
-/** Telemetry that records ty setup actions and drops everything else. */
+/** Telemetry that records ty setup and binary lookups and drops the rest. */
 export const layer = Layer.unwrap(
   Effect.map(
-    Ref.make<ReadonlyArray<Telemetry.TySetupAction>>([]),
-    (tySetupActions) =>
+    Effect.all([
+      Ref.make<ReadonlyArray<Telemetry.TySetupAction>>([]),
+      Ref.make<ReadonlyArray<"ruff" | "ty">>([]),
+    ]),
+    ([tySetupActions, unresolvedBinaries]) =>
       Layer.merge(
         Layer.succeed(Telemetry.Service, {
           tySetup: (action) =>
@@ -29,12 +34,16 @@ export const layer = Layer.unwrap(
           uvMissing: () => Effect.void,
           uvInstallClicked: Effect.void,
           binaryResolved: () => Effect.void,
-          binaryUnresolved: () => Effect.void,
+          binaryUnresolved: (server) =>
+            Ref.update(unresolvedBinaries, (current) => [...current, server]),
           lspModeSelected: () => Effect.void,
           lspStarted: () => Effect.void,
           errorLogger: Logger.make(() => undefined),
         }),
-        Layer.succeed(Service, { tySetupActions: Ref.get(tySetupActions) }),
+        Layer.succeed(Service, {
+          tySetupActions: Ref.get(tySetupActions),
+          unresolvedBinaries: Ref.get(unresolvedBinaries),
+        }),
       ),
   ),
 );

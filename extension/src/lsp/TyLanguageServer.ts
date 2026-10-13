@@ -2,16 +2,20 @@ import {
   Cause,
   Context,
   Data,
+  Duration,
   Effect,
   Exit,
+  Fiber,
   Layer,
   Option,
   Ref,
   Schema,
   Stream,
 } from "effect";
+import type * as vscode from "vscode";
 
 import * as Config from "../config/Config.ts";
+import { NOTEBOOK_TYPE } from "../constants.ts";
 import {
   BinarySource,
   companionExtensionBundledBinary,
@@ -36,6 +40,13 @@ const INSTALL_TY_EXTENSION = "Install ty Extension";
 const SHOW_TY_EXTENSION = "Show ty Extension";
 const DONT_SHOW_AGAIN = "Don't Show Again";
 const RELOAD_WINDOW = "Reload Window";
+
+/**
+ * How long the last marimo notebook must stay closed before ty stops.
+ * Absorbs close-and-reopen churn, such as reverting a notebook from disk,
+ * without paying for a server restart.
+ */
+const IDLE_SHUTDOWN_DELAY = Duration.seconds(5);
 
 /**
  * Remembers that the user dismissed the "install ty" prompt, so we never ask
@@ -67,6 +78,7 @@ export class BinaryNotFoundError extends Data.TaggedError(
 export const Status = Data.taggedEnum<Status>();
 
 export type Status = Data.TaggedEnum<{
+  Idle: {};
   Starting: {};
   Disabled: { readonly reason: string };
   NotFound: { readonly message: string };
@@ -87,7 +99,9 @@ export type Status = Data.TaggedEnum<{
 /**
  * Manages a dedicated ty language server instance for marimo notebooks.
  *
- * The server is restarted when the Python environment changes, matching
+ * The server runs only while a marimo notebook is open: it starts with the
+ * first one and stops once the last one has stayed closed for a grace
+ * period. It is restarted when the Python environment changes, matching
  * the official ty-vscode extension behavior (ty doesn't support
  * `workspace/didChangeConfiguration` — a full restart is required).
  */
@@ -108,7 +122,7 @@ export const layer = Layer.effect(
     const code = yield* VsCode.Service;
     const notifyMissingTy = yield* makeMissingNotifier();
 
-    const statusRef = yield* Ref.make<Status>(Status.Starting());
+    const statusRef = yield* Ref.make<Status>(Status.Idle());
 
     const disabledReasonOption = yield* getTyDisabledReason();
     if (Option.isSome(disabledReasonOption)) {
@@ -124,6 +138,8 @@ export const layer = Layer.effect(
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         if (Option.isSome(disabledReasonOption)) return;
+
+        yield* waitForNotebook();
 
         const outputChannel = yield* code.window.createOutputChannel(
           `marimo (${TY_SERVER.name})`,
@@ -246,7 +262,7 @@ export const layer = Layer.effect(
         // Run the server in a loop: start → invalidation → restart.
         // A missing binary gets a dedicated recovery path; other failures
         // propagate to catchCause and stop the loop.
-        yield* Effect.forever(serverCycle).pipe(
+        const serve = Effect.forever(serverCycle).pipe(
           // A missing binary is a user-resolvable configuration state, not
           // a crash: record it, nudge once, and stop the restart loop.
           Effect.catchTag("TyLanguageServer.BinaryNotFoundError", (error) =>
@@ -283,6 +299,27 @@ export const layer = Layer.effect(
             }),
           ),
         );
+
+        // Serve while a marimo notebook is open, then stop and wait for the
+        // next one. Interrupting the server fiber closes the cycle scope,
+        // which shuts the process down before the next cycle can start.
+        // A never-successful Effect requires return yield* for Effect tooling.
+        // oxlint-disable-next-line typescript/consistent-return
+        return yield* Effect.forever(
+          Effect.gen(function* () {
+            const server = yield* Effect.forkChild(serve);
+            yield* waitForIdle();
+            yield* Fiber.interrupt(server);
+            yield* Ref.set(statusRef, Status.Idle());
+            yield* Effect.logInfo("Stopped language server").pipe(
+              Effect.annotateLogs({
+                server: TY_SERVER.name,
+                reason: "no marimo notebook is open",
+              }),
+            );
+            yield* waitForNotebook();
+          }),
+        );
       }),
     );
 
@@ -300,6 +337,65 @@ export const defaultLayer = layer.pipe(
     PythonEnvInvalidation.layer,
     Storage.layer,
   ]),
+);
+
+const isOpenMarimoNotebook = (document: vscode.NotebookDocument) =>
+  document.notebookType === NOTEBOOK_TYPE && !document.isClosed;
+
+/** Wait for a restored or newly opened marimo notebook before starting ty. */
+export const waitForNotebook = Effect.fn("TyLanguageServer.waitForNotebook")(
+  function* () {
+    const code = yield* VsCode.Service;
+    // The lifecycle subscription includes a snapshot and cannot miss opens
+    // between registering the listener and reading restored documents.
+    const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+    yield* lifecycle.pipe(
+      Stream.filter(
+        (event) =>
+          event.type === "opened" && isOpenMarimoNotebook(event.document),
+      ),
+      Stream.take(1),
+      Stream.runDrain,
+    );
+  },
+  Effect.scoped,
+);
+
+/**
+ * Wait until no marimo notebook has been open for `IDLE_SHUTDOWN_DELAY`.
+ *
+ * Every marimo lifecycle event re-checks the open documents, and the
+ * debounce makes a close followed by a quick reopen a no-op.
+ */
+export const waitForIdle = Effect.fn("TyLanguageServer.waitForIdle")(
+  function* () {
+    const code = yield* VsCode.Service;
+    const anyOpen = (except?: vscode.NotebookDocument) =>
+      Effect.map(code.workspace.getNotebookDocuments, (documents) =>
+        documents.some(
+          (document) => document !== except && isOpenMarimoNotebook(document),
+        ),
+      );
+    const lifecycle = yield* code.workspace.subscribeNotebookLifecycle;
+    yield* Stream.concat(
+      // The last notebook may have closed before this subscription began.
+      Stream.fromEffect(anyOpen()),
+      lifecycle.pipe(
+        Stream.filter((event) => event.document.notebookType === NOTEBOOK_TYPE),
+        Stream.mapEffect((event) =>
+          event.type === "opened"
+            ? Effect.succeed(true)
+            : anyOpen(event.document),
+        ),
+      ),
+    ).pipe(
+      Stream.debounce(IDLE_SHUTDOWN_DELAY),
+      Stream.filter((open) => !open),
+      Stream.take(1),
+      Stream.runDrain,
+    );
+  },
+  Effect.scoped,
 );
 
 /**
