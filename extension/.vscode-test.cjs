@@ -3,6 +3,8 @@ const NodePath = require("node:path");
 
 const NodeFs = require("node:fs");
 
+NodeFs.mkdirSync(NodePath.join(__dirname, ".vscode-test"), { recursive: true });
+
 const userDataDir = NodeFs.mkdtempSync(
   NodePath.join(__dirname, ".vscode-test", "user-data-"),
 );
