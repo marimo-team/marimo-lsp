@@ -49,6 +49,7 @@ import type {
   CellOutputReplay,
   KernelSessionId,
 } from "../schemas/Models.gen.ts";
+import { reportOutputError } from "../telemetry/reportOutputError.ts";
 import type {
   CellOperationNotification,
   DocumentAnalysis,
@@ -947,6 +948,11 @@ export const layer = Layer.effect(
       renderer.messages.pipe(
         Stream.runForEach(({ editor, message }) =>
           Effect.gen(function* () {
+            // A renderer failure does not need a live kernel or notebook handle.
+            if (message.command === "report-output-error") {
+              yield* reportOutputError(message.params);
+              return;
+            }
             const notebook = MarimoNotebookDocument.from(editor.notebook);
             const handle = yield* forNotebook(notebook.id);
 

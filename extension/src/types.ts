@@ -3,6 +3,7 @@ import type * as lsp from "vscode-languageclient/node";
 
 import type { NotebookCellId } from "./schemas/MarimoNotebookDocument.ts";
 import type * as Gen from "./schemas/Models.gen.ts";
+import type { OutputError } from "./telemetry/reportOutputError.ts";
 
 export type { CellRuntimeState } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 
@@ -66,6 +67,7 @@ type CommandFields<K extends EncodedCommand["kind"]> = Omit<
  * extension (which has access to the VSCode API and notebook editor).
  */
 type RendererCommandMap = {
+  "report-output-error": OutputError;
   // Forward to the extension's private command protocol.
   "update-ui-element": CommandFields<"update-ui-element">;
   "set-model-value": CommandFields<"set-model-value">;

@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
 import {
+  Cause,
   Deferred,
   Effect,
   Exit,
@@ -34,6 +35,46 @@ import * as NotebookRuntimeHarness from "./notebookRuntimeHarness.ts";
 
 const notebook = notebookId("notebook-a");
 const it = EffectTest.make(Layer.empty);
+
+it.effect(
+  "reports output failures without attaching a notebook or starting a kernel",
+  Effect.fn(function* () {
+    const reported = yield* Deferred.make<Cause.Cause<unknown>>();
+    const logger = Logger.make(({ logLevel, cause }) => {
+      if (logLevel === "Error")
+        Deferred.doneUnsafe(reported, Effect.succeed(cause));
+    });
+    const { layer } = makeTestLayer();
+    yield* Effect.gen(function* () {
+      const vscode = yield* VsCodeTest.Service;
+      yield* vscode.rendererMessaging.ready;
+      yield* vscode.rendererMessaging.send(
+        VsCodeTest.makeNotebookEditor(
+          NodePath.join(process.cwd(), "unattached.py"),
+        ),
+        {
+          command: "report-output-error",
+          params: {
+            component: "marimo-table",
+            name: "TypeError",
+            message: "Cannot read properties of undefined (reading 'read')",
+            stack:
+              "TypeError: table failed\n    at ExportActions (renderer.mjs:100:10)",
+            componentStack: "at ExportActions",
+          },
+        },
+      );
+      const cause = yield* Deferred.await(reported);
+      const failure = cause.reasons.find(Cause.isFailReason);
+      Vitest.expect(failure?.error).toMatchObject({
+        name: "TypeError",
+        message: "Cannot read properties of undefined (reading 'read')",
+        stack:
+          "TypeError: table failed\n    at ExportActions (renderer.mjs:100:10)",
+      });
+    }).pipe(Effect.provide(layer.pipe(Layer.provide(Logger.layer([logger])))));
+  }),
+);
 
 const makeTestLayer = (
   options: MarimoClientTest.Options = {},

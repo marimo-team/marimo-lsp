@@ -141,6 +141,7 @@ export function classifySentryError(
     "rpc.method",
     "rpc.code",
     "lsp.mode",
+    "renderer.component",
   ]) {
     const value = data?.[key];
     if (typeof value === "string" || typeof value === "number") {
