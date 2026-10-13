@@ -54,21 +54,25 @@ export const activate: vscode.ActivationFunction = (context) => {
    * This enables features like "This variable was defined in [cell-2]" where clicking
    * "cell-2" navigates to that cell in the notebook.
    */
-  window.addEventListener(
-    "message",
-    (event: MessageEvent<MarimoHtmlPublishMessage>) => {
-      switch (event.data.command) {
-        case "navigate-to-cell":
+  window.addEventListener("message", (event: MessageEvent<unknown>) => {
+    // VS Code also sends notebook layout and renderer messages through this
+    // window. Only handle messages with our HTML command shape here; extension
+    // notifications are handled by onDidReceiveMessage below.
+    if (!isHtmlPublishMessage(event.data)) return;
+
+    switch (event.data.command) {
+      case "navigate-to-cell":
+        if (typeof event.data.params.cellId === "string") {
           context.postMessage(event.data);
-          break;
-        default:
-          unreachable(
-            event.data.command,
-            `Unhandled HTML publish message: ${JSON.stringify(event.data)}`,
-          );
-      }
-    },
-  );
+        }
+        break;
+      default:
+        unreachable(
+          event.data.command,
+          `Unhandled HTML publish message: ${JSON.stringify(event.data)}`,
+        );
+    }
+  });
 
   context.onDidReceiveMessage((msg) => {
     switch (msg.op) {
@@ -133,3 +137,17 @@ export const activate: vscode.ActivationFunction = (context) => {
     },
   };
 };
+
+function isHtmlPublishMessage(
+  value: unknown,
+): value is MarimoHtmlPublishMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "command" in value &&
+    typeof value.command === "string" &&
+    "params" in value &&
+    typeof value.params === "object" &&
+    value.params !== null
+  );
+}
