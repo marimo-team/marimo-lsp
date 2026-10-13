@@ -1,7 +1,11 @@
 const { defineConfig } = require("@vscode/test-cli");
 const NodePath = require("node:path");
 
-const userDataDir = NodePath.join(__dirname, ".vscode-test", "user-data");
+const NodeFs = require("node:fs");
+
+const userDataDir = NodeFs.mkdtempSync(
+  NodePath.join(__dirname, ".vscode-test", "user-data-"),
+);
 
 module.exports = defineConfig([
   {
