@@ -142,6 +142,12 @@
           "markdownDescription": "Path to a custom `ty` binary, e.g., `/usr/local/bin/ty`. Leave empty to discover one from the ty extension (astral-sh.ty).",
           "scope": "resource"
         },
+        "marimo.pyrefly.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to a custom `pyrefly` binary, e.g., `/usr/local/bin/pyrefly`. Used only when no `ty` binary is found. Leave empty to discover one from the Pyrefly extension (meta.pyrefly).",
+          "scope": "resource"
+        },
         "marimo.disableManagedLanguageFeatures": {
           "type": "boolean",
           "default": false,
@@ -238,7 +244,7 @@
           {
             "id": "check-prerequisites",
             "title": "Choose a Notebook Environment",
-            "description": "The default marimo language server is included with the extension. To run cells, select a Python environment with marimo installed, or choose the marimo sandbox to manage notebook dependencies with `uv`. Platform-specific extension builds include `uv`, so no separate installation is needed.\n\nWe recommend the optional [ty extension](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty) for Python completions and type diagnostics.",
+            "description": "The default marimo language server is included with the extension. To run cells, select a Python environment with marimo installed, or choose the marimo sandbox to manage notebook dependencies with `uv`. Platform-specific extension builds include `uv`, so no separate installation is needed.\n\nWe recommend the optional [ty extension](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty) for Python completions and type diagnostics. If ty isn't available, marimo uses the [Pyrefly extension](https://marketplace.visualstudio.com/items?itemName=meta.pyrefly) when it's installed.",
             "media": {
               "image": "images/getting-started.png",
               "altText": "marimo notebook interface"

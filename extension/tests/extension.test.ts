@@ -13,9 +13,9 @@ import * as VsCode from "../src/platform/VsCode.ts";
 import * as ExtensionContextTest from "./fake/ExtensionContext.ts";
 import * as MarimoClientTest from "./fake/MarimoClient.ts";
 import * as PythonExtensionTest from "./fake/PythonExtension.ts";
+import * as PythonLanguageServerTest from "./fake/PythonLanguageServer.ts";
 import * as RuffLanguageServerTest from "./fake/RuffLanguageServer.ts";
 import * as TelemetryTest from "./fake/Telemetry.ts";
-import * as TyLanguageServerTest from "./fake/TyLanguageServer.ts";
 import * as VsCodeTest from "./fake/VsCode.ts";
 import * as EffectTest from "./lib/EffectTest.ts";
 
@@ -28,7 +28,7 @@ const withTestCtx = Effect.fn(function* (
     Layer.provideMerge(Layer.succeed(VsCode.Service, code)),
     Layer.provideMerge(MarimoClientTest.layerWith()),
     Layer.provideMerge(PythonExtensionTest.layer),
-    Layer.provideMerge(TyLanguageServerTest.layer),
+    Layer.provideMerge(PythonLanguageServerTest.layer),
     Layer.provideMerge(RuffLanguageServerTest.layer),
     Layer.provideMerge(TelemetryTest.layer),
   );

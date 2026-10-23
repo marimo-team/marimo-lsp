@@ -51,7 +51,7 @@ type ResolvedBinary =
       readonly version: string;
     }
   | {
-      readonly server: "ruff" | "ty";
+      readonly server: "ruff" | "ty" | "pyrefly";
       readonly resolved: BinarySource;
       readonly version: string;
     };
@@ -330,7 +330,10 @@ function makeTelemetrySender(
         const server = data?.server;
         const version = data?.version;
         if (
-          (server === "uv" || server === "ruff" || server === "ty") &&
+          (server === "uv" ||
+            server === "ruff" ||
+            server === "ty" ||
+            server === "pyrefly") &&
           typeof version === "string"
         ) {
           adapters.sentry.setBinaryVersion(server, version);

@@ -20,7 +20,7 @@ code .
 
 F5 sets `MARIMO_REPLAY_TY_PROMPT=1` to replay the missing-ty warning without
 saving dismissals. Reload to repeat; remove the variable from
-`.vscode/launch.json` to test normal persistence. ty must be unavailable.
+`.vscode/launch.json` to test normal persistence. ty and Pyrefly must be unavailable.
 
 ### Pre-commit Hooks
 

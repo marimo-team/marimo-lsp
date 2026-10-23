@@ -15,7 +15,7 @@ export interface SentryAdapter {
     data?: Record<string, unknown>,
   ) => void;
   readonly setBinaryVersion: (
-    server: "ruff" | "ty" | "uv",
+    server: "ruff" | "ty" | "pyrefly" | "uv",
     version: string,
   ) => void;
   readonly setLspMode: (mode: "wasm" | "uv" | "configured") => void;

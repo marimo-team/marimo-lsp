@@ -98,7 +98,7 @@ function validateBinary(
 /**
  * Discriminated union representing the source of a resolved language server binary.
  *
- * - `UserConfigured` — explicit path from `marimo.ruff.path` / `marimo.ty.path`
+ * - `UserConfigured` — explicit path from a `marimo.<server>.path` setting
  * - `CompanionExtension` — discovered via a companion VS Code extension
  *   (either its configured `path` setting or its bundled binary)
  */
@@ -213,7 +213,8 @@ export function userConfiguredPath(
 /**
  * Tier 2a: Resolve from a companion extension's configured path setting.
  *
- * Some extensions store their path as a `string` (ruff), others as `string[]` (ty).
+ * Some extensions store their path as a `string` (ruff, pyrefly), others as
+ * `string[]` (ty).
  * The caller normalizes to `Option<string>`.
  */
 export function companionExtensionConfiguredPath<R>(
@@ -260,13 +261,15 @@ export function companionExtensionConfiguredPath<R>(
 /**
  * Tier 2b: Resolve from a companion extension's bundled binary.
  *
- * Looks for the binary at `<extensionPath>/bundled/libs/bin/<binary>`.
+ * Looks for the binary at `<extensionPath>/<binaryDir>/<binary>`. The Astral
+ * extensions keep it in `bundled/libs/bin`; Pyrefly keeps it in `bin`.
  */
 export function companionExtensionBundledBinary(
-  binaryName: "ruff" | "ty",
+  binaryName: "ruff" | "ty" | "pyrefly",
   minimumVersion: string,
   extensionId: string,
   extension: Option.Option<vscode.Extension<unknown>>,
+  binaryDir: ReadonlyArray<string> = ["bundled", "libs", "bin"],
 ): ResolutionSource {
   return {
     label: `companion extension bundled binary (${extensionId})`,
@@ -279,9 +282,7 @@ export function companionExtensionBundledBinary(
       }
       const bundledPath = NodePath.join(
         extension.value.extensionPath,
-        "bundled",
-        "libs",
-        "bin",
+        ...binaryDir,
         Uv.resolvePlatformBinaryName(binaryName),
       );
       const validated = yield* validateBinary(bundledPath, minimumVersion);

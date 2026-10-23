@@ -95,6 +95,9 @@ export interface Interface {
   readonly ty: {
     readonly path: Effect.Effect<Option.Option<string>>;
   };
+  readonly pyrefly: {
+    readonly path: Effect.Effect<Option.Option<string>>;
+  };
   readonly lsp: {
     readonly server: Effect.Effect<
       MarimoLspServer,
@@ -137,6 +140,9 @@ export const layer = Layer.effect(
           path: Effect.succeed(Option.none<string>()),
         },
         ty: {
+          path: Effect.succeed(Option.none<string>()),
+        },
+        pyrefly: {
           path: Effect.succeed(Option.none<string>()),
         },
         lsp: {
@@ -192,6 +198,17 @@ export const layer = Layer.effect(
         get path() {
           return Effect.map(
             code.value.workspace.getConfiguration("marimo.ty"),
+            (config) =>
+              Option.fromNullishOr(config.get<string>("path")).pipe(
+                Option.filter((p) => p.length > 0),
+              ),
+          );
+        },
+      },
+      pyrefly: {
+        get path() {
+          return Effect.map(
+            code.value.workspace.getConfiguration("marimo.pyrefly"),
             (config) =>
               Option.fromNullishOr(config.get<string>("path")).pipe(
                 Option.filter((p) => p.length > 0),

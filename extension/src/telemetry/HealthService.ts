@@ -9,8 +9,8 @@ import * as NotebookRuntime from "../kernel/NotebookRuntime.ts";
 import { BinarySource } from "../lib/binaryResolution.ts";
 import { getExtensionVersion } from "../lib/getExtensionVersion.ts";
 import * as MarimoClient from "../lsp/MarimoClient.ts";
+import * as PythonLanguageServer from "../lsp/PythonLanguageServer.ts";
 import * as RuffLanguageServer from "../lsp/RuffLanguageServer.ts";
-import * as TyLanguageServer from "../lsp/TyLanguageServer.ts";
 import * as VsCode from "../platform/VsCode.ts";
 import * as PythonExtension from "../python/PythonExtension.ts";
 import * as Uv from "../python/Uv.ts";
@@ -35,7 +35,7 @@ export const layer = Layer.effect(
     const marimo = yield* MarimoClient.Service;
     const notebooks = yield* NotebookRuntime.Service;
     const pyExt = yield* PythonExtension.Service;
-    const tyLsp = yield* TyLanguageServer.Service;
+    const pythonLsp = yield* PythonLanguageServer.Service;
     const ruffLsp = yield* RuffLanguageServer.Service;
 
     const formatDiagnostics = Effect.fnUntraced(function* () {
@@ -96,14 +96,14 @@ export const layer = Layer.effect(
 
       lines.push("");
 
-      // Python Language Server (ty) - only show if managed language features enabled
+      // Python Language Server (ty or Pyrefly) - only show if managed language features enabled
       const managedLanguageFeaturesEnabled =
         yield* config.getManagedLanguageFeaturesEnabled;
 
       if (managedLanguageFeaturesEnabled) {
-        lines.push("Python Language Server (ty):");
+        lines.push("Python Language Server:");
 
-        TyLanguageServer.Status.$match(yield* tyLsp.getHealthStatus, {
+        PythonLanguageServer.Status.$match(yield* pythonLsp.getHealthStatus, {
           Disabled: ({ reason }) => {
             lines.push("\tStatus: disabled");
             lines.push(`\tReason: ${reason}`);
@@ -111,8 +111,14 @@ export const layer = Layer.effect(
           Starting: () => {
             lines.push("\tStatus: starting...");
           },
-          Running: ({ serverVersion, binarySource, pythonEnvironment }) => {
+          Running: ({
+            server,
+            serverVersion,
+            binarySource,
+            pythonEnvironment,
+          }) => {
             lines.push("\tStatus: running ✓");
+            lines.push(`\tServer: ${server}`);
             lines.push(`\tVersion: ${serverVersion}`);
             lines.push(`\tBinary: ${formatBinarySource(binarySource)}`);
             if (Option.isSome(pythonEnvironment)) {
