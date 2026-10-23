@@ -144,7 +144,9 @@ export function resolveBinary<R>(
         Effect.annotateLogs({ server: serverName, source: source.label }),
       );
 
-      const result = yield* source.resolve;
+      const result = yield* source.resolve.pipe(
+        Effect.annotateLogs({ server: serverName, source: source.label }),
+      );
 
       if (Option.isSome(result)) {
         yield* Effect.logDebug("Resolved binary").pipe(
