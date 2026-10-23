@@ -1316,6 +1316,7 @@ function processOperation(
 ) {
   return Effect.gen(function* () {
     const { notebookUri, notification: operation, sessionId } = message;
+    const operationName = operation.op;
     const variables = yield* NotebookVariables.Service;
     const datasources = yield* NotebookDatasources.Service;
 
@@ -1388,6 +1389,9 @@ function processOperation(
       case "data-source-discovery-result":
       case "environment-operation":
       case "environment-state":
+      // Execution lifecycle events are additive; cell-op still drives the
+      // VS Code execution and output lifecycle, including for older kernels.
+      case "execution":
       case "focus-cell":
       case "kernel-ready":
       case "kernel-startup-error":
@@ -1407,8 +1411,11 @@ function processOperation(
       case "validate-sql-result":
         break;
       default:
-        yield* Effect.logWarning("Unknown operation");
-        unreachable(operation, "Unknown operation");
+        // The wire decoder accepts new notification tags from newer kernels.
+        // Ignore these extensions to the protocol without surfacing a defect.
+        yield* Effect.logWarning("Ignored unknown kernel operation").pipe(
+          Effect.annotateLogs({ operation: operationName }),
+        );
     }
   });
 }
