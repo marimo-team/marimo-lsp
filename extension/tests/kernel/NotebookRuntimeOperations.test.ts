@@ -10,6 +10,7 @@ import {
   Latch,
   Option,
   Ref,
+  Schema,
   Stream,
 } from "effect";
 
@@ -22,6 +23,7 @@ import {
   MarimoNotebookDocument,
   type NotebookId,
 } from "../../src/schemas/MarimoNotebookDocument.ts";
+import * as Api from "../../src/schemas/Models.gen.ts";
 import type {
   CellOperationNotification,
   KernelNotification,
@@ -64,6 +66,51 @@ function makeIdleCellOperation(
 }
 
 Vitest.describe("NotebookRuntime operation processing", () => {
+  it.effect(
+    "ignores additive execution events and unknown events without reporting errors",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      const variables = yield* NotebookVariables.Service;
+      yield* NotebookRuntimeHarness.activate(ctx.editor);
+
+      for (const phase of ["planned", "running", "completed"] as const) {
+        yield* marimo.publishNotification({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          notification: {
+            op: "execution",
+            cell_id: cellId("cell-1"),
+            execution_id: "execution-1",
+            run_id: "run-1",
+            phase,
+          },
+        });
+      }
+      // Exercise the same permissive decoder as the language-client boundary.
+      yield* marimo.publishNotification(
+        yield* Schema.decodeUnknownEffect(Api.KernelNotification)({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          notification: { op: "future-notification", payload: 42 },
+        }),
+      );
+      yield* marimo.publishNotification({
+        notebookUri: ctx.notebookUri,
+        sessionId: ACTIVE_SESSION_ID,
+        notification: { op: "variables", variables: [] },
+      });
+      // This update is behind the new events in the notebook's operation queue.
+      yield* variables.streamVariablesChanges.pipe(
+        Stream.filter(HashMap.has(ctx.notebookUri)),
+        Stream.runHead,
+      );
+      Vitest.expect(ctx.errorLogs).toEqual([]);
+      Vitest.expect((yield* vscode.snapshot).errorMessages).toEqual([]);
+    }),
+  );
+
   Vitest.it.effect(
     "processes every queued notebook operation in order",
     Effect.fn(function* () {
@@ -669,9 +716,9 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
     }),
   );
 
-  it.effect(
-    "streams scratch + cascade console ops until the matching completed-run",
-    Effect.fn(function* () {
+  it.effect.each([false, true])(
+    "streams scratch + cascade console ops until the matching completed-run (execution metadata=%s)",
+    Effect.fn(function* (withExecutionMetadata) {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
 
@@ -701,16 +748,18 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
 
         Vitest.assert(executeCmd !== undefined);
         const { runId } = executeCmd;
-        Vitest.expect(runId).toBeDefined();
+        Vitest.assert(typeof runId === "string");
 
         const cell = ctx.notebook.cellAt(0);
         const realCellId = Option.getOrThrow(cell.id);
 
-        // The scratch cell's op carries the run's output. marimo leaves its
-        // run_id null (only the completed-run echoes ours), so we key on the
-        // SCRATCH_CELL_ID, not the run_id.
+        // Older kernels omit these IDs; 0.25.2 tags scratch and cascade output.
+        const executionMetadata = withExecutionMetadata
+          ? { run_id: runId, execution_id: "execution-1" }
+          : {};
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
+            ...executionMetadata,
             status: "running",
             console: [
               {
@@ -726,6 +775,7 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         // Console from a cascade cell (one code mode ran) also streams.
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            ...executionMetadata,
             status: "running",
             console: [
               {
@@ -741,9 +791,36 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
         // A status-only cascade op (no console) is not streamed.
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, realCellId, {
+            ...executionMetadata,
             status: "idle",
           }),
         );
+
+        if (withExecutionMetadata) {
+          // A cell attempt ending must not end the whole scratchpad stream.
+          yield* marimo.publishNotification({
+            notebookUri: ctx.notebookUri,
+            sessionId: ACTIVE_SESSION_ID,
+            notification: {
+              op: "execution",
+              cell_id: cellId(SCRATCH_CELL_ID),
+              execution_id: "execution-1",
+              run_id: runId,
+              phase: "completed",
+            },
+          });
+          yield* marimo.publishNotification(
+            makeIdleCellOperation(ctx.notebookUri, SCRATCH_CELL_ID, {
+              ...executionMetadata,
+              console: {
+                channel: "stdout",
+                data: "trailing output",
+                mimetype: "text/plain",
+                timestamp: 1,
+              },
+            }),
+          );
+        }
 
         // Our completed-run ends the stream (inclusive; filtered back out).
         yield* marimo.publishNotification({
@@ -752,14 +829,23 @@ Vitest.describe("NotebookRuntime scratch stream", () => {
           notification: {
             op: "completed-run",
             run_id: runId,
+            ...(withExecutionMetadata
+              ? { outcome: "succeeded" as const, error: null }
+              : {}),
           },
         });
 
         const ops = yield* Fiber.join(streamFiber);
         const cellIds = ops.map((op) => op.cell_id);
-        Vitest.expect(ops).toHaveLength(2);
+        Vitest.expect(ops).toHaveLength(withExecutionMetadata ? 3 : 2);
+        if (withExecutionMetadata) {
+          Vitest.expect(ops.at(-1)?.console).toMatchObject({
+            data: "trailing output",
+          });
+        }
         Vitest.expect(cellIds).toContain(SCRATCH_CELL_ID);
         Vitest.expect(cellIds).toContain(realCellId);
+        Vitest.expect(ctx.errorLogs).toEqual([]);
       });
     }),
   );

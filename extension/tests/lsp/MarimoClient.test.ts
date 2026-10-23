@@ -495,6 +495,52 @@ Vitest.describe("notification streams", () => {
   );
 
   it.effect(
+    "preserves additive kernel notification fields and event types",
+    Effect.fn(function* () {
+      const notifications = yield* makeNotifications;
+      const payloads = [
+        { op: "completed-run", run_id: null },
+        {
+          op: "completed-run",
+          run_id: "run-1",
+          outcome: "succeeded",
+          error: null,
+          future_field: { value: 1 },
+        },
+        {
+          op: "cell-op",
+          cell_id: "cell-1",
+          status: "idle",
+          run_id: "run-1",
+          execution_id: "execution-1",
+          future_field: true,
+        },
+        {
+          op: "execution",
+          cell_id: "cell-1",
+          run_id: "run-1",
+          execution_id: "execution-1",
+          phase: "completed",
+        },
+        { op: "future-notification", payload: { value: 42 } },
+      ];
+      for (const notification of payloads) {
+        const received = yield* notifications.takeKernel.pipe(Effect.forkChild);
+        yield* notifications.awaitKernelSubscriptions(1);
+        const message = {
+          notebookUri: notebook,
+          sessionId: kernelSessionId("session-1"),
+          notification,
+        };
+        yield* notifications.publishKernel(message);
+        Vitest.expect(yield* Fiber.join(received)).toEqual(
+          Option.some(message),
+        );
+      }
+    }),
+  );
+
+  it.effect(
     "requires a kernel session ID even for kernel variable snapshots",
     Effect.fn(function* () {
       const notifications = yield* makeNotifications;

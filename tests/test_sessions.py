@@ -344,7 +344,12 @@ def test_detached_operation_sink_drops_messages_until_reattached() -> None:
         {
             "notebookUri": "file:///test.py",
             "sessionId": SESSION_ID,
-            "notification": {"op": "completed-run", "run_id": None},
+            "notification": {
+                "op": "completed-run",
+                "run_id": None,
+                "outcome": "succeeded",
+                "error": None,
+            },
         },
     )
 
@@ -364,7 +369,12 @@ def test_operation_sink_buffers_until_session_is_activated() -> None:
         {
             "notebookUri": "file:///test.py",
             "sessionId": SESSION_ID,
-            "notification": {"op": "completed-run", "run_id": None},
+            "notification": {
+                "op": "completed-run",
+                "run_id": None,
+                "outcome": "succeeded",
+                "error": None,
+            },
         },
     )
 
