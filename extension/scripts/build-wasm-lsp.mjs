@@ -35,7 +35,10 @@ const runtimeFiles = [
 //     └── marimo._session.managers.ipc
 //         └── marimo._cli.sandbox
 //             └── import click
-const pyodidePackages = ["click", "micropip", "msgspec", "narwhals", "pyyaml"];
+//
+// Let micropip resolve msgspec from marimo-base's requirements. Its PyPI
+// releases provide WASM wheels; Pyodide's bundled 0.20.0 is too old for 0.25.2.
+const pyodidePackages = ["click", "micropip", "narwhals", "pyyaml"];
 
 /** @type {string | undefined} */
 let buildDir;
@@ -130,6 +133,11 @@ shutil.make_archive("/marimo-lsp-site-packages", "zip", site_packages)
     )}\n`,
   );
   console.log(`Built offline WASM language server in ${outputDir}`);
+} catch (error) {
+  // Pyodide's uncaught errors include its entire minified runtime source,
+  // which can bury the Python exception in CI's truncated output.
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
 } finally {
   if (buildDir !== undefined) {
     NodeFs.rmSync(buildDir, { recursive: true, force: true });
