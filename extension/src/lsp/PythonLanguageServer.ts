@@ -1,3 +1,4 @@
+import type * as py from "@vscode/python-extension";
 import {
   Cause,
   Context,
@@ -8,8 +9,11 @@ import {
   Option,
   Ref,
   Schema,
+  Scope,
   Stream,
 } from "effect";
+import type * as vscode from "vscode";
+import type * as lsp from "vscode-languageserver-protocol";
 
 import * as Config from "../config/Config.ts";
 import {
@@ -30,12 +34,16 @@ import * as PythonExtension from "../python/PythonExtension.ts";
 import * as Telemetry from "../telemetry/Telemetry.ts";
 import { connectMarimoNotebookLspClient } from "./connect.ts";
 
-const TY_SERVER = { name: "ty", version: "0.0.63" } as const;
+const TY_MINIMUM_VERSION = "0.0.63";
 const TY_EXTENSION_ID = "astral-sh.ty";
+const PYREFLY_MINIMUM_VERSION = "1.0.0";
+const PYREFLY_EXTENSION_ID = "meta.pyrefly";
 const INSTALL_TY_EXTENSION = "Install ty Extension";
 const SHOW_TY_EXTENSION = "Show ty Extension";
 const DONT_SHOW_AGAIN = "Don't Show Again";
 const RELOAD_WINDOW = "Reload Window";
+
+export type ServerName = "ty" | "pyrefly";
 
 /**
  * Remembers that the user dismissed the "install ty" prompt, so we never ask
@@ -47,19 +55,21 @@ const tyPromptDismissedKey = Storage.createStorageKey(
 );
 
 /**
- * No ty binary is available. We never install one ourselves — the user
- * supplies it via the official ty extension or `marimo.ty.path`.
+ * Neither a ty nor a Pyrefly binary is available. We never install one
+ * ourselves — the user supplies it via the official extensions or the
+ * `marimo.ty.path` / `marimo.pyrefly.path` settings.
  */
 export class BinaryNotFoundError extends Data.TaggedError(
-  "TyLanguageServer.BinaryNotFoundError",
+  "PythonLanguageServer.BinaryNotFoundError",
 )<{
-  readonly serverVersion: string;
+  readonly tyVersion: string;
+  readonly pyreflyVersion: string;
 }> {
   format(): string {
     return [
-      `No ty ${this.serverVersion} or newer binary was found.`,
+      `No compatible binary was found for ty (${this.tyVersion} or newer) or Pyrefly (${this.pyreflyVersion} or newer).`,
       "Python completions and type diagnostics are unavailable. You can still edit and run notebooks.",
-      "To enable these features, install or update the official ty extension (astral-sh.ty) or set marimo.ty.path, then reload VS Code.",
+      "To enable these features, install or update the official ty extension (astral-sh.ty) or Pyrefly extension (meta.pyrefly), or set marimo.ty.path or marimo.pyrefly.path, then reload VS Code.",
     ].join("\n");
   }
 }
@@ -71,6 +81,7 @@ export type Status = Data.TaggedEnum<{
   Disabled: { readonly reason: string };
   NotFound: { readonly message: string };
   Running: {
+    readonly server: ServerName;
     readonly serverVersion: string;
     readonly binarySource: BinarySource;
     readonly pythonEnvironment: Option.Option<{
@@ -85,7 +96,30 @@ export type Status = Data.TaggedEnum<{
 }>;
 
 /**
- * Manages a dedicated ty language server instance for marimo notebooks.
+ * What differs between the Python language servers marimo can manage.
+ */
+interface ServerSpec {
+  readonly name: ServerName;
+  readonly args: string[];
+  readonly resolveBinary: Effect.Effect<
+    Option.Option<BinarySource>,
+    never,
+    VsCode.Service | Config.Service
+  >;
+  /** The `workspace/configuration` section the server asks for. */
+  readonly configurationSection: string;
+  /** Builds the response for that section from the active environment. */
+  readonly configuration: (
+    env: py.ResolvedEnvironment | null,
+    scopeUri: vscode.Uri | undefined,
+  ) => Effect.Effect<unknown, never, VsCode.Service>;
+}
+
+/**
+ * Manages a dedicated Python language server instance for marimo notebooks.
+ *
+ * ty is preferred. When no ty binary is found, Pyrefly is used if its binary
+ * is found. When neither is found, the user is asked to install ty.
  *
  * The server is restarted when the Python environment changes, matching
  * the official ty-vscode extension behavior (ty doesn't support
@@ -96,7 +130,7 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()(
-  "@marimo/TyLanguageServer",
+  "@marimo/PythonLanguageServer",
 ) {}
 
 export const layer = Layer.effect(
@@ -106,11 +140,26 @@ export const layer = Layer.effect(
     const envInvalidation = yield* PythonEnvInvalidation.Service;
     const telemetry = yield* Effect.serviceOption(Telemetry.Service);
     const code = yield* VsCode.Service;
-    const notifyMissingTy = yield* makeMissingNotifier();
+    const notifyMissingServer = yield* makeMissingNotifier();
 
     const statusRef = yield* Ref.make<Status>(Status.Starting());
+    const currentServer = yield* Ref.make(Option.none<ServerName>());
 
-    const disabledReasonOption = yield* getTyDisabledReason();
+    // Created on first use so that only the selected server gets a channel,
+    // and kept for the whole layer so that restarts reuse it.
+    const layerScope = yield* Scope.Scope;
+    const makeOutputChannel = (name: ServerName) =>
+      Effect.cached(
+        code.window
+          .createOutputChannel(`marimo (${name})`)
+          .pipe(Scope.provide(layerScope)),
+      );
+    const outputChannels = {
+      ty: yield* makeOutputChannel("ty"),
+      pyrefly: yield* makeOutputChannel("pyrefly"),
+    };
+
+    const disabledReasonOption = yield* getDisabledReason();
     if (Option.isSome(disabledReasonOption)) {
       if (Option.isSome(telemetry)) yield* telemetry.value.tySetup("disabled");
       yield* Ref.set(
@@ -121,98 +170,65 @@ export const layer = Layer.effect(
       );
     }
 
+    const onConfigurationRequest =
+      (spec: ServerSpec) => (params: lsp.ConfigurationParams) =>
+        Effect.forEach(params.items, (item) =>
+          Effect.gen(function* () {
+            if (item.section !== spec.configurationSection) return null;
+
+            const scopeUri = item.scopeUri
+              ? code.Uri.parse(item.scopeUri, true)
+              : undefined;
+            const path = yield* pyExt.getActiveEnvironmentPath(scopeUri);
+            const env = Option.getOrNull(yield* pyExt.resolveEnvironment(path));
+            return yield* spec.configuration(env, scopeUri);
+          }),
+        ).pipe(Effect.provideService(VsCode.Service, code));
+
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         if (Option.isSome(disabledReasonOption)) return;
-
-        const outputChannel = yield* code.window.createOutputChannel(
-          `marimo (${TY_SERVER.name})`,
-        );
 
         // One server cycle: start → run → wait for env change → return.
         // The Effect.scoped wrapper ensures the server process and all
         // resources are cleaned up before the next cycle begins.
         const serverCycle = Effect.gen(function* () {
           yield* Ref.set(statusRef, Status.Starting());
+
+          const { spec, resolved } = yield* Option.match(
+            yield* selectServer(),
+            {
+              onNone: () =>
+                new BinaryNotFoundError({
+                  tyVersion: TY_MINIMUM_VERSION,
+                  pyreflyVersion: PYREFLY_MINIMUM_VERSION,
+                }),
+              onSome: Effect.succeed,
+            },
+          );
+          yield* Ref.set(currentServer, Option.some(spec.name));
           yield* Effect.logDebug("Starting language server").pipe(
-            Effect.annotateLogs({
-              server: TY_SERVER.name,
-              version: TY_SERVER.version,
-            }),
+            Effect.annotateLogs({ server: spec.name, path: resolved.path }),
           );
 
-          const resolved = yield* Option.match(yield* resolveTyBinary(), {
-            onNone: () =>
-              new BinaryNotFoundError({ serverVersion: TY_SERVER.version }),
-            onSome: Effect.succeed,
-          });
-
           const client = yield* connectMarimoNotebookLspClient({
-            name: TY_SERVER.name,
+            name: spec.name,
             command: resolved.path,
-            args: ["server"],
-            outputChannel,
+            args: spec.args,
+            outputChannel: yield* outputChannels[spec.name],
             initializationOptions: {},
-            onConfigurationRequest: (params) =>
-              Effect.forEach(params.items, (item) =>
-                Effect.gen(function* () {
-                  if (item.section !== "ty") return null;
-
-                  const scopeUri = item.scopeUri
-                    ? code.Uri.parse(item.scopeUri, true)
-                    : undefined;
-                  const path = yield* pyExt.getActiveEnvironmentPath(scopeUri);
-                  const env = Option.getOrNull(
-                    yield* pyExt.resolveEnvironment(path),
-                  );
-
-                  return {
-                    pythonExtension: {
-                      activeEnvironment:
-                        env == null
-                          ? null
-                          : {
-                              version:
-                                env.version == null
-                                  ? null
-                                  : {
-                                      major: env.version.major,
-                                      minor: env.version.minor,
-                                      patch: env.version.micro,
-                                      sysVersion: env.version.sysVersion,
-                                    },
-                              environment:
-                                env.environment == null
-                                  ? null
-                                  : {
-                                      folderUri:
-                                        env.environment.folderUri.toString(),
-                                      name: env.environment.name,
-                                      type: env.environment.type,
-                                    },
-                              executable: {
-                                uri: env.executable.uri?.toString(),
-                                sysPrefix: env.executable.sysPrefix,
-                              },
-                            },
-                    },
-                  };
-                }),
-              ),
+            onConfigurationRequest: onConfigurationRequest(spec),
           });
 
           const serverVersion = client.serverInfo.version;
 
           yield* Effect.logInfo("Language server started").pipe(
-            Effect.annotateLogs({
-              server: TY_SERVER.name,
-              version: serverVersion,
-            }),
+            Effect.annotateLogs({ server: spec.name, version: serverVersion }),
           );
 
           if (Option.isSome(telemetry)) {
             yield* telemetry.value.binaryResolved({
-              server: "ty",
+              server: spec.name,
               resolved,
               version: serverVersion,
             });
@@ -228,6 +244,7 @@ export const layer = Layer.effect(
           yield* Ref.set(
             statusRef,
             Status.Running({
+              server: spec.name,
               serverVersion,
               binarySource: resolved,
               pythonEnvironment,
@@ -239,7 +256,7 @@ export const layer = Layer.effect(
           yield* envInvalidation.changes.pipe(Stream.take(1), Stream.runDrain);
 
           yield* Effect.logInfo("Restarting language server").pipe(
-            Effect.annotateLogs({ server: TY_SERVER.name }),
+            Effect.annotateLogs({ server: spec.name }),
           );
         }).pipe(Effect.scoped);
 
@@ -249,35 +266,30 @@ export const layer = Layer.effect(
         yield* Effect.forever(serverCycle).pipe(
           // A missing binary is a user-resolvable configuration state, not
           // a crash: record it, nudge once, and stop the restart loop.
-          Effect.catchTag("TyLanguageServer.BinaryNotFoundError", (error) =>
+          Effect.catchTag("PythonLanguageServer.BinaryNotFoundError", (error) =>
             Effect.gen(function* () {
               const message = error.format();
               yield* Ref.set(statusRef, Status.NotFound({ message }));
-              yield* Effect.logInfo(message).pipe(
-                Effect.annotateLogs({
-                  server: TY_SERVER.name,
-                  version: TY_SERVER.version,
-                }),
-              );
+              yield* Effect.logInfo(message);
               if (Option.isSome(telemetry)) {
                 yield* telemetry.value.binaryUnresolved("ty");
               }
-              yield* notifyMissingTy;
+              yield* notifyMissingServer;
             }),
           ),
           Effect.catchCause((cause) =>
             Effect.gen(function* () {
               if (isExpectedCancellation(cause)) return;
-              if (Option.isSome(telemetry))
+              const server = Option.getOrElse(
+                yield* Ref.get(currentServer),
+                () => "Python",
+              );
+              if (Option.isSome(telemetry) && server === "ty")
                 yield* telemetry.value.tySetup("startup_failed");
-              const message = "Failed to start ty language server";
+              const message = `Failed to start ${server} language server`;
               yield* Ref.set(statusRef, Status.Failed({ message, cause }));
               yield* Effect.logError(message).pipe(
-                Effect.annotateLogs({
-                  server: TY_SERVER.name,
-                  version: TY_SERVER.version,
-                  cause,
-                }),
+                Effect.annotateLogs({ server, cause }),
               );
               yield* showErrorAndPromptLogs(message);
             }),
@@ -303,15 +315,64 @@ export const defaultLayer = layer.pipe(
 );
 
 /**
+ * ty asks for the `ty` section and reads the active environment in the shape
+ * the ty extension sends.
+ */
+const tyConfiguration = (env: py.ResolvedEnvironment | null) => ({
+  pythonExtension: {
+    activeEnvironment:
+      env == null
+        ? null
+        : {
+            version:
+              env.version == null
+                ? null
+                : {
+                    major: env.version.major,
+                    minor: env.version.minor,
+                    patch: env.version.micro,
+                    sysVersion: env.version.sysVersion,
+                  },
+            environment:
+              env.environment == null
+                ? null
+                : {
+                    folderUri: env.environment.folderUri.toString(),
+                    name: env.environment.name,
+                    type: env.environment.type,
+                  },
+            executable: {
+              uri: env.executable.uri?.toString(),
+              sysPrefix: env.executable.sysPrefix,
+            },
+          },
+  },
+});
+
+/**
+ * Pyrefly asks for the `python` section. Like the Pyrefly extension, we send
+ * the user's `python.pyrefly` and `python.analysis` settings and add the
+ * interpreter as `pythonPath`.
+ */
+const pyreflyConfiguration = Effect.fn(function* (
+  env: py.ResolvedEnvironment | null,
+  scopeUri: vscode.Uri | undefined,
+) {
+  const code = yield* VsCode.Service;
+  const python = yield* code.workspace.getConfiguration("python", scopeUri);
+  return {
+    pyrefly: python.get<unknown>("pyrefly"),
+    analysis: python.get<unknown>("analysis"),
+    pythonPath: env?.executable.uri?.fsPath,
+  };
+});
+
+/**
  * Resolves the ty binary using a 2-tier strategy:
  * 1. User-configured path (`marimo.ty.path`)
  * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
- *
- * Returns `Option.none()` when no tier matches. Nothing here touches the
- * network, so a blocked package index or an offline machine can't stall
- * startup.
  */
-const resolveTyBinary = Effect.fn(function* () {
+const resolveTyBinary = Effect.gen(function* () {
   const code = yield* VsCode.Service;
   const config = yield* Config.Service;
 
@@ -325,34 +386,105 @@ const resolveTyBinary = Effect.fn(function* () {
     );
   });
 
-  const resolved = yield* resolveBinary(TY_SERVER.name, [
-    userConfiguredPath("ty", TY_SERVER.version, config.ty.path),
+  return yield* resolveBinary("ty", [
+    userConfiguredPath("ty", TY_MINIMUM_VERSION, config.ty.path),
     companionExtensionConfiguredPath(
       "ty",
-      TY_SERVER.version,
+      TY_MINIMUM_VERSION,
       TY_EXTENSION_ID,
       tyExtConfiguredPath,
     ),
     companionExtensionBundledBinary(
       "ty",
-      TY_SERVER.version,
+      TY_MINIMUM_VERSION,
       TY_EXTENSION_ID,
       tyExtension,
     ),
   ]);
-
-  return resolved;
 });
 
 /**
- * Builds the one-shot prompt shown when no ty binary is available.
+ * Resolves the Pyrefly binary using a 2-tier strategy:
+ * 1. User-configured path (`marimo.pyrefly.path`)
+ * 2. Companion extension discovery — first `pyrefly.lspPath` setting, then
+ *    the binary bundled in the extension's `bin` folder
+ */
+const resolvePyreflyBinary = Effect.gen(function* () {
+  const code = yield* VsCode.Service;
+  const config = yield* Config.Service;
+
+  const pyreflyExtension = code.extensions.getExtension(PYREFLY_EXTENSION_ID);
+
+  const pyreflyExtConfiguredPath = Effect.gen(function* () {
+    const pyreflyExtConfig = yield* code.workspace.getConfiguration("pyrefly");
+    return Option.fromNullishOr(pyreflyExtConfig.get<string>("lspPath")).pipe(
+      Option.filter((p) => p.length > 0),
+    );
+  });
+
+  return yield* resolveBinary("pyrefly", [
+    userConfiguredPath("pyrefly", PYREFLY_MINIMUM_VERSION, config.pyrefly.path),
+    companionExtensionConfiguredPath(
+      "pyrefly",
+      PYREFLY_MINIMUM_VERSION,
+      PYREFLY_EXTENSION_ID,
+      pyreflyExtConfiguredPath,
+    ),
+    companionExtensionBundledBinary(
+      "pyrefly",
+      PYREFLY_MINIMUM_VERSION,
+      PYREFLY_EXTENSION_ID,
+      pyreflyExtension,
+      ["bin"],
+    ),
+  ]);
+});
+
+/** Supported servers, in order of preference. */
+const SERVERS: ReadonlyArray<ServerSpec> = [
+  {
+    name: "ty",
+    args: ["server"],
+    resolveBinary: resolveTyBinary,
+    configurationSection: "ty",
+    configuration: (env) => Effect.succeed(tyConfiguration(env)),
+  },
+  {
+    name: "pyrefly",
+    args: ["lsp"],
+    resolveBinary: resolvePyreflyBinary,
+    configurationSection: "python",
+    configuration: pyreflyConfiguration,
+  },
+];
+
+/**
+ * Picks the first server in {@link SERVERS} whose binary resolves.
+ *
+ * Returns `Option.none()` when no binary is found. Nothing here touches the
+ * network, so a blocked package index or an offline machine can't stall
+ * startup.
+ */
+const selectServer = Effect.fn(function* () {
+  for (const spec of SERVERS) {
+    const resolved = yield* spec.resolveBinary;
+    if (Option.isSome(resolved)) {
+      return Option.some({ spec, resolved: resolved.value });
+    }
+  }
+  return Option.none<{ spec: ServerSpec; resolved: BinarySource }>();
+});
+
+/**
+ * Builds the one-shot prompt shown when no ty or Pyrefly binary is available.
+ *
  *
  * Fires at most once per session (`Effect.cached`) and never again on this
  * machine once the user chooses Don't Show Again. Installing is not dismissal.
  * The local F5 configuration bypasses persistence so reloads can replay it.
  */
 export const makeMissingNotifier = Effect.fn(
-  "TyLanguageServer.makeMissingNotifier",
+  "PythonLanguageServer.makeMissingNotifier",
 )(function* () {
   const code = yield* VsCode.Service;
   const storage = yield* Storage.Service;
@@ -455,9 +587,9 @@ export const makeMissingNotifier = Effect.fn(
 });
 
 /**
- * Checks if the managed ty language server should be enabled.
+ * Checks if the managed Python language server should be enabled.
  */
-const getTyDisabledReason = Effect.fn(function* () {
+const getDisabledReason = Effect.fn(function* () {
   const config = yield* Config.Service;
 
   const managedFeaturesEnabled =
@@ -465,7 +597,7 @@ const getTyDisabledReason = Effect.fn(function* () {
 
   if (!managedFeaturesEnabled) {
     yield* Effect.logInfo(
-      "Managed language features are disabled. Not starting managed ty language server.",
+      "Managed language features are disabled. Not starting managed Python language server.",
     );
     return Option.some(
       "Managed language features are disabled in marimo settings.",

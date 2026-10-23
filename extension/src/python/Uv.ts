@@ -631,6 +631,8 @@ const handleUvNotInstalled = Effect.fn("handleUvNotInstalled")(function* (
   return yield* Effect.die(error);
 });
 
-export function resolvePlatformBinaryName(name: "uv" | "ruff" | "ty") {
+export function resolvePlatformBinaryName(
+  name: "uv" | "ruff" | "ty" | "pyrefly",
+) {
   return NodeProcess.platform === "win32" ? `${name}.exe` : name;
 }

@@ -83,6 +83,8 @@ export interface Options {
   readonly version?: string;
   readonly fileSystem?: Map<string, Uint8Array | Error>;
   readonly installedExtensions?: ReadonlyArray<string>;
+  /** Install folders by extension ID, for installed extensions that need one. */
+  readonly extensionPaths?: Readonly<Record<string, string>>;
   /** VS Code commands that are recorded and then fail with a defect. */
   readonly rejectedCommands?: ReadonlyArray<string>;
   readonly initialColorTheme?: "light" | "dark";
@@ -1157,7 +1159,10 @@ const makeModel = Effect.fn(function* (options: Options, behavior: Behavior) {
           ? // Only identity matters to callers here; the rest of the
             // Extension surface is not exercised by tests.
             // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-            Option.some({ id: extensionId } as vscode.Extension<T>)
+            Option.some({
+              id: extensionId,
+              extensionPath: options.extensionPaths?.[extensionId] ?? "",
+            } as vscode.Extension<T>)
           : Option.none<vscode.Extension<T>>(),
     },
     lm: {

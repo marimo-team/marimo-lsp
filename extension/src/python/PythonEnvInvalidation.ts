@@ -14,7 +14,7 @@ import * as PythonExtension from "./PythonExtension.ts";
  * Broadcast channel for Python environment invalidation events.
  *
  * Publishers (env changes, package installs) call `invalidate(reason)`.
- * Consumers (ty language server) subscribe via `changes` and restart.
+ * Consumers (Python language server) subscribe via `changes` and restart.
  */
 export interface Interface {
   readonly invalidate: (reason: string) => Effect.Effect<boolean>;
