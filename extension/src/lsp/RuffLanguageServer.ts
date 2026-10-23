@@ -11,13 +11,7 @@ import {
 import type * as vscode from "vscode";
 
 import * as Config from "../config/Config.ts";
-import {
-  BinarySource,
-  companionExtensionBundledBinary,
-  companionExtensionConfiguredPath,
-  resolveBinary,
-  userConfiguredPath,
-} from "../lib/binaryResolution.ts";
+import { BinarySource, resolveServerBinary } from "../lib/binaryResolution.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
 import * as NotebookVariables from "../panel/variables/NotebookVariables.ts";
 import * as OutputChannel from "../platform/OutputChannel.ts";
@@ -194,43 +188,16 @@ export const defaultLayer = layer.pipe(
   ]),
 );
 
-/**
- * Resolves the ruff binary using a 2-tier strategy:
- * 1. User-configured path (`marimo.ruff.path`)
- * 2. Companion extension discovery — first `ruff.path` setting, then bundled binary
- *
- * Returns `Option.none()` when no tier matches. Nothing here touches the
- * network, so a blocked package index or an offline machine can't stall
- * startup.
- */
-const resolveRuffBinary = Effect.fn(function* () {
-  const code = yield* VsCode.Service;
+const resolveRuffBinary = Effect.fnUntraced(function* () {
   const config = yield* Config.Service;
-
-  const ruffExtension = code.extensions.getExtension(RUFF_EXTENSION_ID);
-
-  const ruffExtConfiguredPath = Effect.gen(function* () {
-    const ruffExtConfig = yield* code.workspace.getConfiguration("ruff");
-    return Option.fromNullishOr(ruffExtConfig.get<string>("path")).pipe(
-      Option.filter((p) => p.length > 0),
-    );
-  });
-
-  return yield* resolveBinary(RUFF_SERVER.name, [
-    userConfiguredPath("ruff", RUFF_SERVER.version, config.ruff.path),
-    companionExtensionConfiguredPath(
-      "ruff",
-      RUFF_SERVER.version,
-      RUFF_EXTENSION_ID,
-      ruffExtConfiguredPath,
-    ),
-    companionExtensionBundledBinary(
-      "ruff",
-      RUFF_SERVER.version,
-      RUFF_EXTENSION_ID,
-      ruffExtension,
-    ),
-  ]);
+  return yield* resolveServerBinary(
+    {
+      name: RUFF_SERVER.name,
+      minimumVersion: RUFF_SERVER.version,
+      extensionId: RUFF_EXTENSION_ID,
+    },
+    config.ruff.path,
+  );
 });
 
 /**

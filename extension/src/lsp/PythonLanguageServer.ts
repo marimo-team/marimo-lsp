@@ -18,10 +18,8 @@ import type * as lsp from "vscode-languageserver-protocol";
 import * as Config from "../config/Config.ts";
 import {
   BinarySource,
-  companionExtensionBundledBinary,
-  companionExtensionConfiguredPath,
-  resolveBinary,
-  userConfiguredPath,
+  type ServerBinary,
+  resolveServerBinary,
 } from "../lib/binaryResolution.ts";
 import { isExpectedCancellation } from "../lib/isExpectedCancellation.ts";
 import { showErrorAndPromptLogs } from "../lib/showErrorAndPromptLogs.ts";
@@ -98,14 +96,9 @@ export type Status = Data.TaggedEnum<{
 /**
  * What differs between the Python language servers marimo can manage.
  */
-interface ServerSpec {
+interface ServerSpec extends ServerBinary {
   readonly name: ServerName;
   readonly args: string[];
-  readonly resolveBinary: Effect.Effect<
-    Option.Option<BinarySource>,
-    never,
-    VsCode.Service | Config.Service
-  >;
   /** The `workspace/configuration` section the server asks for. */
   readonly configurationSection: string;
   /** Builds the response for that section from the active environment. */
@@ -370,7 +363,7 @@ const tyConfiguration = (env: py.ResolvedEnvironment | null) => ({
  * the user's `python.pyrefly` and `python.analysis` settings and add the
  * interpreter as `pythonPath`.
  */
-const pyreflyConfiguration = Effect.fn(function* (
+const pyreflyConfiguration = Effect.fnUntraced(function* (
   env: py.ResolvedEnvironment | null,
   scopeUri: vscode.Uri | undefined,
 ) {
@@ -383,85 +376,13 @@ const pyreflyConfiguration = Effect.fn(function* (
   };
 });
 
-/**
- * Resolves the ty binary using a 2-tier strategy:
- * 1. User-configured path (`marimo.ty.path`)
- * 2. Companion extension discovery — first `ty.path` setting, then bundled binary
- */
-const resolveTyBinary = Effect.gen(function* () {
-  const code = yield* VsCode.Service;
-  const config = yield* Config.Service;
-
-  const tyExtension = code.extensions.getExtension(TY_EXTENSION_ID);
-
-  const tyExtConfiguredPath = Effect.gen(function* () {
-    const tyExtConfig = yield* code.workspace.getConfiguration("ty");
-    return Option.fromNullishOr(tyExtConfig.get<string[]>("path")).pipe(
-      Option.filter((p) => p.length > 0),
-      Option.map((p) => p[0]),
-    );
-  });
-
-  return yield* resolveBinary("ty", [
-    userConfiguredPath("ty", TY_MINIMUM_VERSION, config.ty.path),
-    companionExtensionConfiguredPath(
-      "ty",
-      TY_MINIMUM_VERSION,
-      TY_EXTENSION_ID,
-      tyExtConfiguredPath,
-    ),
-    companionExtensionBundledBinary(
-      "ty",
-      TY_MINIMUM_VERSION,
-      TY_EXTENSION_ID,
-      tyExtension,
-    ),
-  ]);
-});
-
-/**
- * Resolves the Pyrefly binary using a 2-tier strategy:
- * 1. User-configured path (`marimo.pyrefly.path`)
- * 2. Companion extension discovery — first `pyrefly.lspPath` setting, then
- *    the binary bundled in the extension's `bin` folder
- */
-const resolvePyreflyBinary = Effect.gen(function* () {
-  const code = yield* VsCode.Service;
-  const config = yield* Config.Service;
-
-  const pyreflyExtension = code.extensions.getExtension(PYREFLY_EXTENSION_ID);
-
-  const pyreflyExtConfiguredPath = Effect.gen(function* () {
-    const pyreflyExtConfig = yield* code.workspace.getConfiguration("pyrefly");
-    return Option.fromNullishOr(pyreflyExtConfig.get<string>("lspPath")).pipe(
-      Option.filter((p) => p.length > 0),
-    );
-  });
-
-  return yield* resolveBinary("pyrefly", [
-    userConfiguredPath("pyrefly", PYREFLY_MINIMUM_VERSION, config.pyrefly.path),
-    companionExtensionConfiguredPath(
-      "pyrefly",
-      PYREFLY_MINIMUM_VERSION,
-      PYREFLY_EXTENSION_ID,
-      pyreflyExtConfiguredPath,
-    ),
-    companionExtensionBundledBinary(
-      "pyrefly",
-      PYREFLY_MINIMUM_VERSION,
-      PYREFLY_EXTENSION_ID,
-      pyreflyExtension,
-      ["bin"],
-    ),
-  ]);
-});
-
 /** Supported servers, in order of preference. */
 const SERVERS: ReadonlyArray<ServerSpec> = [
   {
     name: "ty",
     args: ["server"],
-    resolveBinary: resolveTyBinary,
+    minimumVersion: TY_MINIMUM_VERSION,
+    extensionId: TY_EXTENSION_ID,
     configurationSection: "ty",
     configuration: (env) => Effect.succeed(tyConfiguration(env)),
     restartOnSettingsChange: [],
@@ -469,7 +390,10 @@ const SERVERS: ReadonlyArray<ServerSpec> = [
   {
     name: "pyrefly",
     args: ["lsp"],
-    resolveBinary: resolvePyreflyBinary,
+    minimumVersion: PYREFLY_MINIMUM_VERSION,
+    extensionId: PYREFLY_EXTENSION_ID,
+    pathSetting: "lspPath",
+    binaryDir: ["bin"],
     configurationSection: "python",
     configuration: pyreflyConfiguration,
     restartOnSettingsChange: ["python.pyrefly", "python.analysis"],
@@ -483,9 +407,10 @@ const SERVERS: ReadonlyArray<ServerSpec> = [
  * network, so a blocked package index or an offline machine can't stall
  * startup.
  */
-const selectServer = Effect.fn(function* () {
+const selectServer = Effect.fnUntraced(function* () {
+  const config = yield* Config.Service;
   for (const spec of SERVERS) {
-    const resolved = yield* spec.resolveBinary;
+    const resolved = yield* resolveServerBinary(spec, config[spec.name].path);
     if (Option.isSome(resolved)) {
       return Option.some({ spec, resolved: resolved.value });
     }

@@ -3,7 +3,7 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 
 import * as Vitest from "@effect/vitest";
-import { Context, Effect, Layer, Schedule } from "effect";
+import { Context, Effect, Layer, Option, Schedule } from "effect";
 
 import * as PythonLanguageServer from "../../src/lsp/PythonLanguageServer.ts";
 import * as ExtensionContext from "../../src/platform/ExtensionContext.ts";
@@ -277,6 +277,7 @@ Vitest.describe("PythonLanguageServer", () => {
 interface Installed {
   readonly ty?: string;
   readonly pyrefly?: string;
+  readonly configuredPyrefly?: string;
 }
 
 /** The folder that holds the fake extensions for one test. */
@@ -375,6 +376,14 @@ const selectionLayerWith = (installed: Installed) =>
           installed.pyrefly,
         );
       }
+      if (installed.configuredPyrefly !== undefined) {
+        writeFakeExtension(
+          root.path,
+          "pyrefly",
+          ["custom"],
+          installed.configuredPyrefly,
+        );
+      }
       const contextLayer = Layer.succeed(ExtensionContext.Service, {
         globalState: new Memento(),
         workspaceState: new Memento(),
@@ -388,10 +397,42 @@ const selectionLayerWith = (installed: Installed) =>
       return PythonLanguageServer.defaultLayer.pipe(
         Layer.provideMerge(
           Layer.mergeAll(
-            VsCodeTest.layerWith({
-              installedExtensions: Object.keys(extensionPaths),
-              extensionPaths,
-            }),
+            VsCodeTest.layerWith(
+              {
+                installedExtensions: Object.keys(extensionPaths),
+                extensionPaths,
+              },
+              installed.configuredPyrefly === undefined
+                ? {}
+                : {
+                    workspace: {
+                      getWorkspaceFolders: Effect.succeed(
+                        Option.some([
+                          {
+                            uri: VsCodeTest.Uri.file(root.path),
+                            name: "workspace",
+                            index: 0,
+                          },
+                        ]),
+                      ),
+                      getConfiguration: (section) =>
+                        Effect.succeed({
+                          // oxlint-disable-next-line typescript/no-unnecessary-type-parameters
+                          get: <T>(key: string) => {
+                            // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+                            return (
+                              section === "pyrefly" && key === "lspPath"
+                                ? "./pyrefly/custom/pyrefly"
+                                : undefined
+                            ) as T;
+                          },
+                          has: () => false,
+                          inspect: () => undefined,
+                          async update() {},
+                        }),
+                    },
+                  },
+            ),
             PythonExtensionTest.layer,
             TelemetryTest.layer,
             contextLayer,
@@ -420,6 +461,32 @@ const startedServer = Effect.gen(function* () {
 
 // Skipped on Windows: the stand-in binaries are shell scripts.
 Vitest.describe.skipIf(process.platform === "win32")("server selection", () => {
+  Vitest.describe(
+    "when Pyrefly has a workspace-relative configured path",
+    () => {
+      const it = EffectTest.make(
+        selectionLayerWith({ pyrefly: "1.4.0", configuredPyrefly: "1.5.0" }),
+      );
+
+      it.live(
+        "starts the configured executable instead of the bundled one",
+        Effect.fn(function* () {
+          Vitest.expect(yield* runningServer).toBe("pyrefly");
+          const server = yield* PythonLanguageServer.Service;
+          const { root } = yield* FakeExtensions;
+          Vitest.expect(yield* server.getHealthStatus).toMatchObject({
+            _tag: "Running",
+            serverVersion: "1.5.0",
+            binarySource: {
+              kind: "configured",
+              path: NodePath.join(root, "pyrefly/custom/pyrefly"),
+            },
+          });
+        }),
+      );
+    },
+  );
+
   Vitest.describe("when ty and Pyrefly are both installed", () => {
     const it = EffectTest.make(
       selectionLayerWith({ ty: "0.0.63", pyrefly: "1.4.0" }),
