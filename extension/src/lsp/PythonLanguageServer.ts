@@ -113,6 +113,11 @@ interface ServerSpec {
     env: py.ResolvedEnvironment | null,
     scopeUri: vscode.Uri | undefined,
   ) => Effect.Effect<unknown, never, VsCode.Service>;
+  /**
+   * Settings sections that are only read when the server starts, so a change
+   * to any of them restarts it.
+   */
+  readonly restartOnSettingsChange: ReadonlyArray<string>;
 }
 
 /**
@@ -123,7 +128,8 @@ interface ServerSpec {
  *
  * The server is restarted when the Python environment changes, matching
  * the official ty-vscode extension behavior (ty doesn't support
- * `workspace/didChangeConfiguration` — a full restart is required).
+ * `workspace/didChangeConfiguration` — a full restart is required). Pyrefly
+ * is also restarted when the settings it is sent change.
  */
 export interface Interface {
   readonly getHealthStatus: Effect.Effect<Status>;
@@ -251,9 +257,19 @@ export const layer = Layer.effect(
             }),
           );
 
-          // Block until env invalidation, then return to let
-          // Effect.scoped clean up and the loop restart.
-          yield* envInvalidation.changes.pipe(Stream.take(1), Stream.runDrain);
+          // Block until env invalidation or a settings change, then return to
+          // let Effect.scoped clean up and the loop restart.
+          const settingsChanges = code.workspace.configurationChanges.pipe(
+            Stream.filter((event) =>
+              spec.restartOnSettingsChange.some((section) =>
+                event.affectsConfiguration(section),
+              ),
+            ),
+          );
+          yield* Stream.merge(envInvalidation.changes, settingsChanges).pipe(
+            Stream.take(1),
+            Stream.runDrain,
+          );
 
           yield* Effect.logInfo("Restarting language server").pipe(
             Effect.annotateLogs({ server: spec.name }),
@@ -448,6 +464,7 @@ const SERVERS: ReadonlyArray<ServerSpec> = [
     resolveBinary: resolveTyBinary,
     configurationSection: "ty",
     configuration: (env) => Effect.succeed(tyConfiguration(env)),
+    restartOnSettingsChange: [],
   },
   {
     name: "pyrefly",
@@ -455,6 +472,7 @@ const SERVERS: ReadonlyArray<ServerSpec> = [
     resolveBinary: resolvePyreflyBinary,
     configurationSection: "python",
     configuration: pyreflyConfiguration,
+    restartOnSettingsChange: ["python.pyrefly", "python.analysis"],
   },
 ];
 

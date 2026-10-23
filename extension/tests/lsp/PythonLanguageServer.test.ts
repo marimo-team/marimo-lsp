@@ -286,9 +286,43 @@ class FakeExtensions extends Context.Service<
 >()("@marimo/test/PythonLanguageServer/FakeExtensions") {}
 
 /**
- * Writes a stand-in binary that answers `--version`. When started as a
- * server, it records its name and arguments in `<root>/started` and exits.
+ * A stand-in language server. It answers `--version`, records its name and
+ * arguments in a `started` file on each start, and answers the initialize and
+ * shutdown requests so that the server reaches the running state.
  */
+const FAKE_SERVER = `
+const NodeFs = require("node:fs");
+const [name, version, started] = JSON.parse(process.env.FAKE_SERVER_ARGS);
+if (process.argv[2] === "--version") {
+  console.log(name + " " + version);
+  process.exit(0);
+}
+NodeFs.appendFileSync(started, [name, ...process.argv.slice(2)].join(" ") + "\\n");
+const send = (message) => {
+  const body = JSON.stringify({ jsonrpc: "2.0", ...message });
+  process.stdout.write("Content-Length: " + Buffer.byteLength(body) + "\\r\\n\\r\\n" + body);
+};
+let buffer = Buffer.alloc(0);
+process.stdin.on("data", (chunk) => {
+  buffer = Buffer.concat([buffer, chunk]);
+  for (;;) {
+    const end = buffer.indexOf("\\r\\n\\r\\n");
+    if (end < 0) return;
+    const length = Number(/Content-Length: (\\d+)/i.exec(buffer.subarray(0, end).toString())[1]);
+    if (buffer.length < end + 4 + length) return;
+    const message = JSON.parse(buffer.subarray(end + 4, end + 4 + length).toString());
+    buffer = buffer.subarray(end + 4 + length);
+    if (message.method === "initialize") {
+      send({ id: message.id, result: { capabilities: {}, serverInfo: { name, version } } });
+    } else if (message.method === "shutdown") {
+      send({ id: message.id, result: null });
+    } else if (message.method === "exit") {
+      process.exit(0);
+    }
+  }
+});
+`;
+
 function writeFakeExtension(
   root: string,
   name: "ty" | "pyrefly",
@@ -298,12 +332,14 @@ function writeFakeExtension(
   const extensionPath = NodePath.join(root, name);
   const directory = NodePath.join(extensionPath, ...binaryDir);
   NodeFs.mkdirSync(directory, { recursive: true });
+  const script = NodePath.join(directory, `${name}.cjs`);
+  NodeFs.writeFileSync(script, FAKE_SERVER);
+  const args = JSON.stringify([name, version, NodePath.join(root, "started")]);
   NodeFs.writeFileSync(
     NodePath.join(directory, name),
     [
       "#!/bin/sh",
-      `if [ "$1" = "--version" ]; then echo "${name} ${version}"; exit 0; fi`,
-      `echo "${name} $*" >> "${NodePath.join(root, "started")}"`,
+      `FAKE_SERVER_ARGS='${args}' exec "${process.execPath}" "${script}" "$@"`,
       "",
     ].join("\n"),
     { mode: 0o755 },
@@ -441,6 +477,87 @@ Vitest.describe.skipIf(process.platform === "win32")("server selection", () => {
         Vitest.expect((yield* vscode.snapshot).warningMessages).toEqual([
           "Python completions and type diagnostics are unavailable because no compatible ty language server was found. Install the recommended ty extension to enable them. You can still edit and run notebooks.",
         ]);
+      }),
+    );
+  });
+});
+
+/** How many times a fake binary has been started as a server. */
+const startCount = Effect.gen(function* () {
+  const { root } = yield* FakeExtensions;
+  const started = NodePath.join(root, "started");
+  return yield* Effect.sync(() =>
+    NodeFs.existsSync(started)
+      ? NodeFs.readFileSync(started, "utf8").trim().split("\n").length
+      : 0,
+  );
+});
+
+/** Waits until the server is running, returning its name. */
+const runningServer = Effect.gen(function* () {
+  const server = yield* PythonLanguageServer.Service;
+  const status = yield* server.getHealthStatus.pipe(
+    Effect.repeat({
+      until: (status) => status._tag === "Running",
+      schedule: poll,
+    }),
+    Effect.timeout("4 seconds"),
+  );
+  return status._tag === "Running" ? status.server : undefined;
+});
+
+/** Fires a configuration change event for one changed setting. */
+const changeSetting = (key: string) =>
+  Effect.flatMap(VsCodeTest.Service, (vscode) =>
+    vscode.configurationChange({
+      affectsConfiguration: (section) =>
+        key === section || key.startsWith(`${section}.`),
+    }),
+  );
+
+Vitest.describe.skipIf(process.platform === "win32")("restarts", () => {
+  Vitest.describe("when Pyrefly is running", () => {
+    const it = EffectTest.make(selectionLayerWith({ pyrefly: "1.4.0" }));
+
+    it.live(
+      "restarts Pyrefly when a setting it reads changes",
+      Effect.fn(function* () {
+        Vitest.expect(yield* runningServer).toBe("pyrefly");
+        // The server subscribes to changes after it reports running, so
+        // keep firing until a restart shows up.
+        yield* changeSetting("python.pyrefly.displayTypeErrors").pipe(
+          Effect.andThen(startCount),
+          Effect.repeat({ until: (count) => count >= 2, schedule: poll }),
+          Effect.timeout("4 seconds"),
+        );
+      }),
+    );
+
+    it.live(
+      "keeps Pyrefly running when an unrelated setting changes",
+      Effect.fn(function* () {
+        Vitest.expect(yield* runningServer).toBe("pyrefly");
+        yield* Effect.sleep("200 millis");
+        yield* changeSetting("editor.fontSize");
+        yield* Effect.sleep("300 millis");
+        Vitest.expect(yield* startCount).toBe(1);
+      }),
+    );
+  });
+
+  Vitest.describe("when ty is running", () => {
+    const it = EffectTest.make(
+      selectionLayerWith({ ty: "0.0.63", pyrefly: "1.4.0" }),
+    );
+
+    it.live(
+      "keeps ty running when a Pyrefly setting changes",
+      Effect.fn(function* () {
+        Vitest.expect(yield* runningServer).toBe("ty");
+        yield* Effect.sleep("200 millis");
+        yield* changeSetting("python.pyrefly.displayTypeErrors");
+        yield* Effect.sleep("300 millis");
+        Vitest.expect(yield* startCount).toBe(1);
       }),
     );
   });
