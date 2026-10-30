@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import typing
 
-import marimo._server.models.models as core
 import msgspec
 
 # These stay runtime imports (noqa: TC002) even though they only appear in
@@ -249,12 +248,3 @@ class ReadNotebookOutputsResponse(msgspec.Struct, rename="camel", frozen=True):
     """Cell outputs replayed from live memory or a saved-session sidecar."""
 
     cells: list[CellOutputReplay]
-
-
-ExecuteCellsRequest = core.ExecuteCellsRequest
-UpdateUIElementRequest = core.UpdateUIElementRequest
-ModelRequest = core.ModelRequest
-DeleteCellRequest = core.DeleteCellRequest
-ListSQLSchemasRequest = core.ListSQLSchemasRequest
-ListSQLTablesRequest = core.ListSQLTablesRequest
-StdinRequest = core.StdinRequest

@@ -22,11 +22,17 @@ from marimo._export.requests import (
 from marimo._export.serialization import serialize_notebook_snapshot
 from marimo._messaging.msgspec_encoder import encode_json_bytes
 from marimo._runtime.commands import (
+    DeleteCellCommand,
+    ExecuteCellsCommand,
     ExecuteScratchpadCommand,
     HTTPRequest,
     InvokeFunctionCommand,
+    ListSQLSchemasCommand,
+    ListSQLTablesCommand,
+    ModelCommand,
     ModelCustomMessage,
     ModelUpdateMessage,
+    UpdateUIElementCommand,
 )
 from marimo._runtime.packages.package_manager import PackageDescription
 from marimo._runtime.packages.package_managers import create_package_manager
@@ -48,18 +54,12 @@ from marimo_lsp import notebook_source, protocol
 from marimo_lsp.app_file_manager import find_notebook_document, snapshot_for_scratchpad
 from marimo_lsp.loggers import get_logger
 from marimo_lsp.models import (
-    DeleteCellRequest,
     DependencyTreeResponse,
-    ExecuteCellsRequest,
     GetConfigurationResponse,
     ListPackagesResponse,
     ListSessionsResponse,
-    ListSQLSchemasRequest,
-    ListSQLTablesRequest,
-    ModelRequest,
     ReadNotebookOutputsResponse,
     SetDisplayThemeResponse,
-    UpdateUIElementRequest,
 )
 from marimo_lsp.package_manager import LspPackageManager
 
@@ -256,11 +256,11 @@ async def run(ctx: ApiContext, args: protocol.Execute) -> ListSessionsResponse:
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
         http_request=None,
     )
-    request = ExecuteCellsRequest(
+    request = ExecuteCellsCommand(
         cell_ids=[CellId_t(str(cell.cell_id)) for cell in args.cells],
         codes=[cell.code for cell in args.cells],
     )
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    session.put_control_request(request, from_consumer_id=None)
     logger.info(f"Execution request sent for {args.notebook_uri}")
     return ctx.sessions.snapshot()
 
@@ -286,8 +286,8 @@ async def set_ui_element_value(
     }
     if args.token is not None:
         kwargs["token"] = args.token
-    request = UpdateUIElementRequest(**kwargs)  # ty: ignore[invalid-argument-type]
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    request = UpdateUIElementCommand(**kwargs)  # ty: ignore[invalid-argument-type]
+    session.put_control_request(request, from_consumer_id=None)
 
 
 @command(protocol.SetModelValue)
@@ -316,8 +316,8 @@ async def set_model_value(
     }
     if args.token is not None:
         kwargs["token"] = args.token
-    request = ModelRequest(**kwargs)  # ty: ignore[invalid-argument-type]
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    request = ModelCommand(**kwargs)  # ty: ignore[invalid-argument-type]
+    session.put_control_request(request, from_consumer_id=None)
 
 
 @command(protocol.InvokeFunction)
@@ -369,8 +369,9 @@ async def delete_cell(
     session = _require_kernel_session(
         ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
     )
-    request = DeleteCellRequest(cell_id=CellId_t(str(args.cell_id)))
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    session.put_control_request(
+        DeleteCellCommand(cell_id=CellId_t(str(args.cell_id))), from_consumer_id=None
+    )
     logger.info(f"Delete cell request sent for {args.notebook_uri}")
 
 
@@ -383,13 +384,13 @@ async def list_sql_schemas(
     session = _require_kernel_session(
         ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
     )
-    request = ListSQLSchemasRequest(
+    request = ListSQLSchemasCommand(
         request_id=RequestId(args.request_id),
         engine=args.engine,
         database=args.database,
         schema_path=args.schema_path,
     )
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    session.put_control_request(request, from_consumer_id=None)
 
 
 @command(protocol.ListSqlTables)
@@ -401,14 +402,14 @@ async def list_sql_tables(
     session = _require_kernel_session(
         ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
     )
-    request = ListSQLTablesRequest(
+    request = ListSQLTablesCommand(
         request_id=RequestId(args.request_id),
         engine=args.engine,
         database=args.database,
         schema=args.schema,
         schema_path=args.schema_path,
     )
-    session.put_control_request(request.as_command(), from_consumer_id=None)
+    session.put_control_request(request, from_consumer_id=None)
 
 
 @command(protocol.SendStdin)

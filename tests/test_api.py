@@ -5,12 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import msgspec
 import pytest
 from inline_snapshot import snapshot
 from marimo._config.config import DEFAULT_CONFIG
 from marimo._convert.converters import MarimoConvert
+from marimo._runtime.commands import (
+    ListSQLSchemasCommand,
+    ListSQLTablesCommand,
+    ModelCommand,
+)
 from marimo._types.ids import RequestId, SessionId
 
 from marimo_lsp import protocol
@@ -36,10 +42,6 @@ from marimo_lsp.api import (
     update_configuration,
 )
 from marimo_lsp.app_options import app_options_from_source, merge_app_options
-from marimo_lsp.models import (
-    ListSQLSchemasRequest,
-    ListSQLTablesRequest,
-)
 from marimo_lsp.notebook_source import _restore_unknown_app_options
 
 if TYPE_CHECKING:
@@ -136,6 +138,32 @@ async def test_run_correlated_interrupt_records_scratchpad_cancellation() -> Non
 
     sessions.cancel_scratchpad.assert_called_once_with(NOTEBOOK_URI, "run-1")
     sessions.get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_model_update_preserves_the_client_deduplication_token() -> None:
+    token = str(uuid4())
+    session_id = SessionId("00000000-0000-4000-8000-000000000001")
+    session = MagicMock(session_id=session_id)
+    sessions = MagicMock()
+    sessions.get.return_value = session
+
+    await set_model_value(
+        _context(sessions),
+        protocol.SetModelValue(
+            notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+            kernel_session_id=protocol.KernelSessionId(str(session_id)),
+            model_id="model-1",
+            message=protocol.ModelUpdateMessage(state={}, buffer_paths=[]),
+            buffers=[],
+            token=token,
+        ),
+    )
+
+    session.put_control_request.assert_called_once()
+    command = session.put_control_request.call_args.args[0]
+    assert isinstance(command, ModelCommand)
+    assert command.token == token
 
 
 @pytest.mark.asyncio
@@ -797,7 +825,7 @@ def test_display_theme_rejects_unresolved_theme() -> None:
 
 @pytest.mark.asyncio
 async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
-    request = ListSQLSchemasRequest(
+    request = ListSQLSchemasCommand(
         request_id=RequestId("schemas"),
         engine="warehouse",
         database="analytics",
@@ -820,14 +848,12 @@ async def test_list_sql_schemas_is_forwarded_to_the_kernel() -> None:
         ),
     )
 
-    session.put_control_request.assert_called_once_with(
-        request.as_command(), from_consumer_id=None
-    )
+    session.put_control_request.assert_called_once_with(request, from_consumer_id=None)
 
 
 @pytest.mark.asyncio
 async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
-    request = ListSQLTablesRequest(
+    request = ListSQLTablesCommand(
         request_id=RequestId("tables"),
         engine="warehouse",
         database="analytics",
@@ -852,9 +878,7 @@ async def test_list_sql_tables_is_forwarded_to_the_kernel() -> None:
         ),
     )
 
-    session.put_control_request.assert_called_once_with(
-        request.as_command(), from_consumer_id=None
-    )
+    session.put_control_request.assert_called_once_with(request, from_consumer_id=None)
 
 
 @pytest.mark.parametrize(
