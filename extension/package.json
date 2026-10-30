@@ -31,6 +31,9 @@
     "test:wasm-lsp": "node scripts/test-wasm-lsp.mjs",
     "verify:wasm-lsp": "node scripts/run-turbo.mjs build:wasm-lsp:bundle build:extension && pnpm test:wasm-lsp"
   },
+  "dependencies": {
+    "@posit-dev/positron": "^0.2.13"
+  },
   "devDependencies": {
     "@effect/platform-node": "4.1.0",
     "@effect/tsgo": "0.63.0",
