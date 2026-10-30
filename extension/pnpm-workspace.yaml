@@ -3,8 +3,6 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
 overrides:
-  # Sentry 9's OpenTelemetry SDK requires an API version below 1.10.
-  "@opentelemetry/api": 1.9.1
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vitest: 5.0.5
 peerDependencyRules:

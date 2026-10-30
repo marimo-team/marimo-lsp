@@ -46,11 +46,25 @@ export const acquireSentryAdapter = Effect.fn("telemetry.acquireSentryAdapter")(
         const previousClient = globalScope.getClient();
         let client;
         try {
+          // This client belongs to our private scope, not the extension host.
+          globalScope.setClient(undefined);
           client = SentrySDK.initWithoutDefaultIntegrations({
             dsn: SENTRY_DSN,
             release: `vscode-marimo@${options.extensionVersion}`,
             environment: process.env.NODE_ENV ?? "production",
-            skipOpenTelemetrySetup: true,
+            enableOpenTelemetrySetup: false,
+            // Sentry 11 broadens collection defaults; keep automatic collection off.
+            dataCollection: {
+              userInfo: false,
+              cookies: false,
+              httpHeaders: { request: false, response: false },
+              httpBodies: [],
+              urlQueryParams: false,
+              genAI: { inputs: false, outputs: false },
+              databaseQueryData: false,
+              queues: false,
+              graphQL: { document: false, variables: false },
+            },
             normalizeDepth: 8,
             integrations: [
               SentrySDK.linkedErrorsIntegration(),
