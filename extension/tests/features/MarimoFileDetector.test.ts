@@ -87,7 +87,7 @@ if __name__ == "__main__":
   ],
 ] as const)(
   "should be true on initialization with active editor: %s",
-  Effect.fn(function* ([_, pythonCode]) {
+  Effect.fn(function* ([, pythonCode]) {
     const editor = VsCodeTest.createTestTextEditor(
       VsCodeTest.createTestTextDocument(
         "/test/notebook.py",
@@ -225,7 +225,7 @@ my_app = marimo.App()
   ],
 ] as const)(
   "should set context to false for non-marimo Python files: %s",
-  Effect.fn(function* ([_, pythonCode]) {
+  Effect.fn(function* ([, pythonCode]) {
     const vscode = yield* VsCodeTest.Service;
     const editor = VsCodeTest.createTestTextEditor(
       VsCodeTest.createTestTextDocument(

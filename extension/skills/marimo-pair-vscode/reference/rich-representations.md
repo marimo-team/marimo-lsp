@@ -193,8 +193,8 @@ for the details.
 Import JS libraries from [esm.sh](https://esm.sh) — no build step:
 
 ```js
-import * as d3 from "https://esm.sh/d3@7";
 import { tableFromIPC } from "https://esm.sh/@uwdata/flechette@2";
+import * as d3 from "https://esm.sh/d3@7";
 ```
 
 ### DataFrames and binary data

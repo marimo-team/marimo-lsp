@@ -189,7 +189,9 @@ Vitest.describe("NotebookVariables", () => {
       // End the session through its scope rather than a document close: a
       // closed document no longer resolves for the URI, so only this path
       // keeps the released state observable through `getAllVariableData`.
-      yield* Scope.close(session.scope, Exit.void);
+      // NotebookDocumentSessions creates this scope with Scope.make.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      yield* Scope.close(session.scope as Scope.Closeable, Exit.void);
       const afterClose = yield* current();
       yield* declare(session, declarations);
       yield* assign(session, values);

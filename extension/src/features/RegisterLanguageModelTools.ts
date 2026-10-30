@@ -69,9 +69,8 @@ export function scratchpadResultText(
   code: VsCode.Interface,
   decoder = new TextDecoder(),
 ): string {
-  // `partition` returns the excluded items first. The cascade ops are the
-  // `Result.fail` arm.
-  const [cascadeOps, scratchOps] = EffectArray.partition(ops, (op) =>
+  // `partition` returns successes first; cascade ops are the failure arm.
+  const [scratchOps, cascadeOps] = EffectArray.partition(ops, (op) =>
     extractCellIdFromCellMessage(op) === SCRATCH_CELL_ID
       ? Result.succeed(op)
       : Result.fail(op),

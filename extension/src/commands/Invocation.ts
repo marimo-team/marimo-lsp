@@ -358,12 +358,10 @@ const withArguments = <
           args.slice(adapter.consumedArguments),
         ),
       ]).pipe(
-        Effect.map(
-          ([target, extra]): Concat<HandlerArgs, ExtraArgs> => [
-            ...target,
-            ...extra,
-          ],
-        ),
+        Effect.map(([target, extra]): Concat<HandlerArgs, ExtraArgs> => [
+          ...target,
+          ...extra,
+        ]),
       ),
   );
 

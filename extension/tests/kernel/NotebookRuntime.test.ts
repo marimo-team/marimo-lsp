@@ -265,7 +265,7 @@ it.effect(
       const editor = VsCodeTest.makeNotebookEditor(
         NodePath.join(process.cwd(), "notebook.py"),
       );
-      yield* vscode.openNotebook(editor.notebook);
+      yield* NotebookRuntimeHarness.open(editor);
       yield* vscode.rendererMessaging.ready;
       const document = yield* runtime.forDocument(editor.notebook);
       yield* document.execute({ cells: [] }, "/usr/bin/python");

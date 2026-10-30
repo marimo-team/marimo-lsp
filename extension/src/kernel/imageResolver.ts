@@ -1,5 +1,5 @@
 import { Data, Effect, Option } from "effect";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 import type * as vscode from "vscode";
 
 import * as VsCode from "../platform/VsCode.ts";

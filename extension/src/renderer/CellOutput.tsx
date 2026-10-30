@@ -23,6 +23,15 @@ interface CellOutputProps {
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
   const container = React.useRef<HTMLDivElement>(null);
+  const [containerElement, setContainerElement] =
+    React.useState<HTMLDivElement | null>(null);
+  const attachContainer = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      container.current = element;
+      setContainerElement(element);
+    },
+    [],
+  );
   const { target: hoveredImage, clear: clearHover } = useImageHover(container);
 
   useStopUnmodifiedInputKeys(container);
@@ -32,9 +41,9 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
     <div
       className={`marimo-cell-output p-4 pb-8 ${theme}`}
       data-vscode-output-container="true"
-      ref={container}
+      ref={attachContainer}
     >
-      <TooltipProvider container={container.current}>
+      <TooltipProvider container={containerElement}>
         {state.output && (
           <OutputRenderer cellId={cellId} message={state.output} />
         )}

@@ -4,14 +4,14 @@ import {
   HttpClient,
   HttpClientError,
   HttpClientRequest,
-} from "effect/unstable/http";
+} from "effect/http";
 import {
   HttpApi,
   HttpApiClient,
   HttpApiEndpoint,
   HttpApiGroup,
   HttpApiSchema,
-} from "effect/unstable/httpapi";
+} from "effect/http-api";
 
 import * as VsCode from "./VsCode.ts";
 

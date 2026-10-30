@@ -140,11 +140,9 @@ function check() {
   for (const use of customVars.uses) {
     if (
       !(
-        (
-          vscodeVars.definitions.has(use) ||
-          marimoVars.definitions.has(use) ||
-          marimoVars.uses.has(use)
-        ) // Assumes defined somewhere else in marimo
+        vscodeVars.definitions.has(use) ||
+        marimoVars.definitions.has(use) ||
+        marimoVars.uses.has(use) // Assumes defined somewhere else in marimo
       )
     ) {
       diagnostics.push({

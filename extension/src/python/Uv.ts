@@ -16,7 +16,7 @@ import {
   String,
 } from "effect";
 import type { PlatformError } from "effect/PlatformError";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import type * as vscode from "vscode";
 
 import { assert } from "../assert.ts";
@@ -524,7 +524,10 @@ const findUvBin = Effect.fn("findUvBin")(function* (
   });
 });
 
-class VersionInfo extends Schema.Class<VersionInfo>("VersionInfo")({
+class VersionInfo extends Schema.Class<
+  VersionInfo,
+  { readonly brand: unique symbol }
+>("VersionInfo")({
   package_name: Schema.String,
   version: Version.Schema,
   commit_info: Schema.NullOr(

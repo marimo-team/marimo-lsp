@@ -19,7 +19,7 @@ import {
   String,
 } from "effect";
 import type { PlatformError } from "effect/PlatformError";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { MINIMUM_MARIMO_KERNEL_VERSION } from "../constants.ts";
 import { Version } from "../lib/Version.ts";

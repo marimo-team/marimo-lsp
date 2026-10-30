@@ -23,7 +23,7 @@ export class Version extends Data.Class<{ readonly value: string }> {
         (value): value is Version => value instanceof Version,
       ),
       {
-        decode: SchemaGetter.transformOrFail((value) => {
+        decode: SchemaGetter.transformEffect((value) => {
           const parsed =
             semver.tryParse(value) ?? semver.tryParse(`${value}.0`);
           return parsed === undefined

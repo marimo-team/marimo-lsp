@@ -169,7 +169,7 @@ Vitest.describe("command definitions", () => {
     () => {
       const logs: Array<Record<string, unknown>> = [];
       const logger = Logger.make(({ fiber }) => {
-        const span = fiber.currentSpan;
+        const span = fiber.cache.span;
         logs.push({
           ...fiber.getRef(References.CurrentLogAnnotations),
           ...(span !== undefined && span._tag === "Span"

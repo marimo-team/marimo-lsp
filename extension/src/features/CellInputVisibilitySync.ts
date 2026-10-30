@@ -269,13 +269,12 @@ export const layer = Layer.effect(
           ),
         ),
       ),
-      Stream.map(
-        ({ notebook, editor }): Event =>
-          Event.Synchronize({
-            notebook,
-            initialize: true,
-            processed: Processed.Activated({ editor }),
-          }),
+      Stream.map(({ notebook, editor }): Event =>
+        Event.Synchronize({
+          notebook,
+          initialize: true,
+          processed: Processed.Activated({ editor }),
+        }),
       ),
     );
 
@@ -287,13 +286,12 @@ export const layer = Layer.effect(
           ),
         ),
       ),
-      Stream.map(
-        ({ notebook, event }): Event =>
-          Event.Synchronize({
-            notebook,
-            initialize: false,
-            processed: Processed.Changed({ event }),
-          }),
+      Stream.map(({ notebook, event }): Event =>
+        Event.Synchronize({
+          notebook,
+          initialize: false,
+          processed: Processed.Changed({ event }),
+        }),
       ),
     );
 
@@ -303,14 +301,13 @@ export const layer = Layer.effect(
           MarimoNotebookDocument.tryFrom(notebook),
         ),
       ),
-      Stream.map(
-        (notebook): Event =>
-          Event.Close({
-            notebook,
-            processed: Processed.Closed({
-              document: notebook.rawNotebookDocument,
-            }),
+      Stream.map((notebook): Event =>
+        Event.Close({
+          notebook,
+          processed: Processed.Closed({
+            document: notebook.rawNotebookDocument,
           }),
+        }),
       ),
     );
 

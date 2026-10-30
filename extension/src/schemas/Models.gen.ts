@@ -7,6 +7,8 @@
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
 
+import { ownedStruct } from "./ownedStruct.ts";
+
 type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
 const MarimoNotification = Schema.declare<MarimoNotification>(
   (value): value is MarimoNotification =>
@@ -52,76 +54,73 @@ export type CellId = typeof CellIdFromString.Type;
 /**
  * One cell and the exact source to execute for it.
  */
-export const CellExecution = Schema.Struct({
+export const CellExecution = ownedStruct({
   cellId: CellIdFromString,
   code: Schema.String,
-}).annotate({
-  identifier: "CellExecution",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "CellExecution" });
 export type CellExecution = typeof CellExecution.Type;
 
 /**
  * Execute a batch of notebook cells, starting its kernel if necessary.
  */
-export const Execute = Schema.Struct({
+export const Execute = ownedStruct({
   kind: Schema.Literal("execute"),
   notebookUri: NotebookUriFromString,
   executable: Schema.String,
   workingDirectory: Schema.String,
   cells: Schema.Array(CellExecution),
-}).annotate({
-  identifier: "Execute",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "Execute" });
 export type Execute = typeof Execute.Type;
 
 /**
  * Update one or more UI element values in an exact kernel.
  */
-export const UpdateUiElement = Schema.Struct({
+export const UpdateUiElement = ownedStruct({
   kind: Schema.Literal("update-ui-element"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
   objectIds: Schema.Array(Schema.String),
   values: Schema.Array(Schema.Unknown),
   request: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(
+          Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
+        ),
+      ),
+    ),
   ),
   token: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "UpdateUiElement",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "UpdateUiElement" });
 export type UpdateUiElement = typeof UpdateUiElement.Type;
 
 /**
  * State update sent to one widget model.
  */
-export const ModelUpdateMessage = Schema.Struct({
+export const ModelUpdateMessage = ownedStruct({
   method: Schema.Literal("update"),
   state: Schema.Record(Schema.String, Schema.Unknown),
   bufferPaths: Schema.Array(
     Schema.Array(Schema.Union([Schema.String, Schema.Int])),
   ),
-}).annotate({
-  identifier: "ModelUpdateMessage",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ModelUpdateMessage" });
 export type ModelUpdateMessage = typeof ModelUpdateMessage.Type;
 
 /**
  * Custom message sent to one widget model.
  */
-export const ModelCustomMessage = Schema.Struct({
+export const ModelCustomMessage = ownedStruct({
   method: Schema.Literal("custom"),
   content: Schema.Unknown,
-}).annotate({
-  identifier: "ModelCustomMessage",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ModelCustomMessage" });
 export type ModelCustomMessage = typeof ModelCustomMessage.Type;
 
 /**
@@ -137,7 +136,7 @@ export type Base64String = typeof Base64String.Type;
 /**
  * Update state for one widget model in an exact kernel.
  */
-export const SetModelValue = Schema.Struct({
+export const SetModelValue = ownedStruct({
   kind: Schema.Literal("set-model-value"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
@@ -145,18 +144,20 @@ export const SetModelValue = Schema.Struct({
   message: Schema.Union([ModelUpdateMessage, ModelCustomMessage]),
   buffers: Schema.Array(Base64String),
   token: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "SetModelValue",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "SetModelValue" });
 export type SetModelValue = typeof SetModelValue.Type;
 
 /**
  * Invoke a registered function in an exact kernel.
  */
-export const InvokeFunction = Schema.Struct({
+export const InvokeFunction = ownedStruct({
   kind: Schema.Literal("invoke-function"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
@@ -164,48 +165,49 @@ export const InvokeFunction = Schema.Struct({
   namespace: Schema.String,
   functionName: Schema.String,
   args: Schema.Record(Schema.String, Schema.Unknown),
-}).annotate({
-  identifier: "InvokeFunction",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "InvokeFunction" });
 export type InvokeFunction = typeof InvokeFunction.Type;
 
 /**
  * Interrupt an exact kernel or cancel a pending scratch execution.
  */
-export const Interrupt = Schema.Struct({
+export const Interrupt = ownedStruct({
   kind: Schema.Literal("interrupt"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: Schema.NullOr(KernelSessionIdFromString).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(KernelSessionIdFromString)),
+      ),
+    ),
   ),
   runId: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "Interrupt",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "Interrupt" });
 export type Interrupt = typeof Interrupt.Type;
 
 /**
  * Remove one cell from the exact live kernel that owns it.
  */
-export const DeleteCell = Schema.Struct({
+export const DeleteCell = ownedStruct({
   kind: Schema.Literal("delete-cell"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
   cellId: CellIdFromString,
-}).annotate({
-  identifier: "DeleteCell",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "DeleteCell" });
 export type DeleteCell = typeof DeleteCell.Type;
 
 /**
  * List immediate child schemas at a database path.
  */
-export const ListSqlSchemas = Schema.Struct({
+export const ListSqlSchemas = ownedStruct({
   kind: Schema.Literal("list-sql-schemas"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
@@ -213,18 +215,20 @@ export const ListSqlSchemas = Schema.Struct({
   engine: Schema.String,
   database: Schema.String,
   schemaPath: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => []),
+        Schema.decodeUnknownEffect(Schema.Array(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ListSqlSchemas",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ListSqlSchemas" });
 export type ListSqlSchemas = typeof ListSqlSchemas.Type;
 
 /**
  * List tables in one database schema.
  */
-export const ListSqlTables = Schema.Struct({
+export const ListSqlTables = ownedStruct({
   kind: Schema.Literal("list-sql-tables"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
@@ -233,157 +237,136 @@ export const ListSqlTables = Schema.Struct({
   database: Schema.String,
   schema: Schema.String,
   schemaPath: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => []),
+        Schema.decodeUnknownEffect(Schema.Array(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ListSqlTables",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ListSqlTables" });
 export type ListSqlTables = typeof ListSqlTables.Type;
 
 /**
  * Respond to a stdin prompt in an exact kernel.
  */
-export const SendStdin = Schema.Struct({
+export const SendStdin = ownedStruct({
   kind: Schema.Literal("send-stdin"),
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
   text: Schema.String,
-}).annotate({
-  identifier: "SendStdin",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "SendStdin" });
 export type SendStdin = typeof SendStdin.Type;
 
 /**
  * Close the live session for one notebook.
  */
-export const CloseSession = Schema.Struct({
+export const CloseSession = ownedStruct({
   kind: Schema.Literal("close-session"),
   notebookUri: NotebookUriFromString,
-}).annotate({
-  identifier: "CloseSession",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "CloseSession" });
 export type CloseSession = typeof CloseSession.Type;
 
 /**
  * Restart or restore the live session for one notebook.
  */
-export const RestartSession = Schema.Struct({
+export const RestartSession = ownedStruct({
   kind: Schema.Literal("restart-session"),
   notebookUri: NotebookUriFromString,
   executable: Schema.String,
   workingDirectory: Schema.String,
   createIfMissing: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => false)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => false),
+        Schema.decodeUnknownEffect(Schema.Boolean),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "RestartSession",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "RestartSession" });
 export type RestartSession = typeof RestartSession.Type;
 
 /**
  * Move a live session after its notebook is renamed.
  */
-export const MoveSession = Schema.Struct({
+export const MoveSession = ownedStruct({
   kind: Schema.Literal("move-session"),
   notebookUri: NotebookUriFromString,
   newNotebookUri: NotebookUriFromString,
-}).annotate({
-  identifier: "MoveSession",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "MoveSession" });
 export type MoveSession = typeof MoveSession.Type;
 
 /**
  * List all live sessions owned by the language server.
  */
-export const ListSessions = Schema.Struct({
+export const ListSessions = ownedStruct({
   kind: Schema.Literal("list-sessions"),
-}).annotate({
-  identifier: "ListSessions",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ListSessions" });
 export type ListSessions = typeof ListSessions.Type;
 
 /**
  * Close every live session owned by the language server.
  */
-export const ShutdownAllSessions = Schema.Struct({
+export const ShutdownAllSessions = ownedStruct({
   kind: Schema.Literal("shutdown-all-sessions"),
-}).annotate({
-  identifier: "ShutdownAllSessions",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ShutdownAllSessions" });
 export type ShutdownAllSessions = typeof ShutdownAllSessions.Type;
 
 /**
  * Execute transient code against a notebook kernel.
  */
-export const ExecuteScratchpad = Schema.Struct({
+export const ExecuteScratchpad = ownedStruct({
   kind: Schema.Literal("execute-scratchpad"),
   notebookUri: NotebookUriFromString,
   executable: Schema.String,
   workingDirectory: Schema.String,
   code: Schema.String,
   runId: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ExecuteScratchpad",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ExecuteScratchpad" });
 export type ExecuteScratchpad = typeof ExecuteScratchpad.Type;
 
 /**
  * A concrete environment identified by its Python executable.
  */
-export const VenvSource = Schema.Struct({
+export const VenvSource = ownedStruct({
   kind: Schema.Literal("venv"),
   executable: Schema.String,
-}).annotate({
-  identifier: "VenvSource",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "VenvSource" });
 export type VenvSource = typeof VenvSource.Type;
 
 /**
  * A PEP 723 environment resolved from the notebook script.
  */
-export const ScriptSource = Schema.Struct({
+export const ScriptSource = ownedStruct({
   kind: Schema.Literal("script"),
-}).annotate({
-  identifier: "ScriptSource",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ScriptSource" });
 export type ScriptSource = typeof ScriptSource.Type;
 
 /**
  * List packages installed in a notebook environment.
  */
-export const ListPackages = Schema.Struct({
+export const ListPackages = ownedStruct({
   kind: Schema.Literal("list-packages"),
   notebookUri: NotebookUriFromString,
   source: Schema.Union([VenvSource, ScriptSource]),
-}).annotate({
-  identifier: "ListPackages",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ListPackages" });
 export type ListPackages = typeof ListPackages.Type;
 
 /**
  * Read the dependency tree for a notebook environment.
  */
-export const GetDependencyTree = Schema.Struct({
+export const GetDependencyTree = ownedStruct({
   kind: Schema.Literal("get-dependency-tree"),
   notebookUri: NotebookUriFromString,
   source: Schema.Union([VenvSource, ScriptSource]),
-}).annotate({
-  identifier: "GetDependencyTree",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "GetDependencyTree" });
 export type GetDependencyTree = typeof GetDependencyTree.Type;
 
 /**
@@ -420,167 +403,168 @@ export type NotebookCell = typeof NotebookCell.Type;
 /**
  * Source-level app options managed by the extension.
  */
-export const ManagedAppOptions = Schema.Struct({
+export const ManagedAppOptions = ownedStruct({
   autoDownload: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => []),
+        Schema.decodeUnknownEffect(Schema.Array(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ManagedAppOptions",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ManagedAppOptions" });
 export type ManagedAppOptions = typeof ManagedAppOptions.Type;
 
 /**
  * Managed app options plus an opaque lossless passthrough bag.
  */
-export const AppOptions = Schema.Struct({
+export const AppOptions = ownedStruct({
   managed: ManagedAppOptions.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(ManagedAppOptions),
+      ),
+    ),
   ),
   passthrough: Schema.Record(Schema.String, Schema.Unknown).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(
+          Schema.Record(Schema.String, Schema.Unknown),
+        ),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "AppOptions",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "AppOptions" });
 export type AppOptions = typeof AppOptions.Type;
 
 /**
  * Owned notebook data plus source-level application metadata.
  */
-export const NotebookDocument = Schema.Struct({
+export const NotebookDocument = ownedStruct({
   version: Schema.Literal("1"),
   metadata: NotebookMetadata,
   cells: Schema.Array(NotebookCell),
   appOptions: AppOptions.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(AppOptions),
+      ),
+    ),
   ),
   header: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "NotebookDocument",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "NotebookDocument" });
 export type NotebookDocument = typeof NotebookDocument.Type;
 
 /**
  * Print an owned notebook document as native marimo Python source.
  */
-export const PrintNotebook = Schema.Struct({
+export const PrintNotebook = ownedStruct({
   kind: Schema.Literal("print-notebook"),
   document: NotebookDocument,
-}).annotate({
-  identifier: "PrintNotebook",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "PrintNotebook" });
 export type PrintNotebook = typeof PrintNotebook.Type;
 
 /**
  * Parse native marimo Python source into an owned notebook document.
  */
-export const ParseNotebook = Schema.Struct({
+export const ParseNotebook = ownedStruct({
   kind: Schema.Literal("parse-notebook"),
   source: Schema.String,
-}).annotate({
-  identifier: "ParseNotebook",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ParseNotebook" });
 export type ParseNotebook = typeof ParseNotebook.Type;
 
 /**
  * Read configuration for one notebook.
  */
-export const GetConfiguration = Schema.Struct({
+export const GetConfiguration = ownedStruct({
   kind: Schema.Literal("get-configuration"),
   notebookUri: NotebookUriFromString,
-}).annotate({
-  identifier: "GetConfiguration",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "GetConfiguration" });
 export type GetConfiguration = typeof GetConfiguration.Type;
 
 /**
  * Merge a configuration patch for one notebook.
  */
-export const UpdateConfiguration = Schema.Struct({
+export const UpdateConfiguration = ownedStruct({
   kind: Schema.Literal("update-configuration"),
   notebookUri: NotebookUriFromString,
   config: Schema.Record(Schema.String, Schema.Unknown),
-}).annotate({
-  identifier: "UpdateConfiguration",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "UpdateConfiguration" });
 export type UpdateConfiguration = typeof UpdateConfiguration.Type;
 
 /**
  * Set the display theme for live sessions.
  */
-export const SetDisplayTheme = Schema.Struct({
+export const SetDisplayTheme = ownedStruct({
   kind: Schema.Literal("set-display-theme"),
   theme: Schema.Literals(["dark", "light"]),
-}).annotate({
-  identifier: "SetDisplayTheme",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "SetDisplayTheme" });
 export type SetDisplayTheme = typeof SetDisplayTheme.Type;
 
 /**
  * Read outputs without starting a notebook kernel.
  */
-export const ReadNotebookOutputs = Schema.Struct({
+export const ReadNotebookOutputs = ownedStruct({
   kind: Schema.Literal("read-notebook-outputs"),
   notebookUri: NotebookUriFromString,
   sessionCachePath: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ReadNotebookOutputs",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ReadNotebookOutputs" });
 export type ReadNotebookOutputs = typeof ReadNotebookOutputs.Type;
 
 /**
  * Export one notebook as HTML.
  */
-export const ExportHtml = Schema.Struct({
+export const ExportHtml = ownedStruct({
   kind: Schema.Literal("export-html"),
   notebookUri: NotebookUriFromString,
   download: Schema.Boolean,
   files: Schema.Array(Schema.String),
   includeCode: Schema.Boolean,
   assetUrl: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ExportHtml",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ExportHtml" });
 export type ExportHtml = typeof ExportHtml.Type;
 
 /**
  * Export one notebook as ipynb JSON.
  */
-export const ExportIpynb = Schema.Struct({
+export const ExportIpynb = ownedStruct({
   kind: Schema.Literal("export-ipynb"),
   notebookUri: NotebookUriFromString,
-}).annotate({
-  identifier: "ExportIpynb",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ExportIpynb" });
 export type ExportIpynb = typeof ExportIpynb.Type;
 
 /**
  * Export one notebook as Markdown.
  */
-export const ExportMarkdown = Schema.Struct({
+export const ExportMarkdown = ownedStruct({
   kind: Schema.Literal("export-markdown"),
   notebookUri: NotebookUriFromString,
-}).annotate({
-  identifier: "ExportMarkdown",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ExportMarkdown" });
 export type ExportMarkdown = typeof ExportMarkdown.Type;
 
 export const Command = Schema.Union([
@@ -635,39 +619,63 @@ export type DocumentAnalysis = typeof DocumentAnalysis.Type;
 /**
  * Projection state for displaying a Python markdown cell.
  */
-export const MarkdownCellProjection = Schema.Struct({
+export const MarkdownCellProjection = ownedStruct({
   quotePrefix: Schema.Literals(["", "f", "fr", "r", "rf"]).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => "r")),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => "r"),
+        Schema.decodeUnknownEffect(Schema.Literals(["", "f", "fr", "r", "rf"])),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "MarkdownCellProjection",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "MarkdownCellProjection" });
 export type MarkdownCellProjection = typeof MarkdownCellProjection.Type;
 
 /**
  * Projection state for displaying a Python SQL cell.
  */
-export const SqlCellProjection = Schema.Struct({
+export const SqlCellProjection = ownedStruct({
   dataframeName: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => "_df")),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => "_df"),
+        Schema.decodeUnknownEffect(Schema.String),
+      ),
+    ),
   ),
   quotePrefix: Schema.Literals(["", "f", "fr", "r", "rf"]).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => "f")),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => "f"),
+        Schema.decodeUnknownEffect(Schema.Literals(["", "f", "fr", "r", "rf"])),
+      ),
+    ),
   ),
   commentLines: Schema.Array(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => [])),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => []),
+        Schema.decodeUnknownEffect(Schema.Array(Schema.String)),
+      ),
+    ),
   ),
   showOutput: Schema.Boolean.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => true)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => true),
+        Schema.decodeUnknownEffect(Schema.Boolean),
+      ),
+    ),
   ),
   engine: Schema.String.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => "__marimo_duckdb")),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => "__marimo_duckdb"),
+        Schema.decodeUnknownEffect(Schema.String),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "SqlCellProjection",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "SqlCellProjection" });
 export type SqlCellProjection = typeof SqlCellProjection.Type;
 
 /**
@@ -677,136 +685,193 @@ export type SqlCellProjection = typeof SqlCellProjection.Type;
  * projection is active; retaining the other restores its settings if the
  * user switches the cell back later.
  */
-export const CellSourceProjections = Schema.Struct({
+export const CellSourceProjections = ownedStruct({
   markdown: Schema.NullOr(MarkdownCellProjection).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(MarkdownCellProjection)),
+      ),
+    ),
   ),
   sql: Schema.NullOr(SqlCellProjection).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(SqlCellProjection)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "CellSourceProjections",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "CellSourceProjections" });
 export type CellSourceProjections = typeof CellSourceProjections.Type;
 
 /**
  * Persisted marimo cell metadata used to serialize Python source.
  */
-export const MarimoCellMetadata = Schema.Struct({
-  name: Schema.String.pipe(Schema.withDecodingDefault(Effect.sync(() => "_"))),
+export const MarimoCellMetadata = ownedStruct({
+  name: Schema.String.pipe(
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => "_"),
+        Schema.decodeUnknownEffect(Schema.String),
+      ),
+    ),
+  ),
   options: NotebookCellConfig.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(NotebookCellConfig),
+      ),
+    ),
   ),
   sourceProjections: CellSourceProjections.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(CellSourceProjections),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "MarimoCellMetadata",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "MarimoCellMetadata" });
 export type MarimoCellMetadata = typeof MarimoCellMetadata.Type;
 
 /**
  * Transient per-open cell metadata shared with the LSP server.
  */
-export const MarimoCellRuntimeMetadata = Schema.Struct({
+export const MarimoCellRuntimeMetadata = ownedStruct({
   stableId: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
   state: Schema.NullOr(
     Schema.Literals(["idle", "queued", "running", "stale"]),
-  ).pipe(Schema.withDecodingDefault(Effect.sync(() => null))),
-}).annotate({
-  identifier: "MarimoCellRuntimeMetadata",
-  parseOptions: { onExcessProperty: "error" },
-});
+  ).pipe(
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(
+          Schema.NullOr(
+            Schema.Literals(["idle", "queued", "running", "stale"]),
+          ),
+        ),
+      ),
+    ),
+  ),
+}).annotate({ identifier: "MarimoCellRuntimeMetadata" });
 export type MarimoCellRuntimeMetadata = typeof MarimoCellRuntimeMetadata.Type;
 
 /**
  * Namespaced metadata synchronized on an LSP notebook cell.
  */
-export const CellMetadata = Schema.Struct({
-  marimo: MarimoCellMetadata.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
-  ),
-  marimoRuntime: MarimoCellRuntimeMetadata.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
-  ),
-}).annotate({
-  identifier: "CellMetadata",
-  parseOptions: { onExcessProperty: "preserve" },
-});
+export const CellMetadata = Schema.StructWithRest(
+  Schema.Struct({
+    marimo: MarimoCellMetadata.pipe(
+      Schema.withDecodingDefaultType(
+        Effect.flatMap(
+          Effect.sync(() => ({})),
+          Schema.decodeUnknownEffect(MarimoCellMetadata),
+        ),
+      ),
+    ),
+    marimoRuntime: MarimoCellRuntimeMetadata.pipe(
+      Schema.withDecodingDefaultType(
+        Effect.flatMap(
+          Effect.sync(() => ({})),
+          Schema.decodeUnknownEffect(MarimoCellRuntimeMetadata),
+        ),
+      ),
+    ),
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+).annotate({ identifier: "CellMetadata" });
 export type CellMetadata = typeof CellMetadata.Type;
 
 /**
  * Persisted marimo-owned metadata on an LSP notebook document.
  */
-export const MarimoNotebookMetadata = Schema.Struct({
+export const MarimoNotebookMetadata = ownedStruct({
   appOptions: AppOptions.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(AppOptions),
+      ),
+    ),
   ),
   header: Schema.NullOr(Schema.String).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
   ),
   notebookMetadata: NotebookMetadata.pipe(
-    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => ({})),
+        Schema.decodeUnknownEffect(NotebookMetadata),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "MarimoNotebookMetadata",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "MarimoNotebookMetadata" });
 export type MarimoNotebookMetadata = typeof MarimoNotebookMetadata.Type;
 
 /**
  * Canonical metadata envelope on an LSP notebook document.
  */
-export const NotebookDocumentMetadata = Schema.Struct({
-  marimo: MarimoNotebookMetadata,
-}).annotate({
-  identifier: "NotebookDocumentMetadata",
-  parseOptions: { onExcessProperty: "preserve" },
-});
+export const NotebookDocumentMetadata = Schema.StructWithRest(
+  Schema.Struct({
+    marimo: MarimoNotebookMetadata,
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+).annotate({ identifier: "NotebookDocumentMetadata" });
 export type NotebookDocumentMetadata = typeof NotebookDocumentMetadata.Type;
 
 /**
  * A successfully parsed native marimo notebook.
  */
-export const ParseNotebookSuccess = Schema.Struct({
+export const ParseNotebookSuccess = ownedStruct({
   kind: Schema.Literal("success"),
   document: NotebookDocument,
-}).annotate({
-  identifier: "ParseNotebookSuccess",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ParseNotebookSuccess" });
 export type ParseNotebookSuccess = typeof ParseNotebookSuccess.Type;
 
 /**
  * Python syntax prevented the source from being inspected.
  */
-export const ParseNotebookInvalidSyntax = Schema.Struct({
+export const ParseNotebookInvalidSyntax = ownedStruct({
   kind: Schema.Literal("invalid-syntax"),
   line: Schema.NullOr(Schema.Int).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.Int)),
+      ),
+    ),
   ),
   column: Schema.NullOr(Schema.Int).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.Int)),
+      ),
+    ),
   ),
-}).annotate({
-  identifier: "ParseNotebookInvalidSyntax",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ParseNotebookInvalidSyntax" });
 export type ParseNotebookInvalidSyntax = typeof ParseNotebookInvalidSyntax.Type;
 
 /**
  * Valid Python source that can be converted to a marimo notebook.
  */
-export const ParseNotebookConvertible = Schema.Struct({
+export const ParseNotebookConvertible = ownedStruct({
   kind: Schema.Literal("convertible"),
-}).annotate({
-  identifier: "ParseNotebookConvertible",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "ParseNotebookConvertible" });
 export type ParseNotebookConvertible = typeof ParseNotebookConvertible.Type;
 
 export const ParseNotebookResult = Schema.Union([
@@ -917,7 +982,12 @@ export const DependencyTreeNode = Schema.Struct({
  */
 export const DependencyTreeResponse = Schema.Struct({
   tree: Schema.NullOr(DependencyTreeNode).pipe(
-    Schema.withDecodingDefault(Effect.sync(() => null)),
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(DependencyTreeNode)),
+      ),
+    ),
   ),
 }).annotate({ identifier: "DependencyTreeResponse" });
 export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
@@ -925,12 +995,9 @@ export type DependencyTreeResponse = typeof DependencyTreeResponse.Type;
 /**
  * Native marimo Python source printed from an owned notebook document.
  */
-export const PrintNotebookResult = Schema.Struct({
+export const PrintNotebookResult = ownedStruct({
   source: Schema.String,
-}).annotate({
-  identifier: "PrintNotebookResult",
-  parseOptions: { onExcessProperty: "error" },
-});
+}).annotate({ identifier: "PrintNotebookResult" });
 export type PrintNotebookResult = typeof PrintNotebookResult.Type;
 
 /**
@@ -1736,16 +1803,14 @@ export const makeCommandClient = <E, R>(send: CommandTransport<E, R>) => ({
     } satisfies typeof MoveSession.Encoded;
     return dispatch(send, command, ListSessionsResponse);
   },
-  listSessions: (params: Omit<typeof ListSessions.Encoded, "kind">) => {
+  listSessions: (params: Record<string, never>) => {
     const command = {
       kind: "list-sessions",
       ...params,
     } satisfies typeof ListSessions.Encoded;
     return dispatch(send, command, ListSessionsResponse);
   },
-  shutdownAllSessions: (
-    params: Omit<typeof ShutdownAllSessions.Encoded, "kind">,
-  ) => {
+  shutdownAllSessions: (params: Record<string, never>) => {
     const command = {
       kind: "shutdown-all-sessions",
       ...params,

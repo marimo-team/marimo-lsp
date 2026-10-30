@@ -54,6 +54,15 @@ Vitest.describe("Models.gen (msgspec → Effect Schema codegen)", () => {
           }),
         ),
       ).toBe(true);
+
+      Vitest.expect(
+        Result.isFailure(
+          Schema.encodeUnknownResult(CellMetadata)({
+            ...decoded,
+            marimo: { ...decoded.marimo, misspelled: true },
+          }),
+        ),
+      ).toBe(true);
     },
   );
 

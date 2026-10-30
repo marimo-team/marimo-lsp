@@ -260,7 +260,9 @@ Vitest.describe("NotebookDatasources", () => {
       // End the session through its scope rather than a document close: a
       // closed document no longer resolves for the URI, so only this path
       // keeps the released state observable through `getConnections`.
-      yield* Scope.close(session.scope, Exit.void);
+      // NotebookDocumentSessions creates this scope with Scope.make.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      yield* Scope.close(session.scope as Scope.Closeable, Exit.void);
       Vitest.expect(
         Option.isNone(yield* datasources.getConnections(NOTEBOOK_URI)),
       ).toBe(true);

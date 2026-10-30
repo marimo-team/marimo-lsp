@@ -73,14 +73,10 @@ export default vite.defineConfig({
       restriction: "off",
     },
     jsPlugins: ["./lint/marimo-plugin.mjs"],
-    plugins: [
-      "typescript",
-      "react",
-      "import",
-      // @ts-expect-error -- Vite+ 0.2.7 predates Effect's patched plugin.
-      "effecttsgo",
-    ],
+    plugins: ["typescript", "react", "import", "effecttsgo"],
     rules: {
+      // Platform and test APIs remain unstable within the pinned stable Effect release.
+      "effecttsgo/unstable-api-usage": "off",
       "eslint/no-underscore-dangle": "off",
       "react/react-in-jsx-scope": "off",
       "import/extensions": ["error", "always", { ignorePackages: true }],

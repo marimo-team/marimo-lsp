@@ -126,7 +126,7 @@ export const withSpanAnnotations = <Message, Output>(
 ): Logger.Logger<Message, Output> =>
   Logger.make((options) => {
     const fiber = options.fiber;
-    const span = fiber.currentSpan;
+    const span = fiber.cache.span;
     if (span === undefined) {
       return logger.log(options);
     }

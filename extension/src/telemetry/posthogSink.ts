@@ -21,9 +21,7 @@ export const acquirePostHogAdapter = Effect.acquireRelease(
       Effect.catchCause(() => Effect.void),
     ),
 ).pipe(
-  Effect.map(
-    (client): PostHogAdapter => ({
-      capture: client.capture.bind(client),
-    }),
-  ),
+  Effect.map((client): PostHogAdapter => ({
+    capture: client.capture.bind(client),
+  })),
 );

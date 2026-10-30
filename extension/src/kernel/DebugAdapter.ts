@@ -67,18 +67,18 @@ const DebugpyState = Schema.Struct({
  * example, the kernel emitted no parseable activation output. The `reason`
  * field describes the specific failure.
  */
-export class DebugpyActivationError extends Schema.TaggedError<DebugpyActivationError>()(
-  "DebugpyActivationError",
-  { reason: Schema.String },
-) {}
+export class DebugpyActivationError extends Schema.TaggedError<
+  DebugpyActivationError,
+  { readonly brand: unique symbol }
+>()("DebugpyActivationError", { reason: Schema.String }) {}
 
-export class DebugSourceWriteError extends Schema.TaggedError<DebugSourceWriteError>()(
-  "DebugSourceWriteError",
-  {
-    cause: Schema.Defect(),
-    tmpdir: Schema.String,
-  },
-) {}
+export class DebugSourceWriteError extends Schema.TaggedError<
+  DebugSourceWriteError,
+  { readonly brand: unique symbol }
+>()("DebugSourceWriteError", {
+  cause: Schema.Defect(),
+  tmpdir: Schema.String,
+}) {}
 
 /** Schema for the debug configuration passed through `startDebugging`. */
 const MarimoDebugConfiguration = Schema.Struct({

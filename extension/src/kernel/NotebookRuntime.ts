@@ -16,7 +16,7 @@ import {
   Stream,
   Array as EffectArray,
 } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 import type * as vscode from "vscode";
 
 import { unreachable } from "../assert.ts";

@@ -546,7 +546,7 @@ if __name__ == "__main__":
     ["notebook with cell options", "with_options.txt"],
     ["notebook with setup cell", "with_setup.txt"],
     ["notebook with ellipsis", "with_ellipsis.txt"],
-  ] as const)("identity: %s", ([_, filename]) => {
+  ] as const)("identity: %s", ([, filename]) => {
     return Effect.gen(function* () {
       const serializer = yield* NotebookSerializer.Service;
       const source = yield* Effect.tryPromise(() =>

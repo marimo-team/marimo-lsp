@@ -1749,22 +1749,20 @@ Vitest.describe("NotebookExecutions", () => {
     Effect.fn(function* () {
       const sources = Array.from({ length: 32 }, (_, index) => `x = ${index}`);
       const reads = sources.map(() => 0);
-      const cells = sources.map(
-        (_, index): vscode.NotebookCellData => ({
-          kind: 1,
-          get value() {
-            reads[index] = (reads[index] ?? 0) + 1;
-            return sources[index] ?? "";
-          },
-          set value(source: string) {
-            sources[index] = source;
-          },
-          languageId: "python",
-          metadata: MarimoNotebookCell.createMetadata({
-            marimoRuntime: { stableId: `cell-${index}` },
-          }),
+      const cells = sources.map((_, index): vscode.NotebookCellData => ({
+        kind: 1,
+        get value() {
+          reads[index] = (reads[index] ?? 0) + 1;
+          return sources[index] ?? "";
+        },
+        set value(source: string) {
+          sources[index] = source;
+        },
+        languageId: "python",
+        metadata: MarimoNotebookCell.createMetadata({
+          marimoRuntime: { stableId: `cell-${index}` },
         }),
-      );
+      }));
       const editor = VsCodeTest.makeNotebookEditor("/test/notebook.py", {
         data: { cells },
       });

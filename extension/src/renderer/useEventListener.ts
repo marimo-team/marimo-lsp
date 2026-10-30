@@ -6,7 +6,7 @@ import * as React from "react";
  * Attach a DOM event listener to a ref'd element with automatic cleanup.
  *
  * - Re-attaches when the element, event type, or options change.
- * - Always sees the latest handler without re-subscribing (via ref).
+ * - Always sees the latest handler without re-subscribing (via Effect Event).
  * - Cleans up with AbortController on unmount or dependency change.
  */
 export function useEventListener<
@@ -18,8 +18,7 @@ export function useEventListener<
   handler: (e: HTMLElementEventMap[K]) => void,
   options?: boolean | AddEventListenerOptions,
 ) {
-  const handlerRef = React.useRef(handler);
-  handlerRef.current = handler;
+  const handleEvent = React.useEffectEvent(handler);
 
   React.useEffect(() => {
     const el = ref.current;
@@ -31,7 +30,7 @@ export function useEventListener<
         ? { capture: options, signal: controller.signal }
         : { ...options, signal: controller.signal };
 
-    el.addEventListener(event, (e) => handlerRef.current(e), opts);
+    el.addEventListener(event, (e) => handleEvent(e), opts);
 
     return () => controller.abort();
   }, [ref, event, options]);

@@ -37,6 +37,8 @@ HEADER = """\
 import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
 
+import { ownedStruct } from "./ownedStruct.ts";
+
 type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
 const MarimoNotification = Schema.declare<MarimoNotification>(
   (value): value is MarimoNotification =>
@@ -143,20 +145,6 @@ def _jsdoc(doc: str | None, indent: str = "") -> str:
     lines = pyinspect.cleandoc(doc).splitlines()
     body = "\n".join(f"{indent} * {line}".rstrip() for line in lines)
     return f"{indent}/**\n{body}\n{indent} */\n"
-
-
-def _annotations(cls: type, name: str) -> str:
-    """Emit identity and excess-property policy for an owned wire struct."""
-    annotations = [f"identifier: {_ts_string(name)}"]
-    if getattr(cls, "__preserve_unknown_fields__", False):
-        annotations.append('parseOptions: { onExcessProperty: "preserve" }')
-    elif (
-        isinstance(cls, type)
-        and issubclass(cls, msgspec.Struct)
-        and cls.__struct_config__.forbid_unknown_fields
-    ):
-        annotations.append('parseOptions: { onExcessProperty: "error" }')
-    return f".annotate({{ {', '.join(annotations)} }})"
 
 
 def _identifier(name: str) -> str:
@@ -307,7 +295,18 @@ class Emitter:
         finally:
             self.in_flight.discard(cls)
         struct = f"Schema.Struct({{\n{fields}}})" if fields else "Schema.Struct({})"
-        annotations = _annotations(cls, name)
+        if getattr(cls, "__preserve_unknown_fields__", False):
+            struct = (
+                f"Schema.StructWithRest({struct}, "
+                "[Schema.Record(Schema.String, Schema.Unknown)])"
+            )
+        elif (
+            isinstance(cls, type)
+            and issubclass(cls, msgspec.Struct)
+            and cls.__struct_config__.forbid_unknown_fields
+        ):
+            struct = struct.replace("Schema.Struct(", "ownedStruct(", 1)
+        annotations = _identifier(name)
         if cls in self.recursive:
             # Recursive schemas need an explicit type: `typeof X.Type` cannot
             # refer to itself, so emit a structural interface alongside. The
@@ -444,11 +443,14 @@ class Emitter:
                     # v3 `Schema.optionalWith(S, { default })`: the key stays
                     # omittable on the wire; a missing/undefined field decodes
                     # to the default. The default is an *Encoded* value, so
-                    # nested struct defaults are filled by the inner decode —
+                    # Decode the default explicitly so nested struct defaults are filled.
+                    # The type-default combinator preserves encoded-side checks —
                     # matching msgspec's default_factory semantics.
                     rendered = (
                         f"{prop}: {expr}.pipe("
-                        f"Schema.withDecodingDefault(Effect.sync(() => {default}))"
+                        f"Schema.withDecodingDefaultType("
+                        f"Effect.flatMap(Effect.sync(() => {default}), "
+                        f"Schema.decodeUnknownEffect({expr})))"
                         f")"
                     )
             lines.append(f"{indent}{rendered},")
@@ -490,8 +492,8 @@ class Emitter:
             f"export type {name} = typeof {name}.Type;\n"
         )
 
-    def emit_command(self, spec: CommandSpec) -> tuple[str, str, str, str]:
-        """Return a command's schema, method, tag, and success schema."""
+    def emit_command(self, spec: CommandSpec) -> tuple[str, str, str, str, str]:
+        """Return a command's schema, method, tag, success schema, and parameter type."""
         info = mi.type_info(spec.request)
         if not isinstance(info, mi.StructType) or info.tag is None:
             msg = f"command {spec.request!r} must be a tagged struct"
@@ -501,6 +503,11 @@ class Emitter:
             _camel(str(info.tag)),
             str(info.tag),
             self.type_expr(mi.type_info(spec.response)),
+            (
+                f'Omit<typeof {info.cls.__name__}.Encoded, "kind">'
+                if info.fields
+                else "Record<string, never>"
+            ),
         )
 
 
@@ -539,12 +546,12 @@ def generate() -> str:
     commands = [emitter.emit_command(spec) for spec in COMMANDS]
     emitter.definitions.append(_DISPATCH_HELPER)
     methods = "\n".join(
-        f'  {method}: (params: Omit<typeof {class_name}.Encoded, "kind">) => {{\n'
+        f"  {method}: (params: {params}) => {{\n"
         f"    const command = {{ kind: {_ts_string(tag)}, ...params }} "
         f"satisfies typeof {class_name}.Encoded;\n"
         f"    return dispatch(send, command, {success});\n"
         "  },"
-        for class_name, method, tag, success in commands
+        for class_name, method, tag, success, params in commands
     )
     emitter.definitions.append(
         "/**\n"
