@@ -1,9 +1,118 @@
 import * as Vitest from "@effect/vitest";
-import { Redacted } from "effect";
+import * as SentrySDK from "@sentry/node";
+import { Effect, Redacted } from "effect";
+import { vi } from "vite-plus/test";
 
 import * as MarimoClient from "../../src/lsp/MarimoClient.ts";
 import { classifyNotebookDeserializeError } from "../../src/telemetry/classifyNotebookDeserializeError.ts";
-import { classifySentryError } from "../../src/telemetry/sentrySink.ts";
+import {
+  acquireSentryAdapter,
+  classifySentryError,
+} from "../../src/telemetry/sentrySink.ts";
+
+// Tests share a module cache; reload the adapter so it sees this transport mock.
+vi.hoisted(() => vi.resetModules());
+vi.mock("@sentry/node", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@sentry/node")>()),
+}));
+
+Vitest.it.live(
+  "delivers scoped errors and flushes on release without replacing the host client",
+  Effect.fn(function* () {
+    const envelopes: Parameters<
+      ReturnType<typeof SentrySDK.makeNodeTransport>["send"]
+    >[0][] = [];
+    const flush = vi.fn(async () => true);
+    const init = SentrySDK.initWithoutDefaultIntegrations;
+    let client: SentrySDK.NodeClient | undefined;
+    // Keep the real SDK pipeline, replacing only its network transport.
+    const initialize = vi
+      .spyOn(SentrySDK, "initWithoutDefaultIntegrations")
+      .mockImplementation((options) => {
+        client = init({
+          ...options,
+          transport: () => ({
+            send: async (envelope) => {
+              envelopes.push(envelope);
+              return { statusCode: 200 };
+            },
+            flush,
+          }),
+        });
+        return client;
+      });
+    const globalScope = SentrySDK.getCurrentScope();
+    const previousClient = globalScope.getClient();
+    const hostClient = new SentrySDK.NodeClient({
+      integrations: [],
+      transport: () => ({ send: async () => ({}), flush: async () => true }),
+      stackParser: SentrySDK.defaultStackParser,
+    });
+    globalScope.setClient(hostClient);
+    try {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const adapter = yield* acquireSentryAdapter({
+            appHost: "desktop",
+            appName: "Visual Studio Code",
+            machineId: "test-machine",
+            extensionVersion: "1.2.3",
+          });
+          Vitest.expect(globalScope.getClient()).toBe(hostClient);
+          Vitest.expect(client?.getOptions().enableOpenTelemetrySetup).toBe(
+            false,
+          );
+          Vitest.expect(
+            client?.getOptions().integrations.map(({ name }) => name),
+          ).toEqual(["LinkedErrors", "ExtraErrorData", "SpanStreaming"]);
+          Vitest.expect(client?.getDataCollectionOptions()).toMatchObject({
+            userInfo: false,
+            cookies: false,
+            httpHeaders: { request: false, response: false },
+            httpBodies: [],
+            urlQueryParams: false,
+            genAI: { inputs: false, outputs: false },
+            databaseQueryData: false,
+            queues: false,
+            graphQL: { document: false, variables: false },
+          });
+          adapter.addBreadcrumb("Opening notebook", "info");
+          adapter.setLspMode("wasm");
+          adapter.captureError(new Error("Notebook failed"), {
+            "error.domain": "notebook",
+            "error.kind": "test",
+          });
+        }),
+      );
+      Vitest.expect(flush).toHaveBeenCalled();
+      Vitest.expect(client?.getOptions().enabled).toBe(false);
+      Vitest.expect(globalScope.getClient()).toBe(hostClient);
+      Vitest.expect(envelopes).toHaveLength(1);
+      Vitest.expect(envelopes[0]?.[1]).toEqual([
+        [
+          { type: "event" },
+          Vitest.expect.objectContaining({
+            release: "vscode-marimo@1.2.3",
+            user: { id: "test-machine" },
+            fingerprint: ["notebook", "test"],
+            tags: Vitest.expect.objectContaining({ "marimo_lsp.mode": "wasm" }),
+            breadcrumbs: [
+              Vitest.expect.objectContaining({ message: "Opening notebook" }),
+            ],
+            exception: Vitest.expect.objectContaining({
+              values: [
+                Vitest.expect.objectContaining({ value: "Notebook failed" }),
+              ],
+            }),
+          }),
+        ],
+      ]);
+    } finally {
+      globalScope.setClient(previousClient);
+      initialize.mockRestore();
+    }
+  }),
+);
 
 function commandError(cause: Error): MarimoClient.CommandError {
   return new MarimoClient.CommandError({
