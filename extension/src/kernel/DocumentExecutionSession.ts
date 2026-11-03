@@ -127,7 +127,9 @@ interface Work {
 /** Returns true when a command supersedes older pending output. */
 const isConflatableOutput: (command: CellCommand) => boolean =
   CellCommand.$match({
-    PresentDiagnostic: () => true,
+    // A diagnostic clear must run before a new execution: an empty live
+    // projection preserves existing output instead of clearing it.
+    PresentDiagnostic: () => false,
     OpenRun: () => false,
     StartRun: () => false,
     RenderOutputs: () => true,
