@@ -180,12 +180,13 @@ export const layer = Layer.effect(
         ),
       );
 
-    /** Presents an untracked error in one self-contained execution. */
-    const presentUntrackedError = (
+    /** Uses a temporary VS Code handle to write output outside a kernel run. */
+    const presentDetachedOutputs = (
       cell: CellRef,
       binding: VsCodeDriveBinding,
       state: CellRuntimeState,
       applyDiagnostic: boolean,
+      success: boolean | undefined,
     ) =>
       Effect.gen(function* () {
         const execution = yield* createExecution(cell, binding);
@@ -212,7 +213,7 @@ export const layer = Layer.effect(
           }
         }).pipe(
           Effect.ensuring(
-            Effect.try(() => execution.end(false)).pipe(Effect.ignore),
+            Effect.try(() => execution.end(success)).pipe(Effect.ignore),
           ),
         );
       });
@@ -224,6 +225,8 @@ export const layer = Layer.effect(
       command: CellCommand,
     ) =>
       CellCommand.$match(command, {
+        PresentDiagnostic: ({ state }) =>
+          presentDetachedOutputs(cell, binding, state, true, undefined),
         OpenRun: ({ runId }) =>
           Effect.gen(function* () {
             const execution = yield* createExecution(cell, binding);
@@ -252,7 +255,7 @@ export const layer = Layer.effect(
             }),
           ),
         PresentUntrackedError: ({ state, applyDiagnostic }) =>
-          presentUntrackedError(cell, binding, state, applyDiagnostic),
+          presentDetachedOutputs(cell, binding, state, applyDiagnostic, false),
         SetDiagnostic: ({ state }) => setDiagnostic(cell, binding, state),
       }).pipe(
         Effect.catchTag("NotebookCellNotFoundError", () =>

@@ -127,6 +127,9 @@ interface Work {
 /** Returns true when a command supersedes older pending output. */
 const isConflatableOutput: (command: CellCommand) => boolean =
   CellCommand.$match({
+    // A diagnostic clear must run before a new execution: an empty live
+    // projection preserves existing output instead of clearing it.
+    PresentDiagnostic: () => false,
     OpenRun: () => false,
     StartRun: () => false,
     RenderOutputs: () => true,
@@ -141,6 +144,7 @@ const selectCommandDrive = (
   forRun: (runId: RunId) => Option.Option<Drive>,
 ): ((command: CellCommand) => Option.Option<Drive>) =>
   CellCommand.$match({
+    PresentDiagnostic: () => current,
     OpenRun: () => current,
     StartRun: ({ runId }) => forRun(runId),
     RenderOutputs: ({ runId }) => forRun(runId),
@@ -331,7 +335,7 @@ const applyKernelOperation = (
   const cellId = extractCellIdFromCellMessage(wire);
   const previousCell = getCell(state, cellId);
   const nextRuntime = transitionCell(previousCell.run.state, wire);
-  const parsed = parseOp(nextRuntime, wire);
+  const parsed = parseOp(nextRuntime, wire, previousCell.run.state);
 
   if (Option.isNone(parsed)) {
     const [, dequeued] =
@@ -366,7 +370,9 @@ const applyKernelOperation = (
   }
 
   const result = step(previousCell.run, op, source);
-  const mismatch = correlationError(previousCell.run, wire);
+  const mismatch = Op.$is("Diagnostic")(op)
+    ? Option.none()
+    : correlationError(previousCell.run, wire);
   if (Option.isSome(mismatch) && result.commands.length > 0) {
     const current = acceptKernelState(previousCell.run, nextRuntime);
     return {
