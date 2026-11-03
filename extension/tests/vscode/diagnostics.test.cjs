@@ -12,7 +12,13 @@
 const NodeAssert = require("node:assert");
 const vscode = require("vscode");
 
-const { createTestContext, selectKernel, runCell } = require("./helpers.cjs");
+const {
+  createTestContext,
+  selectKernel,
+  runCell,
+  editCell,
+  cellOutputText,
+} = require("./helpers.cjs");
 
 const SCRIPT_HEADER = `# /// script
 # requires-python = ">=3.11"
@@ -60,6 +66,36 @@ function marimoMultiDef(diags) {
 
 suite("diagnostics", function () {
   this.timeout(8_000);
+
+  test("shows a blocked cell's multiple-definition error and removes it after correction", async function () {
+    this.timeout(30_000);
+    await using ctx = createTestContext();
+    const nb = await ctx.writeAndOpenNotebook(makeSource(["x = 10", "x = 5"]));
+    await selectKernel(nb);
+    await runCell(nb.cellAt(0));
+
+    // A graph diagnostic does not have a successful/failed kernel execution
+    // summary, so wait for its output instead of using runCell's run barrier.
+    await vscode.commands.executeCommand("notebook.cell.execute", {
+      ranges: [{ start: 1, end: 2 }],
+      document: nb.uri,
+    });
+    await ctx.waitUntil(() => {
+      const output = cellOutputText(nb.cellAt(1));
+      NodeAssert.match(output, /This cell redefines variables/);
+      NodeAssert.match(output, />x<\/code> was also defined by/);
+      NodeAssert.match(output, />cell-1<\/a>/);
+    });
+
+    await editCell(nb.cellAt(1), "y = 5\nprint(y)");
+    await runCell(nb.cellAt(1));
+    NodeAssert.match(cellOutputText(nb.cellAt(1)), /5/);
+    NodeAssert.doesNotMatch(
+      cellOutputText(nb.cellAt(1)),
+      /This cell redefines variables/,
+    );
+    NodeAssert.strictEqual(nb.cellAt(1).executionSummary?.success, true);
+  });
 
   test("ty resolves cross-cell type in any order; adding a redefinition triggers marimo multiple-definitions", async function () {
     await using ctx = createTestContext();

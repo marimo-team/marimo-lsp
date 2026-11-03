@@ -37,6 +37,8 @@ export const AcceptedSource = Data.taggedEnum<AcceptedSource>();
  * id and timings, so the reducer never sees marimo's nullable wire status.
  */
 export type Op = Data.TaggedEnum<{
+  /** Graph/compilation diagnostics are independent of a cell's execution. */
+  Diagnostic: { readonly next: CellRuntimeState };
   Queue: { readonly runId: RunId; readonly next: CellRuntimeState };
   Start: {
     readonly startTime: number;
@@ -55,6 +57,8 @@ export const Op = Data.taggedEnum<Op>();
 
 /** One host effect requested by the reducer. */
 export type CellCommand = Data.TaggedEnum<{
+  /** Replace diagnostic output without claiming a kernel execution. */
+  PresentDiagnostic: { readonly state: CellRuntimeState };
   OpenRun: { readonly runId: RunId };
   StartRun: {
     readonly runId: RunId;
@@ -141,7 +145,22 @@ export const runIdFromWire = (
 export function parseOp(
   next: CellRuntimeState,
   msg: CellOperationNotification,
+  previous: CellRuntimeState,
 ): Option.Option<Op> {
+  // These messages describe graph validity, not a run of the target cell.
+  // Their run_id belongs to the command that mutated the graph. Autorun clears
+  // a resolved diagnostic with an empty output before queuing the cell.
+  if (
+    msg.status == null &&
+    (isDiagnosticOutput(msg.output) ||
+      (isDiagnosticOutput(previous.output) &&
+        msg.execution_id == null &&
+        msg.output?.channel === "output" &&
+        msg.output.mimetype === "text/plain" &&
+        msg.output.data === ""))
+  ) {
+    return Option.some(Op.Diagnostic({ next }));
+  }
   switch (msg.status) {
     case "queued": {
       return runIdFromWire(msg.run_id).pipe(
@@ -184,6 +203,27 @@ export const activeRunId: (phase: RunPhase) => Option.Option<RunId> =
 const hasMarimoErrorOutput = (state: CellRuntimeState): boolean =>
   state.output?.channel === "marimo-error";
 
+/** Only errors produced by graph validation or compilation, not execution. */
+function isDiagnosticOutput(
+  output: CellOperationNotification["output"],
+): boolean {
+  return (
+    output?.channel === "marimo-error" &&
+    output.mimetype === "application/vnd.marimo+error" &&
+    Array.isArray(output.data) &&
+    output.data.length > 0 &&
+    output.data.every((error) =>
+      [
+        "multiple-defs",
+        "cycle",
+        "setup-refs",
+        "syntax",
+        "import-star",
+      ].includes(error.type),
+    )
+  );
+}
+
 /**
  * The cell run reducer: pure, total, vscode-free. Decides the next
  * {@link RunPhase} and the ordered {@link CellCommand}s a single
@@ -199,6 +239,21 @@ export function step(
   readonly commands: ReadonlyArray<CellCommand>;
 } {
   return Op.$match(op, {
+    Diagnostic: ({ next }) => {
+      const runId = activeRunId(entry.phase);
+      return {
+        entry: acceptKernelState(entry, next),
+        commands: [
+          Option.match(runId, {
+            onNone: () => CellCommand.PresentDiagnostic({ state: next }),
+            // Reuse an existing host handle if one is open, without changing
+            // its lifecycle. A final projection also removes cleared output.
+            onSome: (runId) =>
+              CellCommand.RenderOutputs({ runId, state: next, final: true }),
+          }),
+        ],
+      };
+    },
     Invalidate: () => {
       const runId = activeRunId(entry.phase);
       const acceptedSource = AcceptedSource.$match(entry.acceptedSource, {
@@ -326,7 +381,10 @@ export function step(
             final: false,
           }),
         );
-      } else if (hasMarimoErrorOutput(next)) {
+      } else if (
+        hasMarimoErrorOutput(next) &&
+        !isDiagnosticOutput(next.output)
+      ) {
         commands.push(
           CellCommand.PresentUntrackedError({
             state: next,
