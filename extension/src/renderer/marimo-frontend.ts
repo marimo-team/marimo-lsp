@@ -2,6 +2,7 @@ import {
   type DownloadSizeLimit,
   downloadSizeLimitAtom,
 } from "@marimo-team/frontend/unstable_internal/components/data-table/download-policy/atoms.ts";
+import { notebookAtom } from "@marimo-team/frontend/unstable_internal/core/cells/cells.ts";
 /**
  * @module
  *
@@ -10,6 +11,7 @@ import {
  * See marimo-frontend-untyped.js for details on why this split exists.
  */
 import type { CellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
+import { createCell } from "@marimo-team/frontend/unstable_internal/core/cells/types.ts";
 import { FUNCTIONS_REGISTRY } from "@marimo-team/frontend/unstable_internal/core/functions/FunctionRegistry.ts";
 import { initialModeAtom } from "@marimo-team/frontend/unstable_internal/core/mode.ts";
 import { requestClientAtom } from "@marimo-team/frontend/unstable_internal/core/network/requests.ts";
@@ -42,9 +44,36 @@ import "@marimo-team/frontend/unstable_internal/css/table.css";
 import * as untyped from "./marimo-frontend-untyped.js";
 
 export { useTheme } from "@marimo-team/frontend/unstable_internal/theme/useTheme.ts";
+export { HTMLCellId } from "@marimo-team/frontend/unstable_internal/core/cells/ids.ts";
 
 export type RequestClient = EditRequests & RunRequests;
 export type { CellRuntimeState, CellId, DownloadSizeLimit };
+
+export function registerCellRuntime(
+  cellId: CellId,
+  runtime: CellRuntimeState,
+): () => void {
+  store.set(notebookAtom, (state) => ({
+    ...state,
+    cellData: {
+      ...state.cellData,
+      [cellId]: state.cellData[cellId] ?? createCell({ id: cellId }),
+    },
+    cellRuntime: { ...state.cellRuntime, [cellId]: runtime },
+  }));
+
+  return () => {
+    store.set(notebookAtom, (state) => {
+      // A replacement output may already own the cell's state.
+      if (state.cellRuntime[cellId] !== runtime) return state;
+      const cellData = { ...state.cellData };
+      const cellRuntime = { ...state.cellRuntime };
+      delete cellData[cellId];
+      delete cellRuntime[cellId];
+      return { ...state, cellData, cellRuntime };
+    });
+  };
+}
 
 /**
  * Initialize marimo UI components in the VS Code renderer environment.
