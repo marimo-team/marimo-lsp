@@ -31,6 +31,7 @@ import { store } from "@marimo-team/frontend/unstable_internal/core/state/jotai.
 import { safeExtractSetUIElementMessageBuffers } from "@marimo-team/frontend/unstable_internal/utils/json/base64.ts";
 
 import type { NotificationOf, CellRuntimeState } from "../types.ts";
+import { CellRuntimes } from "./cellRuntimes.ts";
 
 import "@marimo-team/frontend/unstable_internal/css/common.css";
 import "@marimo-team/frontend/unstable_internal/css/globals.css";
@@ -49,10 +50,13 @@ export { HTMLCellId } from "@marimo-team/frontend/unstable_internal/core/cells/i
 export type RequestClient = EditRequests & RunRequests;
 export type { CellRuntimeState, CellId, DownloadSizeLimit };
 
+const cellRuntimes = new CellRuntimes();
+
 export function registerCellRuntime(
   cellId: CellId,
   runtime: CellRuntimeState,
 ): () => void {
+  const release = cellRuntimes.register(cellId, runtime);
   store.set(notebookAtom, (state) => ({
     ...state,
     cellData: {
@@ -63,8 +67,15 @@ export function registerCellRuntime(
   }));
 
   return () => {
+    const remainingRuntime = release();
     store.set(notebookAtom, (state) => {
-      // A replacement output may already own the cell's state.
+      if (remainingRuntime) {
+        if (state.cellRuntime[cellId] === remainingRuntime) return state;
+        return {
+          ...state,
+          cellRuntime: { ...state.cellRuntime, [cellId]: remainingRuntime },
+        };
+      }
       if (state.cellRuntime[cellId] !== runtime) return state;
       const cellData = { ...state.cellData };
       const cellRuntime = { ...state.cellRuntime };
