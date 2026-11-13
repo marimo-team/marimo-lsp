@@ -31,7 +31,7 @@ defaults:
 jobs:
   # Phase 1: Bump version (runs once before platform builds)
   version-bump:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -245,7 +245,7 @@ jobs:
   # Phase 3: Build universal extension (fallback for unsupported platforms)
   build-universal:
     needs: version-bump
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     name: Build (universal)
 
     steps:
@@ -321,7 +321,7 @@ jobs:
   # Phase 4: Publish to marketplaces
   publish:
     needs: [version-bump, build, build-universal]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     permissions:
       contents: write
       id-token: write # required for Doppler OIDC
