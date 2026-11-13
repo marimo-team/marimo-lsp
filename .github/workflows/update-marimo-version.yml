@@ -8,7 +8,7 @@ on:
 
 jobs:
   update-version:
-    runs-on: ubuntu-p-small
+    runs-on: "${{ vars.CI_RUNNER_SMALL || 'ubuntu-latest' }}"
     permissions:
       contents: write
       pull-requests: write
