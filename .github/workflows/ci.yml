@@ -19,7 +19,7 @@ env:
 jobs:
   typescript-lint:
     name: TypeScript / Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     permissions:
       contents: read
       id-token: write # required for Doppler OIDC
@@ -90,10 +90,11 @@ jobs:
       contents: read
       id-token: write # required for Doppler OIDC
     strategy:
+      fail-fast: false
       matrix:
         # TODO: more platforms
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-p-small' || matrix.os == 'windows-latest' && 'windows-medium' || matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -196,7 +197,7 @@ jobs:
 
   python-lint:
     name: Python / Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -206,7 +207,7 @@ jobs:
 
   kernel-compatibility:
     name: Python / Kernel compatibility floor
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -220,7 +221,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-p-small' || matrix.os == 'windows-latest' && 'windows-medium' || matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -239,7 +240,7 @@ jobs:
 
   python-typecheck:
     name: Python / Typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
@@ -247,7 +248,7 @@ jobs:
 
   coverage-report:
     name: Coverage / Report
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     needs: [python-test, typescript-test]
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     permissions:

@@ -8,7 +8,7 @@ on:
 
 jobs:
   update-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-p-small
     permissions:
       contents: write
       pull-requests: write
