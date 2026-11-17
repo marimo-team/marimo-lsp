@@ -48,7 +48,7 @@ jobs:
         working-directory: extension
         run: |
           npm version ${{ inputs.version-bump }} --no-git-tag-version
-          echo "version=$(cat package.json | jq -r '.version')" >> $GITHUB_OUTPUT
+          echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
     permissions:
       contents: write
 
@@ -108,7 +108,7 @@ jobs:
       - name: Read marimo version
         id: marimo-version
         working-directory: marimo-lsp
-        run: echo "ref=$(uv run --no-project python -m scripts.marimo_version show)" >> $GITHUB_OUTPUT
+        run: echo "ref=$(uv run --no-project python -m scripts.marimo_version show)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -262,7 +262,7 @@ jobs:
       - name: Read marimo version
         id: marimo-version
         working-directory: marimo-lsp
-        run: echo "ref=$(uv run --no-project python -m scripts.marimo_version show)" >> $GITHUB_OUTPUT
+        run: echo "ref=$(uv run --no-project python -m scripts.marimo_version show)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -382,7 +382,7 @@ jobs:
       - name: Get previous tag
         working-directory: marimo-lsp
         run: |
-          echo "PREVIOUS_TAG=$(git tag --sort=-version:refname | head -n 1)" >> $GITHUB_ENV
+          echo "PREVIOUS_TAG=$(git tag --sort=-version:refname | head -n 1)" >> "$GITHUB_ENV"
 
       - name: Generate release notes
         working-directory: marimo-lsp
