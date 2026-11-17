@@ -36,7 +36,7 @@ if __name__ == "__main__":
 suite("rendered notebook outputs", function () {
   this.timeout(60_000);
 
-  test("renders and selects a table in the VS Code webview", async function () {
+  test("renders, selects and visualizes a table in the VS Code webview", async function () {
     const userDataDir = process.env.MARIMO_TEST_USER_DATA_DIR;
     NodeAssert.ok(
       userDataDir,
@@ -128,6 +128,28 @@ suite("rendered notebook outputs", function () {
       await expect
         .poll(() => cellOutputText(notebook.cellAt(1)), { timeout: 15_000 })
         .toMatch(/selected rows: 0/);
+
+      await table
+        .getByRole("button", { name: "Visualize", exact: true })
+        .click();
+      await expect(
+        table.getByRole("tab", { name: "Bar Chart", exact: true }),
+      ).toBeVisible();
+      await table.getByRole("button", { name: "+", exact: true }).click();
+      await expect(
+        table.getByRole("tab", { name: "Bar Chart 2", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await table.getByText("Select column", { exact: true }).first().click();
+      await outputFrame
+        .getByRole("option", { name: "name", exact: true })
+        .click();
+      await table.getByText("Select column", { exact: true }).first().click();
+      await outputFrame
+        .getByRole("option", { name: "age", exact: true })
+        .click();
+      await expect(
+        table.getByLabel("Vega visualization").locator("canvas"),
+      ).toBeVisible();
       NodeAssert.deepEqual(
         rendererErrors,
         [],
