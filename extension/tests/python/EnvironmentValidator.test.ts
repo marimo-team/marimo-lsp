@@ -104,7 +104,7 @@ Vitest.describe("EnvironmentValidator", () => {
 
       const venv = NodePath.join(tmpdir.path, ".venv-outdated");
       yield* uv.venv(venv, { python, clear: true });
-      yield* uv.pipInstall(["marimo<0.16.0"], { venv });
+      yield* uv.pipInstall(["marimo==0.23.3"], { venv });
 
       const result = yield* Effect.result(
         validator.validate(
@@ -121,12 +121,12 @@ Vitest.describe("EnvironmentValidator", () => {
         [
           {
             "currentVersion": Version {
-              "value": "0.15.5",
+              "value": "0.23.3",
             },
             "kind": "outdated",
             "package": "marimo",
             "requiredVersion": Version {
-              "value": "0.23.3",
+              "value": "0.23.11",
             },
           },
         ]
