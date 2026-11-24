@@ -16,14 +16,13 @@ const extensionDir = NodePath.dirname(
   NodeUrl.fileURLToPath(new URL("../package.json", import.meta.url)),
 );
 const repositoryDir = NodePath.dirname(extensionDir);
-const kernelPython = NodeChildProcess.execFileSync(
-  "uv",
-  ["run", "python", "-c", "import sys; print(sys.executable)"],
-  {
-    cwd: repositoryDir,
-    encoding: "utf8",
-  },
-).trim();
+const kernelPython =
+  process.argv[2] ??
+  NodeChildProcess.execFileSync(
+    "uv",
+    ["run", "python", "-c", "import sys; print(sys.executable)"],
+    { cwd: repositoryDir, encoding: "utf8" },
+  ).trim();
 const child = NodeChildProcess.spawn(
   process.execPath,
   [NodePath.join(extensionDir, "dist", "wasmServer.js")],
