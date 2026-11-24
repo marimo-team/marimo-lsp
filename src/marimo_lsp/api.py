@@ -23,6 +23,7 @@ from marimo._export.serialization import serialize_notebook_snapshot
 from marimo._messaging.msgspec_encoder import encode_json_bytes
 from marimo._runtime.commands import (
     DeleteCellCommand,
+    ExecuteCellCommand,
     ExecuteCellsCommand,
     ExecuteScratchpadCommand,
     HTTPRequest,
@@ -239,6 +240,18 @@ def _get_display_config(config: MarimoConfig) -> DisplayConfig:
     return cast("DisplayConfig", config.get("display", {}))
 
 
+class _KernelExecuteCellsCommand(ExecuteCellsCommand, tag="execute-cells"):
+    """Send both batch formats across the bundled-LSP/user-kernel boundary."""
+
+    # Kernels through 0.25.2 read cellIds and codes. Newer kernels read
+    # executionRequests. Both decoders ignore fields they do not recognize.
+    execution_requests: list[ExecuteCellCommand] = msgspec.field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        self.execution_requests = super().execution_requests
+
+
 @command(protocol.Execute)
 async def run(ctx: ApiContext, args: protocol.Execute) -> ListSessionsResponse:
     """Dispatch execution and return the resulting live-session snapshot."""
@@ -256,7 +269,7 @@ async def run(ctx: ApiContext, args: protocol.Execute) -> ListSessionsResponse:
         InstantiateNotebookRequest(auto_run=False, object_ids=[], values=[]),
         http_request=None,
     )
-    request = ExecuteCellsCommand(
+    request = _KernelExecuteCellsCommand(
         cell_ids=[CellId_t(str(cell.cell_id)) for cell in args.cells],
         codes=[cell.code for cell in args.cells],
     )
