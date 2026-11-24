@@ -25,7 +25,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import marimo._ipc as ipc
 import msgspec
@@ -51,6 +51,7 @@ from protocol import (
 
 if TYPE_CHECKING:
     from marimo._messaging.types import KernelMessage
+    from marimo._session.queue import QueueType
 
 _write_lock = threading.Lock()
 _decoder = msgspec.json.Decoder(ToBridge)
@@ -237,7 +238,9 @@ class _Bridge:
             self._queues.put_control_request(message.request)
         elif isinstance(message, Input):
             assert self._queues is not None
-            self._queues.put_input(message.text)
+            cast("QueueType[str | dict[str, str]]", self._queues.input_queue).put(
+                message.reply
+            )
         elif isinstance(message, Interrupt):
             self.interrupt()
         elif isinstance(message, Close):

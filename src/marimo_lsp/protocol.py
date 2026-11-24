@@ -346,6 +346,7 @@ class SendStdin(
     notebook_uri: typing.Annotated[NotebookUri, _brand("NotebookUri")]
     kernel_session_id: typing.Annotated[KernelSessionId, _brand("KernelSessionId")]
     text: str
+    input_id: str | None = None
 
 
 class CloseSession(

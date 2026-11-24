@@ -14,7 +14,9 @@ from uuid import uuid4
 
 import msgspec
 from marimo._config.manager import get_default_config_manager
+from marimo._messaging.cell_output import CellOutput
 from marimo._messaging.msgspec_encoder import asdict
+from marimo._messaging.notification import CellNotification
 from marimo._messaging.serde import (
     deserialize_kernel_message,
     deserialize_kernel_notification_name,
@@ -67,7 +69,7 @@ if TYPE_CHECKING:
     from pygls.lsp.server import LanguageServer
     from pygls.workspace import Workspace
 
-    from marimo_lsp.kernels import Kernel, Kernels
+    from marimo_lsp.kernels import Kernel, KernelInput, Kernels
     from marimo_lsp.saved_session_store import SavedSessionFiles
 
 
@@ -120,6 +122,15 @@ def _normalize_kernel_message(
             if changed:
                 return KernelMessage(msgspec.json.encode(operation))
     return message
+
+
+class _ConsoleOutput(CellOutput):
+    # Newer kernels address input() replies to a particular prompt.
+    input_id: str | msgspec.UnsetType = msgspec.UNSET
+
+
+class _KernelCellNotification(CellNotification, tag="cell-op"):
+    console: _ConsoleOutput | list[_ConsoleOutput] | None = None
 
 
 class _OperationSink:
@@ -182,7 +193,11 @@ class _OperationSink:
             return
 
         try:
-            notification = deserialize_kernel_message(message)
+            notification = (
+                msgspec.json.decode(message, type=_KernelCellNotification)
+                if deserialize_kernel_notification_name(message) == "cell-op"
+                else deserialize_kernel_message(message)
+            )
             if not self._activated:
                 self._pending.append(notification)
                 return
@@ -484,9 +499,9 @@ class Session:
         with self._state_lock:
             self._on_kernel_failure = on_kernel_failure
 
-    def put_input(self, text: str) -> None:
+    def put_input(self, reply: KernelInput) -> None:
         """Send user input to the kernel's stdin."""
-        self._kernel.input(text)
+        self._kernel.input(reply)
 
     def try_interrupt(self) -> None:
         """Interrupt the kernel."""

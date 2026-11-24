@@ -39,7 +39,7 @@ if typing.TYPE_CHECKING:
     from marimo._runtime.commands import CommandMessage
 
     from marimo_lsp.app_file_manager import LspAppFileManager
-    from marimo_lsp.kernels import Kernel
+    from marimo_lsp.kernels import Kernel, KernelInput
 
 
 logger = get_logger()
@@ -172,9 +172,9 @@ class WasmKernel:
         """Send a command to the kernel."""
         self._write(Control(request=request))
 
-    def input(self, text: str) -> None:
+    def input(self, reply: KernelInput) -> None:
         """Send an input response to the kernel."""
-        self._write(Input(text=text))
+        self._write(Input(reply=reply))
 
     def interrupt(self) -> None:
         """Interrupt the kernel."""

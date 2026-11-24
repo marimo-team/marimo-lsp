@@ -255,6 +255,14 @@ export const SendStdin = ownedStruct({
   notebookUri: NotebookUriFromString,
   kernelSessionId: KernelSessionIdFromString,
   text: Schema.String,
+  inputId: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefaultType(
+      Effect.flatMap(
+        Effect.sync(() => null),
+        Schema.decodeUnknownEffect(Schema.NullOr(Schema.String)),
+      ),
+    ),
+  ),
 }).annotate({ identifier: "SendStdin" });
 export type SendStdin = typeof SendStdin.Type;
 

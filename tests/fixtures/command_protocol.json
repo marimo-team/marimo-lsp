@@ -73,7 +73,8 @@
       "kind": "send-stdin",
       "notebookUri": "file:///notebook.py",
       "kernelSessionId": "kernel-1",
-      "text": "yes\n"
+      "text": "yes\n",
+      "inputId": "prompt-1"
     },
     {
       "kind": "close-session",
