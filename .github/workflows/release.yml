@@ -76,10 +76,10 @@ jobs:
             target: arm-unknown-linux-gnueabihf
             code-target: linux-armhf
             arch: armv7
-          - os: macos-latest
+          - os: ${{ vars.CI_RUNNER_SMALL || 'ubuntu-latest' }}
             target: x86_64-apple-darwin
             code-target: darwin-x64
-          - os: macos-14
+          - os: ${{ vars.CI_RUNNER_SMALL || 'ubuntu-latest' }}
             target: aarch64-apple-darwin
             code-target: darwin-arm64
           - os: ubuntu-22.04
@@ -122,8 +122,7 @@ jobs:
       # and extract the binary to bundle in the extension. While we could use
       # `uv pip install --target`, some builds run in emulated environments
       # (ARM Linux via QEMU, Alpine via chroot) where setting up uv adds
-      # complexity. Using pip everywhere keeps the workflow simple and consistent.
-      # The speed difference is negligible for a single package install.
+      # complexity.
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
@@ -135,19 +134,21 @@ jobs:
       - name: Prepare bundle directory
         run: mkdir -p ./marimo-lsp/extension/bundled
 
-      # macOS ARM - use arch prefix to ensure we get the ARM wheel
-      - name: Install uv binary (macOS ARM)
-        if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'aarch64') }}
-        run: arch -arm64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
-
-      # macOS x64 - use arch prefix to ensure we get the x64 wheel (runs under Rosetta)
-      - name: Install uv binary (macOS x64)
-        if: ${{ startsWith(matrix.os, 'macos') && startsWith(matrix.target, 'x86_64') }}
-        run: arch -x86_64 python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
+      - name: Bundle and verify macOS uv binary on Linux
+        if: startsWith(matrix.code-target, 'darwin-')
+        working-directory: marimo-lsp/extension
+        env:
+          TARGET: ${{ matrix.target }}
+          MACH_O_ARCH: ${{ matrix.code-target == 'darwin-arm64' && 'arm64' || 'x86_64' }}
+        run: |
+          uv pip install --target bundled/libs --python-platform "$TARGET" \
+            --only-binary :all: --no-deps --require-hashes -r requirements.txt
+          test -x bundled/libs/bin/uv
+          file bundled/libs/bin/uv | grep -E "Mach-O.*${MACH_O_ARCH}"
 
       # Linux ARM - emulated via QEMU, pip runs inside and sees ARM architecture
       - name: Install uv binary (Linux ARM)
-        if: ${{ startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl') }}
+        if: startsWith(matrix.code-target, 'linux-arm')
         uses: uraimo/run-on-arch-action@d94c13912ea685de38fccc1109385b83fd79427d # v3.0.1
         with:
           arch: ${{ matrix.arch }}
@@ -175,7 +176,7 @@ jobs:
 
       # Windows and Linux x64 - native builds, straightforward pip install
       - name: Install uv binary (Windows/Linux x64)
-        if: ${{ !startsWith(matrix.os, 'macos') && !(startsWith(matrix.os, 'ubuntu') && !startsWith(matrix.target, 'x86_64') && !endsWith(matrix.target, 'musl')) && !(startsWith(matrix.os, 'ubuntu') && endsWith(matrix.target, 'musl')) }}
+        if: startsWith(matrix.code-target, 'win32-') || matrix.code-target == 'linux-x64'
         run: python -m pip install -t ./marimo-lsp/extension/bundled/libs --implementation py --no-deps --require-hashes -r ./marimo-lsp/extension/requirements.txt
 
       # Verify the bundled binary was installed correctly
@@ -190,7 +191,7 @@ jobs:
           else
             ls -la ./marimo-lsp/extension/bundled/libs/bin/uv
             # Only run version check on native builds (not cross-compiled ARM/Alpine)
-            if [ "${{ matrix.code-target }}" = "darwin-arm64" ] || [ "${{ matrix.code-target }}" = "darwin-x64" ] || [ "${{ matrix.code-target }}" = "linux-x64" ]; then
+            if [ "${{ matrix.code-target }}" = "linux-x64" ]; then
               ./marimo-lsp/extension/bundled/libs/bin/uv --version
             fi
           fi
