@@ -431,7 +431,11 @@ async def send_stdin(ctx: ApiContext, args: protocol.SendStdin) -> None:
     session = _require_kernel_session(
         ctx, args.notebook_uri, SessionId(str(args.kernel_session_id))
     )
-    session.put_input(args.text)
+    session.put_input(
+        {"input_id": args.input_id, "value": args.text}
+        if args.input_id is not None
+        else args.text
+    )
 
 
 @command(protocol.CloseSession)

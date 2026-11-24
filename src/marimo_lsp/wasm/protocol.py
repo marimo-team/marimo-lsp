@@ -83,7 +83,7 @@ class Control(msgspec.Struct, tag="control", tag_field="type", rename="camel"):
 class Input(msgspec.Struct, tag="input", tag_field="type", rename="camel"):
     """Respond to a kernel input request."""
 
-    text: str
+    reply: str | dict[str, str] = msgspec.field(name="text")
     version: Literal[1] = VERSION
 
 

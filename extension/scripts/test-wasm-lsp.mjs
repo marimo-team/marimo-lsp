@@ -6,7 +6,10 @@ import * as NodeOs from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUrl from "node:url";
 
-import { StreamMessageReader } from "vscode-jsonrpc/node";
+import { Schema } from "effect";
+import { Message, StreamMessageReader } from "vscode-jsonrpc/node";
+
+import { KernelNotification } from "../src/schemas/Models.gen.ts";
 
 const TIMEOUT_MS = 20_000;
 const extensionDir = NodePath.dirname(
@@ -36,10 +39,36 @@ child.stderr.on("data", (chunk) => stderr.push(chunk));
 const reader = new StreamMessageReader(child.stdout);
 /** @type {Map<number, (message: unknown) => void>} */
 const responses = new Map();
+const decodeNotification = Schema.decodeUnknownSync(KernelNotification);
 reader.listen((message) => {
   if ("id" in message && typeof message.id === "number") {
     responses.get(message.id)?.(message);
     responses.delete(message.id);
+  }
+  if (
+    Message.isNotification(message) &&
+    message.method === "marimo/kernelNotification"
+  ) {
+    const { notebookUri, sessionId, notification } = decodeNotification(
+      message.params,
+    );
+    if (notification.op !== "cell-op") return;
+    for (const output of [notification.console].flat()) {
+      if (output?.channel === "stdin") {
+        send({
+          jsonrpc: "2.0",
+          id: 302,
+          method: "marimo/command",
+          params: {
+            kind: "send-stdin",
+            notebookUri,
+            kernelSessionId: sessionId,
+            inputId: "input_id" in output ? output.input_id : undefined,
+            text: "compat-ok",
+          },
+        });
+      }
+    }
   }
 });
 
@@ -220,7 +249,7 @@ send({
       {
         cellId: "value-cell",
         code:
-          'print("interrupt-started", flush=True)\n' +
+          'print("stdin-reply:" + input("Name?"), flush=True)\n' +
           "time.sleep(60)\n" +
           "value = slider.value",
       },
@@ -228,7 +257,7 @@ send({
   },
 });
 await longRun;
-await waitForOutput(/interrupt-started/);
+await waitForOutput(/stdin-reply:compat-ok/);
 
 const interrupted = response(301);
 send({
@@ -274,4 +303,4 @@ NodeAssert.match(output, /"op":"completed-run"/);
 NodeAssert.match(output, /slider-value:100/);
 NodeAssert.match(output, /"op":"interrupted"/);
 NodeAssert.doesNotMatch(output, /"channel":"marimo-error"/);
-console.log("WASM language-server UI update and interrupt test passed");
+console.log("WASM language-server UI update, stdin, and interrupt test passed");

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import typing
 
+KernelInput = str | dict[str, str]
+
 if typing.TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -28,7 +30,7 @@ class Kernel(typing.Protocol):
         """Send a command to the kernel."""
         ...
 
-    def input(self, text: str) -> None:
+    def input(self, reply: KernelInput) -> None:
         """Send a response to a kernel input request."""
         ...
 

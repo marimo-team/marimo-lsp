@@ -356,7 +356,7 @@ Vitest.describe("NotebookRuntime cell identity", () => {
 
 Vitest.describe("NotebookRuntime stdin", () => {
   it.effect(
-    "prompts for input on stdin cell-op and sends response",
+    "sends the response to the prompt identified by the kernel",
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
       const marimo = yield* MarimoClientTest.Service;
@@ -369,18 +369,17 @@ Vitest.describe("NotebookRuntime stdin", () => {
         // Set active editor so NotebookEditorRegistry can find it
         yield* NotebookRuntimeHarness.activate(ctx.editor);
 
-        // Push a cell-op with stdin console output
+        const prompt = {
+          channel: "stdin",
+          data: "Enter name: ",
+          mimetype: "text/plain",
+          timestamp: 0,
+          input_id: "prompt-1",
+        } as const;
         yield* marimo.publishNotification(
           makeIdleCellOperation(ctx.notebookUri, cellId, {
             status: "running",
-            console: [
-              {
-                channel: "stdin",
-                data: "Enter name: ",
-                mimetype: "text/plain",
-                timestamp: 0,
-              },
-            ],
+            console: [prompt],
           }),
         );
         yield* NotebookRuntimeHarness.inputRequested;
@@ -402,6 +401,7 @@ Vitest.describe("NotebookRuntime stdin", () => {
           notebookUri: ctx.notebookUri,
           kernelSessionId: ACTIVE_SESSION_ID,
           text: "foo",
+          inputId: "prompt-1",
         });
       });
     }),

@@ -22,8 +22,10 @@ if typing.TYPE_CHECKING:
     from marimo._config.manager import MarimoConfigManager
     from marimo._messaging.types import KernelMessage
     from marimo._runtime.commands import CommandMessage
+    from marimo._session.queue import QueueType
 
     from marimo_lsp.app_file_manager import LspAppFileManager
+    from marimo_lsp.kernels import KernelInput
 
 
 logger = get_logger()
@@ -73,9 +75,11 @@ class NativeKernel:
         """Send a command over marimo IPC."""
         self._queue_manager.put_control_request(request)
 
-    def input(self, text: str) -> None:
+    def input(self, reply: KernelInput) -> None:
         """Send an input response over marimo IPC."""
-        self._queue_manager.put_input(text)
+        typing.cast("QueueType[KernelInput]", self._queue_manager.input_queue).put(
+            reply
+        )
 
     def interrupt(self) -> None:
         """Interrupt the kernel process."""

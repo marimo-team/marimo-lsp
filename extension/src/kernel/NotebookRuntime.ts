@@ -81,6 +81,7 @@ type RespondToStdin = (
   notebookId: NotebookId,
   sessionId: KernelSessionId,
   result: Option.Option<string>,
+  inputId?: string,
 ) => WithNoActiveKernel<ReturnType<MarimoClient.Interface["sendStdin"]>>;
 
 export interface NotebookController {
@@ -441,6 +442,7 @@ export const layer = Layer.effect(
       notebookId: NotebookId,
       sessionId: KernelSessionId,
       result: Option.Option<string>,
+      inputId?: string,
     ) =>
       runInKernelSession(
         notebookId,
@@ -451,6 +453,7 @@ export const layer = Layer.effect(
                 notebookUri: notebookId,
                 kernelSessionId: currentSessionId,
                 text,
+                ...(inputId === undefined ? {} : { inputId }),
               }),
             onNone: () =>
               marimo.interrupt({
@@ -1569,7 +1572,11 @@ function handleStdinPrompt(
         password: output.mimetype === "text/password",
       });
 
-      yield* respond(notebookId, sessionId, result);
+      const inputId =
+        "input_id" in output && typeof output.input_id === "string"
+          ? output.input_id
+          : undefined;
+      yield* respond(notebookId, sessionId, result, inputId);
     }
   });
 }
