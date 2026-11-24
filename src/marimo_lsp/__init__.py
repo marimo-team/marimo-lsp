@@ -23,5 +23,9 @@ def main() -> None:
     )
     logger = get_logger()
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(lsp_handler(server))
-    server.start_io()
+    handler = lsp_handler(server)
+    logger.addHandler(handler)
+    try:
+        server.start_io()
+    finally:
+        logger.removeHandler(handler)

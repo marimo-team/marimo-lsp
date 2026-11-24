@@ -72,10 +72,8 @@ def create_server(  # noqa: C901, PLR0915
     )
     graph_registry = GraphUpdaterRegistry(server)
 
-    # Register atexit handler to ensure kernel processes are cleaned up
-    # when the LSP server exits (e.g., extension host restart, VS Code close).
-    # This prevents orphaned kernel subprocesses from consuming memory.
-    atexit.register(sessions.close_all)
+    # At process exit the client has disconnected, but kernels may still be alive.
+    atexit.register(sessions.close_all, notify=False)
 
     # Lsp Features
     @server.feature(lsp.INITIALIZE)

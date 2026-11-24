@@ -939,7 +939,8 @@ def test_move_preserves_live_session() -> None:
     sessions._notify_changed.assert_called_once_with()
 
 
-def test_close_all_clears_collection_and_notifies_once() -> None:
+@pytest.mark.parametrize("notify", [True, False])
+def test_close_all_stops_kernels_and_optionally_notifies(*, notify: bool) -> None:
     sessions = Sessions(Mock(), kernels=Mock())
     first = Mock(spec=Session)
     second = Mock(spec=Session)
@@ -949,12 +950,12 @@ def test_close_all_clears_collection_and_notifies_once() -> None:
     }
     sessions._notify_changed = Mock()
 
-    sessions.close_all()
+    sessions.close_all(notify=notify)
 
     assert list(sessions) == []
     first.close.assert_called_once_with()
     second.close.assert_called_once_with()
-    sessions._notify_changed.assert_called_once_with()
+    assert sessions._notify_changed.call_count == int(notify)
 
 
 def test_snapshots_order_queries_and_notifications() -> None:

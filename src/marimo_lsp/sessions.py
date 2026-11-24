@@ -1006,7 +1006,7 @@ class Sessions:
         self._close(failed, notebook_uri)
         self._notify_changed()
 
-    def close_all(self) -> None:
+    def close_all(self, *, notify: bool = True) -> None:
         """Close all live sessions."""
         logger.info("Closing all sessions")
         with self._lock:
@@ -1016,5 +1016,5 @@ class Sessions:
             self._sessions = {}
         for notebook_uri, session in live.items():
             self._close(session, notebook_uri)
-        if live:
+        if live and notify:
             self._notify_changed()
