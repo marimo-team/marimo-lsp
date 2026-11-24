@@ -169,6 +169,7 @@ jobs:
       # Runs on every matrix OS: the release workflow builds this bundle on
       # Windows too, and Windows-only breakage otherwise first surfaces there.
       - name: Build and test the WASM language server
+        id: wasm-lsp
         env:
           TURBO_TOKEN: ${{ steps.secrets.outputs.TURBO_TOKEN }}
         run: pnpm verify:wasm-lsp
@@ -194,6 +195,18 @@ jobs:
       #  run: pnpm test:extension
       #  working-directory: marimo-lsp/extension
       #  if: runner.os != 'Linux'
+
+      - name: Run the bundled language server against minimum and upstream kernels
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.wasm-lsp.outcome == 'success' }}
+        working-directory: marimo-lsp
+        run: |
+          minimum="$(uv run --no-project --python 3.13 python -c 'from scripts.marimo_version import check; print(check().kernel_compatibility_floor)')"
+          for requirement in "marimo==$minimum" "marimo @ git+https://github.com/marimo-team/marimo.git@main"; do
+            kernel_env="$(mktemp -d)"
+            uv venv --python 3.13 "$kernel_env"
+            uv pip install --python "$kernel_env/bin/python" "$requirement"
+            pnpm -C extension test:wasm-lsp "$kernel_env/bin/python"
+          done
 
   python-lint:
     name: Python / Lint
