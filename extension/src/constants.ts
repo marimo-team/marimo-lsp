@@ -33,7 +33,7 @@ export const LanguageId = {
   Markdown: "markdown",
 } as const;
 
-export const MINIMUM_MARIMO_KERNEL_VERSION = Version.make("0.23.3");
+export const MINIMUM_MARIMO_KERNEL_VERSION = Version.make("0.23.11");
 
 export type MarimoContextKey =
   | "marimo.config.runtime.auto_reload"
