@@ -15,18 +15,18 @@ repos:
         args: [-ignore, SC]
 
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: '0.26'
+    rev: 'v0.27'
     hooks:
       - id: validate-pyproject
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.51.1
+    rev: typos-dict-v0.14.5
     hooks:
       - id: typos
         pass_filenames: false
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.1
+    rev: v0.17.4
     hooks:
       # Run the linter
       - id: ruff
