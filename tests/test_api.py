@@ -36,6 +36,7 @@ from marimo_lsp.api import (
     list_sql_tables,
     parse_notebook,
     print_notebook,
+    run,
     send_stdin,
     set_model_value,
     set_ui_element_value,
@@ -48,6 +49,38 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 NOTEBOOK_URI = "file:///notebook.py"
+
+
+@pytest.mark.asyncio
+async def test_run_sends_both_kernel_batch_formats() -> None:
+    session = MagicMock()
+    sessions = MagicMock()
+    sessions.start = AsyncMock(return_value=session)
+    await run(
+        _context(sessions),
+        protocol.Execute(
+            notebook_uri=protocol.NotebookUri(NOTEBOOK_URI),
+            executable="/usr/bin/python",
+            working_directory="/workspace",
+            cells=[
+                protocol.CellExecution(cell_id=protocol.CellId("a"), code="x = 1"),
+                protocol.CellExecution(cell_id=protocol.CellId("b"), code="x + 1"),
+            ],
+        ),
+    )
+
+    command = session.put_control_request.call_args.args[0]
+    for wire in (
+        msgspec.json.decode(msgspec.json.encode(command)),
+        msgspec.msgpack.decode(msgspec.msgpack.encode(command)),
+    ):
+        assert wire["type"] == "execute-cells"
+        assert wire["cellIds"] == ["a", "b"]
+        assert wire["codes"] == ["x = 1", "x + 1"]
+        assert [(req["cellId"], req["code"]) for req in wire["executionRequests"]] == [
+            ("a", "x = 1"),
+            ("b", "x + 1"),
+        ]
 
 
 @pytest.mark.asyncio
