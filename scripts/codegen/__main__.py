@@ -12,6 +12,7 @@ from scripts.codegen import (
     effect_schemas,
     extension_commands,
     extension_constants,
+    kernel_notifications,
     wasm_protocol,
 )
 from scripts.codegen.output import write_text, write_typescript
@@ -30,6 +31,11 @@ GENERATORS: tuple[Generator, ...] = (
         extension_commands.generate,
     ),
     (effect_schemas.LABEL, effect_schemas.OUTPUT, effect_schemas.generate),
+    (
+        kernel_notifications.LABEL,
+        kernel_notifications.OUTPUT,
+        kernel_notifications.generate,
+    ),
 )
 
 
