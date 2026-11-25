@@ -5,7 +5,9 @@ import {
   type CellId,
   type CellRuntimeState,
   ConsoleOutput,
+  HTMLCellId,
   OutputRenderer,
+  registerCellRuntime,
   TooltipProvider,
   useTheme,
 } from "./marimo-frontend.ts";
@@ -22,6 +24,10 @@ interface CellOutputProps {
  */
 export function CellOutput({ cellId, state }: CellOutputProps) {
   const { theme } = useTheme();
+  React.useLayoutEffect(
+    () => registerCellRuntime(cellId, state),
+    [cellId, state],
+  );
   const container = React.useRef<HTMLDivElement>(null);
   const [containerElement, setContainerElement] =
     React.useState<HTMLDivElement | null>(null);
@@ -39,6 +45,7 @@ export function CellOutput({ cellId, state }: CellOutputProps) {
 
   return (
     <div
+      id={HTMLCellId.create(cellId)}
       className={`marimo-cell-output p-4 pb-8 ${theme}`}
       data-vscode-output-container="true"
       ref={attachContainer}
