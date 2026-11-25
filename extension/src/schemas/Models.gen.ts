@@ -4,30 +4,35 @@
 // and the command registry (`COMMANDS` in `src/marimo_lsp/api.py`)
 // by `scripts.codegen`.
 // Regenerate with `just codegen`.
-import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
 
+import type { KernelNotificationPayload } from "./KernelNotificationPayload.gen.ts";
 import { ownedStruct } from "./ownedStruct.ts";
 
-type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
-const MarimoNotification = Schema.declare<MarimoNotification>(
-  (value): value is MarimoNotification =>
+const KernelNotificationPayload = Schema.declare<KernelNotificationPayload>(
+  (value): value is KernelNotificationPayload =>
     typeof value === "object" &&
     value !== null &&
     "op" in value &&
     typeof value.op === "string",
 );
 
-type CellOperationNotification = Extract<MarimoNotification, { op: "cell-op" }>;
+type CellOperationNotification = Extract<
+  KernelNotificationPayload,
+  { op: "cell-op" }
+>;
 const CellOperationNotification = Schema.declare<CellOperationNotification>(
   (value): value is CellOperationNotification =>
-    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+    Schema.is(KernelNotificationPayload)(value) && value.op === "cell-op",
 );
 
-type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
+type VariablesNotification = Extract<
+  KernelNotificationPayload,
+  { op: "variables" }
+>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
-    Schema.is(MarimoNotification)(value) && value.op === "variables",
+    Schema.is(KernelNotificationPayload)(value) && value.op === "variables",
 );
 
 // The id is an opaque token minted by the server; only equality matters.
@@ -611,7 +616,7 @@ export type Command = typeof Command.Type;
 export const KernelNotification = Schema.Struct({
   notebookUri: NotebookIdFromString,
   sessionId: KernelSessionIdFromString,
-  notification: MarimoNotification,
+  notification: KernelNotificationPayload,
 }).annotate({ identifier: "KernelNotification" });
 export type KernelNotification = typeof KernelNotification.Type;
 

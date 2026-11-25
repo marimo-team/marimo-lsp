@@ -34,14 +34,13 @@ HEADER = """\
 // and the command registry (`COMMANDS` in `src/marimo_lsp/api.py`)
 // by `scripts.codegen`.
 // Regenerate with `just codegen`.
-import type { components as MarimoApi } from "@marimo-team/openapi/src/api";
 import { Effect, Schema } from "effect";
 
+import type { KernelNotificationPayload } from "./KernelNotificationPayload.gen.ts";
 import { ownedStruct } from "./ownedStruct.ts";
 
-type MarimoNotification = MarimoApi["schemas"]["KnownUnions"]["notification"];
-const MarimoNotification = Schema.declare<MarimoNotification>(
-  (value): value is MarimoNotification =>
+const KernelNotificationPayload = Schema.declare<KernelNotificationPayload>(
+  (value): value is KernelNotificationPayload =>
     typeof value === "object" &&
     value !== null &&
     "op" in value &&
@@ -49,18 +48,18 @@ const MarimoNotification = Schema.declare<MarimoNotification>(
 );
 
 type CellOperationNotification = Extract<
-  MarimoNotification,
+  KernelNotificationPayload,
   { op: "cell-op" }
 >;
 const CellOperationNotification = Schema.declare<CellOperationNotification>(
   (value): value is CellOperationNotification =>
-    Schema.is(MarimoNotification)(value) && value.op === "cell-op",
+    Schema.is(KernelNotificationPayload)(value) && value.op === "cell-op",
 );
 
-type VariablesNotification = Extract<MarimoNotification, { op: "variables" }>;
+type VariablesNotification = Extract<KernelNotificationPayload, { op: "variables" }>;
 const VariablesNotification = Schema.declare<VariablesNotification>(
   (value): value is VariablesNotification =>
-    Schema.is(MarimoNotification)(value) && value.op === "variables",
+    Schema.is(KernelNotificationPayload)(value) && value.op === "variables",
 );
 
 // The id is an opaque token minted by the server; only equality matters.
@@ -404,7 +403,7 @@ class Emitter:
         ):
             expr = "CellOperationNotification"
         elif t.cls is models.KernelNotification and field.name == "notification":
-            expr = "MarimoNotification"
+            expr = "KernelNotificationPayload"
         elif t.cls is models.DocumentAnalysis and field.name == "analysis":
             expr = "VariablesNotification"
         elif field.name == "notebook_uri":

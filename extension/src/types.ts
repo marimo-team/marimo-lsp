@@ -11,7 +11,7 @@ export type CellId = Schemas["CellId"];
 export type CellConfig = Schemas["CellConfig"];
 export type VariableName = Schemas["VariableName"];
 
-export type Notification = Schemas["KnownUnions"]["notification"];
+export type Notification = Gen.KernelNotification["notification"];
 export type NotificationOf<T extends Notification["op"]> = Extract<
   Notification,
   { op: T }

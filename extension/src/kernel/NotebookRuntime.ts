@@ -1323,8 +1323,9 @@ function processOperation(
     const variables = yield* NotebookVariables.Service;
     const datasources = yield* NotebookDatasources.Service;
 
-    // Older supported kernels emit this notification, removed in marimo 0.25.
-    if (["installing-package-alert"].includes(operation.op)) return;
+    // Older kernels may still send these unused notifications.
+    if (["installing-package-alert", "reconnected"].includes(operation.op))
+      return;
 
     switch (operation.op) {
       case "variables":
@@ -1402,7 +1403,6 @@ function processOperation(
       case "query-params-clear":
       case "query-params-delete":
       case "query-params-set":
-      case "reconnected":
       case "reload":
       case "secret-keys-result":
       case "sql-table-preview":

@@ -67,6 +67,49 @@ function makeIdleCellOperation(
 
 Vitest.describe("NotebookRuntime operation processing", () => {
   it.effect(
+    "ends the running VS Code cell execution on a kernel interrupt",
+    Effect.fn(function* () {
+      const ctx = yield* NotebookRuntimeHarness.Notebook;
+      const marimo = yield* MarimoClientTest.Service;
+      const vscode = yield* VsCodeTest.Service;
+      yield* NotebookRuntimeHarness.activate(ctx.editor);
+
+      const [controller] = yield* vscode.controllers;
+      const cell = ctx.editor.notebook.cellAt(0);
+      const execution = controller.createNotebookCellExecution(cell);
+      const started = yield* Latch.make();
+      const ended = yield* Latch.make();
+      execution.start = () => started.openUnsafe();
+      const end = Vitest.vi.fn(() => ended.openUnsafe());
+      execution.end = end;
+      using createExecution = Vitest.vi
+        .spyOn(controller, "createNotebookCellExecution")
+        .mockReturnValue(execution);
+
+      const id = Option.getOrThrow(ctx.notebook.cellAt(0).id);
+      for (const status of ["queued", "running"] as const) {
+        yield* marimo.publishNotification(
+          makeIdleCellOperation(ctx.notebookUri, id, {
+            status,
+            run_id: "run-1",
+          }),
+        );
+      }
+      yield* started.await;
+      Vitest.expect(createExecution).toHaveBeenCalledWith(cell);
+      yield* marimo.publishNotification(
+        yield* Schema.decodeEffect(Api.KernelNotification)({
+          notebookUri: ctx.notebookUri,
+          sessionId: ACTIVE_SESSION_ID,
+          notification: { op: "interrupted" },
+        }),
+      );
+      yield* ended.await;
+      Vitest.expect(end).toHaveBeenCalledExactlyOnceWith(false, undefined);
+    }),
+  );
+
+  it.effect(
     "ignores additive execution events and unknown events without reporting errors",
     Effect.fn(function* () {
       const ctx = yield* NotebookRuntimeHarness.Notebook;
