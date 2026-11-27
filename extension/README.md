@@ -26,6 +26,49 @@ Open an existing marimo `.py` file with **"marimo: Open as marimo notebook"**.
 The default marimo language server is bundled. Platform-specific builds also
 include `uv`, so no separate installation is needed.
 
+## Installing notebook dependencies
+
+Choose how to manage dependencies using the notebook's kernel picker.
+
+### marimo sandbox
+
+Save the notebook as a `.py` file and select **marimo sandbox**. The extension
+uses `uv` to create an isolated environment from the notebook's inline script
+metadata. When an import is missing, use the package installation prompt.
+
+To declare a dependency before running the notebook, run this in a terminal,
+replacing `notebook.py` with the saved notebook's path:
+
+```sh
+uv add --script notebook.py pandas
+```
+
+This records the dependency in the notebook's `# /// script` metadata block.
+Run a cell again to synchronize the sandbox with that metadata. Installing a
+package into a separate project environment does not add it to the sandbox.
+
+### An existing Python environment
+
+Select the environment you want to use in the kernel picker. Install `marimo`
+and the notebook's packages into that same environment, for example:
+
+```sh
+uv pip install --python /path/to/environment/bin/python marimo pandas
+```
+
+On Windows, use the environment's `Scripts/python.exe` path instead. You can
+also use pip or your environment manager, provided it installs into the
+interpreter selected for the notebook. Then run the cell again.
+
+### Finding uv
+
+Platform-specific extension builds include `uv` for the extension's own
+operations. That bundled executable is not necessarily on your terminal's
+`PATH`. To run the commands above, follow the
+[uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+Use the `marimo.uv.path` setting if you want the extension to use a particular
+`uv` executable. A separate VS Code extension for `uv` is not required.
+
 ## Python Language Features
 
 We recommend [ty](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty)
